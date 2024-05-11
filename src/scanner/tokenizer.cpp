@@ -131,7 +131,7 @@ Token Tokenizer::getIdentifierToken(){
     s.len  = this->cursor - tokenStart;
     
     Token t;
-    t.type = TokenType::TOKEN_IDENTIFIER;
+    t.type = TokenPrimaryType::TOKEN_IDENTIFIER;
     t.string = s;
     return t;
 }
@@ -150,7 +150,7 @@ Token Tokenizer::getNumberToken(){
     s.len  = this->cursor - tokenStart;
     
     Token t;
-    t.type = TokenType::TOKEN_NUMBER;
+    t.type = TokenPrimaryType::TOKEN_NUMBER;
     t.string = s;
     return t;
 }
@@ -169,7 +169,7 @@ Token Tokenizer::getPunctuatorToken(){
     s.len  = this->cursor - tokenStart;
     
     Token t;
-    t.type = TokenType::TOKEN_NUMBER;
+    t.type = TokenPrimaryType::TOKEN_NUMBER;
     t.string = s;
     return t;
 }

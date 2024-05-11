@@ -3,26 +3,7 @@
 #include "str.h"
 #include "fa.h"
 
-enum TokenPrimaryType{
-    TOKEN_ERROR,
-    TOKEN_IDENTIFIER,
-    TOKEN_KEYWORD,
-    TOKEN_NUMBER,
-    TOKEN_EOF,
-
-    TOKEN_COUNT
-};
-
-static const char *TOKEN_STRINGS[] = {
-    "TOKEN_ERROR",
-    "TOKEN_IDENTIFIER",
-    "TOKEN_KEYWORD",
-    "TOKEN_NUMBER",
-    "TOKEN_EOF",
-
-    "TOKEN_COUNT"
-};
-
+#include "token_types.h"
 
 struct Token{
     int type;
