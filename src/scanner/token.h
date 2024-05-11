@@ -26,6 +26,8 @@ static const char *TOKEN_PRIMARY_TYPE_STRING[] = {
 
 
 enum TokenSecondaryType{
+    TOKEN_NONE,
+
     TOKEN_NUMERIC_HEX,
     TOKEN_NUMERIC_BIN,
     TOKEN_NUMERIC_DEC,
@@ -36,10 +38,23 @@ enum TokenSecondaryType{
     TOKEN_SECONDARY_COUNT
 };
 
+static const char *TOKEN_SECONDARY_TYPE_STRING[] = {
+    "",
+
+    "TOKEN_NUMERIC_HEX",
+    "TOKEN_NUMERIC_BIN",
+    "TOKEN_NUMERIC_DEC",
+    "TOKEN_NUMERIC_OCT",
+    "TOKEN_NUMERIC_DOUBLE",
+
+
+    "TOKEN_SECONDARY_COUNT"
+};
+
 
 struct Token{
-    TokenPrimaryType type;
-    TokenSecondaryType type2;
+    int type;
+    int type2;
     int lineNo, charNo;
     
     Splice string;

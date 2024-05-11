@@ -110,6 +110,7 @@ Token Tokenizer::getIdentifierToken(){
     
     Token t;
     t.type = TokenPrimaryType::TOKEN_IDENTIFIER;
+    t.type2 = TokenSecondaryType::TOKEN_NONE;
     t.string = s;
     return t;
 }
@@ -118,19 +119,18 @@ Token Tokenizer::getNumberToken(){
     size_t tokenStart = this->cursor;
     
     this->numDFA.restart();
-    while (!this->isEOF() && isNumberChar(this->buffer[this->cursor])){
+    while (!this->isEOF() && !isWhitespace(this->buffer[this->cursor])
+            && (!isPunctuatorChar(this->buffer[this->cursor]) || isNumberChar(this->buffer[this->cursor]))){
         this->numDFA.transition(this->buffer[this->cursor]);
         this->cursor++;
     }
 
     
-    
     Splice s;
     s.data = &this->buffer[tokenStart];
     s.len  = this->cursor - tokenStart;
     
-    Token t;
-    t.type = TokenPrimaryType::TOKEN_NUMBER;
+    Token t = this->numDFA.getToken();
     t.string = s;
     return t;
 }
@@ -150,6 +150,7 @@ Token Tokenizer::getPunctuatorToken(){
     
     Token t;
     t.type = TokenPrimaryType::TOKEN_NUMBER;
+    t.type2 = TokenSecondaryType::TOKEN_NONE;
     t.string = s;
     return t;
 }
@@ -172,25 +173,28 @@ Token Tokenizer::nextToken(){
 
     // get to next token
     this->skipWhitespaces();
+
+    Token t = {0};
     
     // starts with an alphabet or _
     if (isNonNumeric(this->buffer[this->cursor])){
-        return this->getIdentifierToken();
+        t = this->getIdentifierToken();
     }
-
-    if (isNumeric(this->buffer[this->cursor])){
-        return this->getNumberToken();
+    else if (isNumeric(this->buffer[this->cursor])){
+        t = this->getNumberToken();
     }
-
-    if (isPunctuatorChar(this->buffer[this->cursor])){
+    else if (isPunctuatorChar(this->buffer[this->cursor])){
 
     }
-    
-    this->skipNonWhitespaces();
+    else{
+        this->skipNonWhitespaces();
+    }
 
-    return Token{
-        TOKEN_ERROR
-    };
+    if (t.type == TOKEN_ERROR){
+        this->skipNonWhitespaces();
+    }
+
+    return t;
 
 }
 

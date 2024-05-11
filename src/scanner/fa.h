@@ -3,9 +3,11 @@
 #include <unordered_map>
 #include <assert.h>
 
+#include "token.h"
+
 
 struct TransitionTableEntry{
-    int transitions[256];
+    int transitions[256] = {0};
 };
 
 struct DFA{
@@ -31,7 +33,7 @@ struct DFA{
         assert(transitionTable.contains(s) && transitionTable.contains(sNext));
         
         for (int i=0; i<strlen(a); i++){
-            transitionTable[s].transitions[i] = sNext;
+            transitionTable[s].transitions[a[i]] = sNext;
         }
     }
 
@@ -104,6 +106,35 @@ struct NumConstDFA: public DFA{
         this->restart();
 
     
+    }
+
+    Token getToken(){
+        Token t;
+        t.type = TokenPrimaryType::TOKEN_NUMBER;
+        switch (this->currentState){
+        case STATE_BINARY:  
+            t.type2 = TokenSecondaryType::TOKEN_NUMERIC_BIN; break;
+        
+        case STATE_DECIMAL:  
+            t.type2 = TokenSecondaryType::TOKEN_NUMERIC_DEC; break;
+        
+        case STATE_OCTAL:  
+            t.type2 = TokenSecondaryType::TOKEN_NUMERIC_OCT; break;
+        
+        case STATE_ZERO:  
+        case STATE_DOUBLE:  
+            t.type2 = TokenSecondaryType::TOKEN_NUMERIC_DOUBLE; break;
+        
+        case STATE_HEX:  
+            t.type2 = TokenSecondaryType::TOKEN_NUMERIC_HEX; break;
+        
+        default:
+            t.type = TokenPrimaryType::TOKEN_ERROR;
+            t.type2 = TokenSecondaryType::TOKEN_NONE;
+            break;
+        }
+
+        return t;
     }
 
 };
