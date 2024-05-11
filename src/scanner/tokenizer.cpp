@@ -86,28 +86,6 @@ void Tokenizer::skipWhitespaces(){
 }
 
 
-enum NumConstDFA_States{
-    // start and error states (non accepting) 
-    STATE_ERROR = 0,
-    STATE_INVALID_OCTAL,
-    STATE_START,
-
-    // intermediate states (non accepting) 
-    STATE_X,
-    STATE_B,
-    STATE_POINT,
-    
-    // accepting states
-    STATE_ZERO,
-    STATE_OCTAL,
-    STATE_HEX,
-    STATE_BINARY,
-    STATE_DECIMAL,
-    STATE_OCTAL,
-    STATE_DOUBLE,
-
-    STATE_COUNT,
-};
 
 void Tokenizer::init(){
     this->numDFA.init();
@@ -144,6 +122,8 @@ Token Tokenizer::getNumberToken(){
         this->numDFA.transition(this->buffer[this->cursor]);
         this->cursor++;
     }
+
+    
     
     Splice s;
     s.data = &this->buffer[tokenStart];

@@ -59,7 +59,6 @@ struct NumConstDFA: public DFA{
         STATE_HEX,
         STATE_BINARY,
         STATE_DECIMAL,
-        STATE_OCTAL,
         STATE_DOUBLE,
 
         STATE_COUNT,
@@ -106,6 +105,7 @@ struct NumConstDFA: public DFA{
 
     
     }
+
 };
 
 

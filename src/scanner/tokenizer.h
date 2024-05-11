@@ -1,19 +1,8 @@
 #pragma once
 
-#include "str.h"
 #include "fa.h"
 
-#include "token_types.h"
-
-struct Token{
-    int type;
-    int type2;
-    int lineNo, charNo;
-    
-    Splice string;
-};
-
-
+#include "token.h"
 
 
 
