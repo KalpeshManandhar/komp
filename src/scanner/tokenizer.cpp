@@ -18,11 +18,32 @@
     - Real: [0-9]*.[0-9]*
 
     Whitespaces: Spaces, tabs, newlines, carriage returns
+    Punctuations: 
+    [ ] ( ) { } . ->
+    ++ -- & * + - ~ !
+    / % << >> < > <= >= ==
+    != ^ | && || ? : ; ...
+    = *= /= %= += -= <<= >>=
+    &= ^= |= , # ##
+    <: :> <% %> %: %:%:
+    
 
 
-
+    @Referenced from https://learn.microsoft.com/en-us/cpp/c-language/lexical-grammar?view=msvc-170 
 
 */
+
+static bool isPunctuatorChar(char c){
+    static const char* punctuators = "[]{}()<>+-*/~!#%^&;:=|?.,";
+
+    for (int i=0; i<strlen(punctuators); i++){
+        if (c == punctuators[i]){
+            return true;
+        }
+    }
+
+    return false;
+}
 
 static bool isBetween(char c, char start, char end){
     return c >= start && c <= end;
@@ -52,9 +73,6 @@ static bool isNumberChar(char c){
 
 
 
-
-
-
 void Tokenizer::skipNonWhitespaces(){
     while (!isWhitespace(this->buffer[this->cursor])){
         this->cursor++;
@@ -68,34 +86,101 @@ void Tokenizer::skipWhitespaces(){
 }
 
 
+enum NumConstDFA_States{
+    // start and error states (non accepting) 
+    STATE_ERROR = 0,
+    STATE_INVALID_OCTAL,
+    STATE_START,
+
+    // intermediate states (non accepting) 
+    STATE_X,
+    STATE_B,
+    STATE_POINT,
+    
+    // accepting states
+    STATE_ZERO,
+    STATE_OCTAL,
+    STATE_HEX,
+    STATE_BINARY,
+    STATE_DECIMAL,
+    STATE_OCTAL,
+    STATE_DOUBLE,
+
+    STATE_COUNT,
+};
+
+void Tokenizer::init(){
+    this->numDFA.init();
+
+
+}
+
+
+
+
+
+
 Token Tokenizer::getIdentifierToken(){
+    size_t tokenStart = this->cursor;
     while (!this->isEOF() && isIdentifierChar(this->buffer[this->cursor])){
-        
-        
         this->cursor++;
     }
+
+    Splice s;
+    s.data = &this->buffer[tokenStart];
+    s.len  = this->cursor - tokenStart;
     
-    return Token{
-        TokenType::TOKEN_IDENTIFIER
-    };
+    Token t;
+    t.type = TokenType::TOKEN_IDENTIFIER;
+    t.string = s;
+    return t;
 }
 
 Token Tokenizer::getNumberToken(){
+    size_t tokenStart = this->cursor;
+    
+    this->numDFA.restart();
     while (!this->isEOF() && isNumberChar(this->buffer[this->cursor])){
-        
-        
+        this->numDFA.transition(this->buffer[this->cursor]);
         this->cursor++;
     }
     
-    return Token{
-        TokenType::TOKEN_NUMBER
-    };
+    Splice s;
+    s.data = &this->buffer[tokenStart];
+    s.len  = this->cursor - tokenStart;
+    
+    Token t;
+    t.type = TokenType::TOKEN_NUMBER;
+    t.string = s;
+    return t;
+}
+
+
+
+Token Tokenizer::getPunctuatorToken(){
+    size_t tokenStart = this->cursor;
+
+    while (!this->isEOF() && isPunctuatorChar(this->buffer[this->cursor])){
+        this->cursor++;
+    }
+    
+    Splice s;
+    s.data = &this->buffer[tokenStart];
+    s.len  = this->cursor - tokenStart;
+    
+    Token t;
+    t.type = TokenType::TOKEN_NUMBER;
+    t.string = s;
+    return t;
 }
 
 
 bool Tokenizer::isEOF(){
     return this->cursor >= this->bufferSize;
 }
+
+
+
 
 
 Token Tokenizer::nextToken(){
@@ -115,6 +200,10 @@ Token Tokenizer::nextToken(){
 
     if (isNumeric(this->buffer[this->cursor])){
         return this->getNumberToken();
+    }
+
+    if (isPunctuatorChar(this->buffer[this->cursor])){
+
     }
     
     this->skipNonWhitespaces();

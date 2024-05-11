@@ -1,7 +1,9 @@
 #pragma once
 
+#include "str.h"
+#include "fa.h"
 
-enum TokenType{
+enum TokenPrimaryType{
     TOKEN_ERROR,
     TOKEN_IDENTIFIER,
     TOKEN_KEYWORD,
@@ -24,7 +26,10 @@ static const char *TOKEN_STRINGS[] = {
 
 struct Token{
     int type;
-    // int lineNo, charNo;
+    int type2;
+    int lineNo, charNo;
+    
+    Splice string;
 };
 
 
@@ -39,8 +44,12 @@ private:
     char* buffer;
     size_t bufferSize;
 
+    NumConstDFA numDFA;
+
+
     Token getIdentifierToken();
     Token getNumberToken();
+    Token getPunctuatorToken();
 
     Token getIntegerToken_Hex();
     Token getIntegerToken_Binary();
@@ -53,6 +62,7 @@ private:
     bool isEOF();
 
 public:    
+    void init();
     void loadFileToBuffer(const char *filepath);
     Token nextToken();
 };

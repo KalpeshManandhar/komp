@@ -13,7 +13,7 @@ int main(int argc, char ** argv){
 
     while (true){
         token = t.nextToken();
-        std::cout<<TOKEN_STRINGS[token.type]<<"\n";
+        std::cout<<token.string<<":\t"<<TOKEN_PRIMARY_TYPE_STRING[token.type]<<"\n";
         if (token.type == TOKEN_EOF){
             break;
         }
