@@ -197,7 +197,7 @@ Token Tokenizer::nextToken(){
         t = this->getPunctuatorToken();
     }
     else{
-        this->skipNonWhitespaces();
+        t.type = TOKEN_ERROR;
     }
 
     if (t.type == TOKEN_ERROR){

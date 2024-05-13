@@ -96,6 +96,7 @@ enum TokenSecondaryType{
     TOKEN_COLON,
     TOKEN_SEMI_COLON,
     TOKEN_COMMA,
+    TOKEN_HASH,
 
 
 
@@ -171,6 +172,7 @@ static const char *TOKEN_SECONDARY_TYPE_STRING[] = {
     "TOKEN_COLON",
     "TOKEN_SEMI_COLON",
     "TOKEN_COMMA",
+    "TOKEN_HASH",
 
     "TOKEN_SECONDARY_COUNT"
 };

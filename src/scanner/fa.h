@@ -213,6 +213,7 @@ struct PunctuatorDFA: public DFA{
         STATE_COLON,
         STATE_SEMI_COLON,
         STATE_COMMA,
+        STATE_HASH,
         
 
         // currently havent supported these
@@ -256,6 +257,7 @@ struct PunctuatorDFA: public DFA{
         this->addTransition(STATE_START, ":", STATE_COLON);
         this->addTransition(STATE_START, ";", STATE_SEMI_COLON);
         this->addTransition(STATE_START, ",", STATE_COMMA);
+        this->addTransition(STATE_START, "#", STATE_HASH);
         
         this->addTransition(STATE_MINUS, ">", STATE_ARROW);
         this->addTransition(STATE_MINUS, "-", STATE_DEC);
