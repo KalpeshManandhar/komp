@@ -211,7 +211,7 @@ Token Tokenizer::nextToken(){
 
 
 void Tokenizer::loadFileToBuffer(const char *filepath){
-    std::ifstream f(filepath);
+    std::ifstream f(filepath, std::ios::binary);
     
     f.seekg(0, std::ios::end);
     this->bufferSize = f.tellg();
@@ -223,4 +223,5 @@ void Tokenizer::loadFileToBuffer(const char *filepath){
     this->buffer[this->bufferSize] = 0;
 
     this->cursor = 0;
+    f.close();
 }
