@@ -90,8 +90,9 @@ void Tokenizer::skipWhitespaces(){
 
 
 void Tokenizer::init(){
-    // initialize the dfa for scanning numeric constants
+    // initialize the dfas 
     this->numDFA.init();
+    this->puncDFA.init();
 
 
 }
@@ -143,8 +144,13 @@ Token Tokenizer::getNumberToken(){
 
 Token Tokenizer::getPunctuatorToken(){
     size_t tokenStart = this->cursor;
-
+    
+    this->puncDFA.restart();
     while (!this->isEOF() && isPunctuatorChar(this->buffer[this->cursor])){
+        if (this->puncDFA.willErrorTransition(this->buffer[this->cursor])){
+            break;
+        }
+        this->puncDFA.transition(this->buffer[this->cursor]);
         this->cursor++;
     }
     

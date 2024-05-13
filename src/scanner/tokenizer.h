@@ -15,6 +15,7 @@ private:
     size_t bufferSize;
 
     NumConstDFA numDFA;
+    PunctuatorDFA puncDFA;
 
 
     Token getIdentifierToken();

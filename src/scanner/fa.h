@@ -40,6 +40,11 @@ struct DFA{
     void transition(char a){
         currentState = transitionTable[currentState].transitions[a];
     }
+    
+    // assumes 0 as error state, ie, if input will cause transition to an error state '0'
+    bool willErrorTransition(char a){
+        return transitionTable[currentState].transitions[a] == 0; 
+    }
 };
 
 
@@ -190,7 +195,6 @@ struct PunctuatorDFA: public DFA{
         STATE_LOGICAL_OR,
         STATE_LOGICAL_NOT,
         
-        
         // assignment 
         STATE_ASSIGNMENT, // =
         STATE_PLUS_ASSIGN,
@@ -282,8 +286,6 @@ struct PunctuatorDFA: public DFA{
         this->addTransition(STATE_BITWISE_OR, "=", STATE_BITWISE_OR_ASSIGN);
         
         this->addTransition(STATE_BITWISE_XOR, "=", STATE_BITWISE_XOR_ASSIGN);
-
-        
 
         
         this->setStartState(STATE_START);
