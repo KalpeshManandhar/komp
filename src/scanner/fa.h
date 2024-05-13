@@ -164,8 +164,8 @@ struct PunctuatorDFA: public DFA{
 
         // bitwise operators 
         STATE_AMPERSAND, // represents both AND and ADDRESS
-        STATE_BITWISE_OR,
-        STATE_BITWISE_NOT,
+        STATE_BITWISE_OR, // |
+        STATE_BITWISE_NOT, // ~
         STATE_BITWISE_XOR,
         STATE_SHIFT_LEFT,
         STATE_SHIFT_RIGHT,
@@ -226,7 +226,65 @@ struct PunctuatorDFA: public DFA{
         }
 
         // NOTE: STATE_ERROR is set to 0, which is the default transition value on adding a new state
-        // TODO: add transitions
+        this->addTransition(STATE_START, "[", STATE_SQUARE_OPEN);
+        this->addTransition(STATE_START, "]", STATE_SQUARE_CLOSE);
+        this->addTransition(STATE_START, "{", STATE_CURLY_OPEN);
+        this->addTransition(STATE_START, "}", STATE_CURLY_CLOSE);
+        this->addTransition(STATE_START, "(", STATE_PARENTHESIS_OPEN);
+        this->addTransition(STATE_START, ")", STATE_PARENTHESIS_CLOSE);
+        this->addTransition(STATE_START, ".", STATE_DOT);
+
+        this->addTransition(STATE_START, "&", STATE_AMPERSAND);
+        this->addTransition(STATE_START, "|", STATE_BITWISE_OR);
+        this->addTransition(STATE_START, "~", STATE_BITWISE_NOT);
+        this->addTransition(STATE_START, "^", STATE_BITWISE_XOR);
+        
+        this->addTransition(STATE_START, "+", STATE_PLUS);
+        this->addTransition(STATE_START, "-", STATE_MINUS);
+        this->addTransition(STATE_START, "*", STATE_STAR);
+        this->addTransition(STATE_START, "/", STATE_SLASH);
+        this->addTransition(STATE_START, "%", STATE_MODULO);
+
+        this->addTransition(STATE_START, ">", STATE_GREATER_THAN);
+        this->addTransition(STATE_START, "<", STATE_LESS_THAN);
+        this->addTransition(STATE_START, "=", STATE_ASSIGNMENT);
+        this->addTransition(STATE_START, "?", STATE_QUESTION_MARK);
+        this->addTransition(STATE_START, ":", STATE_COLON);
+        this->addTransition(STATE_START, ";", STATE_SEMI_COLON);
+        this->addTransition(STATE_START, ",", STATE_COMMA);
+        
+        this->addTransition(STATE_MINUS, ">", STATE_ARROW);
+        this->addTransition(STATE_MINUS, "-", STATE_DEC);
+        this->addTransition(STATE_MINUS, "=", STATE_MINUS_ASSIGN);
+
+        this->addTransition(STATE_PLUS, "+", STATE_INC);
+        this->addTransition(STATE_PLUS, "=", STATE_PLUS_ASSIGN);
+        
+        this->addTransition(STATE_STAR, "=", STATE_MUL_ASSIGN);
+        this->addTransition(STATE_SLASH, "=", STATE_DIV_ASSIGN);
+        this->addTransition(STATE_SHIFT_LEFT, "=", STATE_LSHIFT_ASSIGN);
+        this->addTransition(STATE_SHIFT_RIGHT, "=", STATE_RSHIFT_ASSIGN);
+        
+        this->addTransition(STATE_LESS_THAN, "<", STATE_SHIFT_LEFT);
+        this->addTransition(STATE_LESS_THAN, "=", STATE_LESS_EQUALS);
+
+        this->addTransition(STATE_GREATER_THAN, ">", STATE_SHIFT_RIGHT);
+        this->addTransition(STATE_GREATER_THAN, "=", STATE_GREATER_EQUALS);
+        
+        this->addTransition(STATE_ASSIGNMENT, "=", STATE_EQUALITY_CHECK);
+
+        this->addTransition(STATE_LOGICAL_NOT, "=", STATE_NOT_EQUALS);
+        
+        this->addTransition(STATE_AMPERSAND, "&", STATE_LOGICAL_AND);
+        this->addTransition(STATE_AMPERSAND, "=", STATE_BITWISE_AND_ASSIGN);
+
+        this->addTransition(STATE_BITWISE_OR, "&", STATE_LOGICAL_OR);
+        this->addTransition(STATE_BITWISE_OR, "=", STATE_BITWISE_OR_ASSIGN);
+        
+        this->addTransition(STATE_BITWISE_XOR, "=", STATE_BITWISE_XOR_ASSIGN);
+
+        
+
         
         this->setStartState(STATE_START);
         this->restart();
