@@ -43,6 +43,7 @@ struct DFA{
 };
 
 
+
 struct NumConstDFA: public DFA{
     enum NumConstDFA_States{
         // start and error states (non accepting) 
@@ -72,7 +73,7 @@ struct NumConstDFA: public DFA{
             this->addState(i);
         }
 
-
+        // NOTE: STATE_ERROR is set to 0, which is the default transition value on adding a new state
         this->addTransition(STATE_START, "0", STATE_ZERO);
         this->addTransition(STATE_START, "123456789", STATE_DECIMAL);
 
@@ -105,7 +106,6 @@ struct NumConstDFA: public DFA{
         this->setStartState(STATE_START);
         this->restart();
 
-    
     }
 
     Token getToken(){
@@ -127,6 +127,118 @@ struct NumConstDFA: public DFA{
         
         case STATE_HEX:  
             t.type2 = TokenSecondaryType::TOKEN_NUMERIC_HEX; break;
+        
+        default:
+            t.type = TokenPrimaryType::TOKEN_ERROR;
+            t.type2 = TokenSecondaryType::TOKEN_NONE;
+            break;
+        }
+
+        return t;
+    }
+
+};
+
+
+
+struct PunctuatorDFA: public DFA{
+    enum PunctuatorDFA_States{
+        // start and error states (non accepting) 
+        STATE_ERROR = 0,
+        STATE_START,
+
+        // brackets
+        STATE_SQUARE_OPEN,
+        STATE_SQUARE_CLOSE,
+        STATE_CURLY_OPEN,
+        STATE_CURLY_CLOSE,
+        STATE_PARENTHESIS_OPEN,
+        STATE_PARENTHESIS_CLOSE,
+
+        STATE_DOT, // .
+        STATE_ARROW, // ->
+        
+        STATE_INC, // ++
+        STATE_DEC, // --
+        
+
+        // bitwise operators 
+        STATE_AMPERSAND, // represents both AND and ADDRESS
+        STATE_BITWISE_OR,
+        STATE_BITWISE_NOT,
+        STATE_BITWISE_XOR,
+        STATE_SHIFT_LEFT,
+        STATE_SHIFT_RIGHT,
+
+        // arithmetic operators
+        STATE_PLUS,
+        STATE_MINUS,
+        STATE_STAR, // represents deferencing and multiply
+        STATE_SLASH,
+        STATE_MODULO,
+
+        // logical operators
+        STATE_LESS_THAN,
+        STATE_GREATER_THAN,
+        
+        STATE_LESS_EQUALS,
+        STATE_GREATER_EQUALS,
+        STATE_EQUALITY_CHECK, // ==
+        STATE_NOT_EQUALS,
+
+        STATE_LOGICAL_AND,
+        STATE_LOGICAL_OR,
+        STATE_LOGICAL_NOT,
+        
+        
+        // assignment 
+        STATE_ASSIGNMENT, // =
+        STATE_PLUS_ASSIGN,
+        STATE_MINUS_ASSIGN,
+        STATE_MUL_ASSIGN,
+        STATE_DIV_ASSIGN,
+        STATE_LSHIFT_ASSIGN,
+        STATE_RSHIFT_ASSIGN,
+        STATE_BITWISE_AND_ASSIGN,
+        STATE_BITWISE_OR_ASSIGN,
+        STATE_BITWISE_XOR_ASSIGN,
+
+
+        // punctuators?
+        STATE_QUESTION_MARK,
+        STATE_COLON,
+        STATE_SEMI_COLON,
+        STATE_COMMA,
+        
+
+        // currently havent supported these
+        // ... # ##
+        // <: :> <% %> %: %:%: digraphs and trigraphs
+
+
+        STATE_COUNT,
+    };
+
+    void init(){        
+
+        for (int i=0; i<STATE_COUNT; i++){
+            this->addState(i);
+        }
+
+        // NOTE: STATE_ERROR is set to 0, which is the default transition value on adding a new state
+        // TODO: add transitions
+        
+        this->setStartState(STATE_START);
+        this->restart();
+
+    }
+
+    Token getToken(){
+        Token t;
+        t.type = TokenPrimaryType::TOKEN_NUMBER;
+        
+        // TODO: 
+        switch (this->currentState){
         
         default:
             t.type = TokenPrimaryType::TOKEN_ERROR;

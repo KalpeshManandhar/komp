@@ -10,6 +10,8 @@
     Non-numeric: [A-Z],[a-z],_
 
     Identifier char (characters in an identifier): [A-Z],[a-z],_,[0-9] 
+    start with [a-z _][a-z0-9_]* 
+
     Number char (characters in an numeric constant): [a-f],[A-F],[0-9],. 
     - Decimal int: [1-9] [0-9]* 
     - Hex int: 0x[0-9 a-f]*
@@ -20,12 +22,12 @@
     Whitespaces: Spaces, tabs, newlines, carriage returns
     Punctuations: 
     [ ] ( ) { } . ->
-    ++ -- & * + - ~ !
+    ++   -- & * + - ~ !
     / % << >> < > <= >= ==
     != ^ | && || ? : ; ...
     = *= /= %= += -= <<= >>=
     &= ^= |= , # ##
-    <: :> <% %> %: %:%:
+    <: :> <% %> %: %:%: 
     
 
 
@@ -88,6 +90,7 @@ void Tokenizer::skipWhitespaces(){
 
 
 void Tokenizer::init(){
+    // initialize the dfa for scanning numeric constants
     this->numDFA.init();
 
 
@@ -119,6 +122,7 @@ Token Tokenizer::getNumberToken(){
     size_t tokenStart = this->cursor;
     
     this->numDFA.restart();
+    // 0x12s
     while (!this->isEOF() && !isWhitespace(this->buffer[this->cursor])
             && (!isPunctuatorChar(this->buffer[this->cursor]) || isNumberChar(this->buffer[this->cursor]))){
         this->numDFA.transition(this->buffer[this->cursor]);
@@ -149,7 +153,7 @@ Token Tokenizer::getPunctuatorToken(){
     s.len  = this->cursor - tokenStart;
     
     Token t;
-    t.type = TokenPrimaryType::TOKEN_NUMBER;
+    t.type = TokenPrimaryType::TOKEN_PUNCTUATOR;
     t.type2 = TokenSecondaryType::TOKEN_NONE;
     t.string = s;
     return t;
@@ -184,7 +188,7 @@ Token Tokenizer::nextToken(){
         t = this->getNumberToken();
     }
     else if (isPunctuatorChar(this->buffer[this->cursor])){
-
+        t = this->getPunctuatorToken();
     }
     else{
         this->skipNonWhitespaces();
