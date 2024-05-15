@@ -61,12 +61,14 @@ struct NumConstDFA: public DFA{
         STATE_B,
         STATE_POINT,
         
+        ACCEPTING_STATES_START,
+
         // accepting states
         STATE_ZERO,
-        STATE_OCTAL,
         STATE_HEX,
         STATE_BINARY,
         STATE_DECIMAL,
+        STATE_OCTAL,
         STATE_DOUBLE,
 
         STATE_COUNT,
@@ -151,6 +153,11 @@ struct PunctuatorDFA: public DFA{
         // start and error states (non accepting) 
         STATE_ERROR = 0,
         STATE_START,
+        
+        // start of accepting states, 
+        // all following states are in same sequence as in their counterparts in 
+        // TokenSecondaryType
+        ACCEPTING_STATES_START,
 
         // brackets
         STATE_SQUARE_OPEN,
@@ -297,17 +304,15 @@ struct PunctuatorDFA: public DFA{
 
     Token getToken(){
         Token t;
-        t.type = TokenPrimaryType::TOKEN_NUMBER;
         
-        // TODO: 
-        switch (this->currentState){
-        
-        default:
+        if (this->currentState > ACCEPTING_STATES_START){
+            t.type = TokenPrimaryType::TOKEN_PUNCTUATOR;
+            t.type2 = TokenSecondaryType::TOKEN_PUNCTUATORS_START + (this->currentState - ACCEPTING_STATES_START); 
+        }
+        else{
             t.type = TokenPrimaryType::TOKEN_ERROR;
             t.type2 = TokenSecondaryType::TOKEN_NONE;
-            break;
         }
-
         return t;
     }
 

@@ -50,3 +50,5 @@ static const char *KEYWORDS[] = {
     "_Static_assert",
     "_Thread_local",
 };
+
+static const int N_KEYWORDS = sizeof(KEYWORDS)/sizeof(*KEYWORDS);

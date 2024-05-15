@@ -111,11 +111,20 @@ Token Tokenizer::getIdentifierToken(){
     Splice s;
     s.data = &this->buffer[tokenStart];
     s.len  = this->cursor - tokenStart;
-    
+
     Token t;
     t.type = TokenPrimaryType::TOKEN_IDENTIFIER;
     t.type2 = TokenSecondaryType::TOKEN_NONE;
     t.string = s;
+    
+    // compare with keywords
+    for (int i=0; i<N_KEYWORDS; i++){
+        if (compare(s, KEYWORDS[i])){
+            t.type = TokenPrimaryType::TOKEN_KEYWORD;
+            break;
+        }
+    }
+    
     return t;
 }
 
@@ -123,7 +132,6 @@ Token Tokenizer::getNumberToken(){
     size_t tokenStart = this->cursor;
     
     this->numDFA.restart();
-    // 0x12s
     while (!this->isEOF() && !isWhitespace(this->buffer[this->cursor])
             && (!isPunctuatorChar(this->buffer[this->cursor]) || isNumberChar(this->buffer[this->cursor]))){
         this->numDFA.transition(this->buffer[this->cursor]);
@@ -158,9 +166,7 @@ Token Tokenizer::getPunctuatorToken(){
     s.data = &this->buffer[tokenStart];
     s.len  = this->cursor - tokenStart;
     
-    Token t;
-    t.type = TokenPrimaryType::TOKEN_PUNCTUATOR;
-    t.type2 = TokenSecondaryType::TOKEN_NONE;
+    Token t = this->puncDFA.getToken();
     t.string = s;
     return t;
 }

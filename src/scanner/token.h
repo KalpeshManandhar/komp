@@ -29,13 +29,20 @@ static const char *TOKEN_PRIMARY_TYPE_STRING[] = {
 
 enum TokenSecondaryType{
     TOKEN_NONE,
-
+    
+    // to be used to return tokens based on states of the dfa
+    TOKEN_NUMERIC_CONSTANTS_START,
+    
     TOKEN_NUMERIC_HEX,
     TOKEN_NUMERIC_BIN,
     TOKEN_NUMERIC_DEC,
     TOKEN_NUMERIC_OCT,
     TOKEN_NUMERIC_DOUBLE,
     
+
+    // to be used to return tokens based on states of the dfa
+    TOKEN_PUNCTUATORS_START,
+
     TOKEN_SQUARE_OPEN,
     TOKEN_SQUARE_CLOSE,
     TOKEN_CURLY_OPEN,
@@ -49,7 +56,7 @@ enum TokenSecondaryType{
     TOKEN_INC, // ++
     TOKEN_DEC, // --
     
-
+    
     // bitwise operators 
     TOKEN_AMPERSAND, // represents both AND and ADDRESS
     TOKEN_BITWISE_OR, // |
@@ -106,12 +113,14 @@ enum TokenSecondaryType{
 static const char *TOKEN_SECONDARY_TYPE_STRING[] = {
     "",
 
+    "",// TOKEN_NUMERIC_CONSTANTS_START,
     "TOKEN_NUMERIC_HEX",
     "TOKEN_NUMERIC_BIN",
     "TOKEN_NUMERIC_DEC",
     "TOKEN_NUMERIC_OCT",
     "TOKEN_NUMERIC_DOUBLE",
 
+    "", // TOKEN_PUNCTUATORS_START
     "TOKEN_SQUARE_OPEN",
     "TOKEN_SQUARE_CLOSE",
     "TOKEN_CURLY_OPEN",
