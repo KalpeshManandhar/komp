@@ -16,10 +16,12 @@ private:
 
     NumConstDFA numDFA;
     PunctuatorDFA puncDFA;
+    StringLitDFA strDFA;
 
 
     Token getIdentifierToken();
     Token getNumberToken();
+    Token getStringLiteralToken();
     Token getPunctuatorToken();
 
     Token getIntegerToken_Hex();

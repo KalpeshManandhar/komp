@@ -73,6 +73,11 @@ static bool isNumberChar(char c){
     return isNumeric(c) || c == '.' || c == 'x' || isBetween(c, 'a', 'f') || isBetween(c, 'A', 'F');
 }
 
+static bool isStringLiteralChar(char c){
+    return c >= ' ' && c <= '~';
+}
+
+
 
 
 void Tokenizer::skipNonWhitespaces(){
@@ -93,6 +98,7 @@ void Tokenizer::init(){
     // initialize the dfas 
     this->numDFA.init();
     this->puncDFA.init();
+    this->strDFA.init();
 
 
 }
@@ -124,6 +130,31 @@ Token Tokenizer::getIdentifierToken(){
             break;
         }
     }
+    
+    return t;
+}
+
+
+Token Tokenizer::getStringLiteralToken(){
+    size_t tokenStart = this->cursor;
+
+    this->strDFA.restart();
+    while (!this->isEOF() && isStringLiteralChar(this->buffer[this->cursor])){
+        if (this->strDFA.willErrorTransition(this->buffer[this->cursor])){
+            break;
+        }
+        this->strDFA.transition(this->buffer[this->cursor]);
+        this->cursor++;
+    }
+
+    Splice s;
+    s.data = &this->buffer[tokenStart];
+    s.len  = this->cursor - tokenStart;
+
+    Token t;
+    t.type = TokenPrimaryType::TOKEN_STRING_LITERAL;
+    t.type2 = TokenSecondaryType::TOKEN_NONE;
+    t.string = s;
     
     return t;
 }
@@ -181,14 +212,15 @@ bool Tokenizer::isEOF(){
 
 
 Token Tokenizer::nextToken(){
+    // get to next token
+    this->skipWhitespaces();
+
     if (this->isEOF()){
         return Token{
             TOKEN_EOF
         };
     }
 
-    // get to next token
-    this->skipWhitespaces();
 
     Token t = {0};
     
@@ -196,17 +228,24 @@ Token Tokenizer::nextToken(){
     if (isNonNumeric(this->buffer[this->cursor])){
         t = this->getIdentifierToken();
     }
+    // is a numeric digit: numeric constant
     else if (isNumeric(this->buffer[this->cursor])){
         t = this->getNumberToken();
     }
+    // is a punctuator character: punctuator
     else if (isPunctuatorChar(this->buffer[this->cursor])){
         t = this->getPunctuatorToken();
+    }
+    // starts with ": string
+    else if (this->buffer[this->cursor] == '"'){
+        t = this->getStringLiteralToken();
     }
     else{
         t.type = TOKEN_ERROR;
     }
 
     if (t.type == TOKEN_ERROR){
+        
         this->skipNonWhitespaces();
     }
 

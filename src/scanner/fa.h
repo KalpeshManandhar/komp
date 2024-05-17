@@ -36,6 +36,14 @@ struct DFA{
             transitionTable[s].transitions[a[i]] = sNext;
         }
     }
+    
+    void addTransitionRange(int s, char start, char end, int sNext){
+        assert(transitionTable.contains(s) && transitionTable.contains(sNext));
+        
+        for (int i=start; i<=end; i++){
+            transitionTable[s].transitions[i] = sNext;
+        }
+    }
 
     void transition(char a){
         currentState = transitionTable[currentState].transitions[a];
@@ -315,6 +323,63 @@ struct PunctuatorDFA: public DFA{
         }
         return t;
     }
+
+};
+
+
+
+
+struct StringLitDFA: public DFA{
+    enum StringLitDFA_States{
+        STATE_ERROR = 0,
+        STATE_START,
+
+        STATE_START_QUOTE,
+        STATE_BACKSLASH,
+        
+        STATE_END_QUOTE,
+
+        STATE_COUNT
+
+    };
+
+    void init(){        
+
+        for (int i=0; i<STATE_COUNT; i++){
+            this->addState(i);
+
+        }
+
+        // NOTE: STATE_ERROR is set to 0, which is the default transition value on adding a new state
+        this->addTransition(STATE_START, "\"", STATE_START_QUOTE);
+
+        this->addTransitionRange(STATE_START_QUOTE, ' ', '~', STATE_START_QUOTE);
+        this->addTransition(STATE_START_QUOTE, "\\", STATE_BACKSLASH);
+        this->addTransition(STATE_START_QUOTE, "\"", STATE_END_QUOTE);
+
+        this->addTransition(STATE_BACKSLASH, "\\nrabftv0\"?", STATE_START_QUOTE);
+
+        
+        this->setStartState(STATE_START);
+        this->restart();
+
+    }
+
+
+    Token getToken(){
+        Token t;
+        
+        if (this->currentState == STATE_END_QUOTE){
+            t.type = TokenPrimaryType::TOKEN_STRING_LITERAL;
+            t.type2 = TokenSecondaryType::TOKEN_NONE; 
+        }
+        else{
+            t.type = TokenPrimaryType::TOKEN_ERROR;
+            t.type2 = TokenSecondaryType::TOKEN_NONE;
+        }
+        return t;
+    }
+
 
 };
 
