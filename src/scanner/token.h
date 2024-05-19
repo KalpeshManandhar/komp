@@ -34,13 +34,15 @@ enum TokenSecondaryType{
     TOKEN_NONE,
     
     // to be used to return tokens based on states of the dfa
-    TOKEN_NUMERIC_CONSTANTS_START,
-    
+    // CURRENTLY NOT USED
+    // TOKEN_NUMERIC_CONSTANTS_START,
+
     TOKEN_NUMERIC_HEX,
     TOKEN_NUMERIC_BIN,
     TOKEN_NUMERIC_DEC,
     TOKEN_NUMERIC_OCT,
     TOKEN_NUMERIC_DOUBLE,
+    TOKEN_NUMERIC_FLOAT,
     
 
     // to be used to return tokens based on states of the dfa

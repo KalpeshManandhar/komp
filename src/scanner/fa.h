@@ -78,6 +78,7 @@ struct NumConstDFA: public DFA{
         STATE_DECIMAL,
         STATE_OCTAL,
         STATE_DOUBLE,
+        STATE_FLOAT,
 
         STATE_COUNT,
     };
@@ -96,7 +97,7 @@ struct NumConstDFA: public DFA{
         this->addTransition(STATE_ZERO, "bB", STATE_B);
         this->addTransition(STATE_ZERO, "01234567", STATE_OCTAL);
         this->addTransition(STATE_ZERO, "89", STATE_INVALID_OCTAL);
-        this->addTransition(STATE_ZERO, ".", STATE_POINT);
+        this->addTransition(STATE_ZERO, ".", STATE_DOUBLE);
 
         this->addTransition(STATE_X, "0123456789abcdefABCDEF", STATE_HEX);
         this->addTransition(STATE_HEX, "0123456789abcdefABCDEF", STATE_HEX);
@@ -105,17 +106,18 @@ struct NumConstDFA: public DFA{
         this->addTransition(STATE_BINARY, "01", STATE_BINARY);
 
         this->addTransition(STATE_INVALID_OCTAL, "0123456789", STATE_INVALID_OCTAL);
-        this->addTransition(STATE_INVALID_OCTAL, ".", STATE_POINT);
+        this->addTransition(STATE_INVALID_OCTAL, ".", STATE_DOUBLE);
         
         this->addTransition(STATE_OCTAL, "01234567", STATE_OCTAL);
         this->addTransition(STATE_OCTAL, "89", STATE_INVALID_OCTAL);
-        this->addTransition(STATE_OCTAL, ".", STATE_POINT);
+        this->addTransition(STATE_OCTAL, ".", STATE_DOUBLE);
 
         this->addTransition(STATE_DECIMAL, "0123456789", STATE_DECIMAL);
-        this->addTransition(STATE_DECIMAL, ".", STATE_POINT);
+        this->addTransition(STATE_DECIMAL, ".", STATE_DOUBLE);
 
-        this->addTransition(STATE_POINT, "0123456789", STATE_DOUBLE);
+        
         this->addTransition(STATE_DOUBLE, "0123456789", STATE_DOUBLE);
+        this->addTransition(STATE_DOUBLE, "f", STATE_FLOAT);
 
         
         this->setStartState(STATE_START);
@@ -130,15 +132,17 @@ struct NumConstDFA: public DFA{
         case STATE_BINARY:  
             t.type2 = TokenSecondaryType::TOKEN_NUMERIC_BIN; break;
         
+        case STATE_ZERO:  
         case STATE_DECIMAL:  
             t.type2 = TokenSecondaryType::TOKEN_NUMERIC_DEC; break;
         
         case STATE_OCTAL:  
             t.type2 = TokenSecondaryType::TOKEN_NUMERIC_OCT; break;
         
-        case STATE_ZERO:  
         case STATE_DOUBLE:  
             t.type2 = TokenSecondaryType::TOKEN_NUMERIC_DOUBLE; break;
+        case STATE_FLOAT:  
+            t.type2 = TokenSecondaryType::TOKEN_NUMERIC_FLOAT; break;
         
         case STATE_HEX:  
             t.type2 = TokenSecondaryType::TOKEN_NUMERIC_HEX; break;
@@ -272,6 +276,7 @@ struct PunctuatorDFA: public DFA{
         this->addTransition(STATE_START, ":", STATE_COLON);
         this->addTransition(STATE_START, ";", STATE_SEMI_COLON);
         this->addTransition(STATE_START, ",", STATE_COMMA);
+        this->addTransition(STATE_START, "!", STATE_LOGICAL_NOT);
         this->addTransition(STATE_START, "#", STATE_HASH);
         
         this->addTransition(STATE_MINUS, ">", STATE_ARROW);
@@ -378,9 +383,23 @@ struct StringLitDFA: public DFA{
             t.type2 = TokenSecondaryType::TOKEN_NONE;
         }
         return t;
+
     }
 
 
 };
+
+
+struct CommentDFA{
+    enum CommentDFA_States{
+        STATE_ERROR,
+        STATE_START,
+
+        STATE_SLASH,
+
+        STATE_COUNT,
+    };
+};
+
 
 

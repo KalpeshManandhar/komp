@@ -92,6 +92,41 @@ void Tokenizer::skipWhitespaces(){
     }
 }
 
+void Tokenizer::skipUntil(char c){
+    while (!this->isEOF() && this->buffer[this->cursor] != c){
+        this->cursor++;
+    }
+}
+
+void Tokenizer::skipComments(){
+    if (!this->isEOF() && this->buffer[this->cursor] == '/'){
+        // if single line comment, skip until a newline
+        if ((this->cursor + 1) < this->bufferSize && this->buffer[this->cursor + 1] == '/'){
+            this->skipUntil('\n');
+            this->cursor++;
+        }
+        // if multi line comment, skip until */ is found
+        else if ((this->cursor + 1) < this->bufferSize && this->buffer[this->cursor + 1] == '*'){
+            // skip until a *, then check if next char is a /
+            while (true){
+                this->skipUntil('*');
+                this->cursor++;
+                
+                // if eof is encountered before finding a */, return error
+                if (this->isEOF()){
+                    std::cout<<"ERROR: Multiline comment no end";
+                    return;
+                } 
+                if (this->buffer[this->cursor] == '/'){
+                    this->cursor++;
+                    break;
+                }
+            }
+
+        }
+    }   
+}
+
 
 
 void Tokenizer::init(){
@@ -209,17 +244,29 @@ bool Tokenizer::isEOF(){
 
 
 
-
+int errors = 0;
 
 Token Tokenizer::nextToken(){
-    // get to next token
-    this->skipWhitespaces();
+    // loop until a valid token is reached
+    while(true){
+        // get to next token
+        this->skipWhitespaces();
+        
+        // check if it is start of a comment and skip
+        if (!this->checkForComments())
+            break;
+
+        this->skipComments();
+    }
 
     if (this->isEOF()){
+        std::cout<<"Errors"<<errors;
         return Token{
             TOKEN_EOF
         };
     }
+
+
 
 
     Token t = {0};
@@ -245,7 +292,7 @@ Token Tokenizer::nextToken(){
     }
 
     if (t.type == TOKEN_ERROR){
-        
+        errors++;
         this->skipNonWhitespaces();
     }
 
@@ -269,4 +316,19 @@ void Tokenizer::loadFileToBuffer(const char *filepath){
 
     this->cursor = 0;
     f.close();
+}
+
+
+bool Tokenizer::checkForComments(){
+    if (!this->isEOF() && this->buffer[this->cursor] == '/'){
+        // check for "//"
+        if ((this->cursor + 1) < this->bufferSize && this->buffer[this->cursor + 1] == '/'){
+            return true;
+        }
+        // check for "/*"
+        if ((this->cursor + 1) < this->bufferSize && this->buffer[this->cursor + 1] == '*'){
+            return true;
+        }
+    }
+    return false;
 }

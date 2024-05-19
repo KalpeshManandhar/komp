@@ -30,6 +30,9 @@ private:
 
 
 
+    bool checkForComments();
+    void skipComments();
+    void skipUntil(char c);
     void skipNonWhitespaces();
     void skipWhitespaces();
     bool isEOF();
