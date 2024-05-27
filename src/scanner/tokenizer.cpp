@@ -155,13 +155,12 @@ Token Tokenizer::getIdentifierToken(){
 
     Token t;
     t.type = TokenPrimaryType::TOKEN_IDENTIFIER;
-    t.type2 = TokenSecondaryType::TOKEN_NONE;
     t.string = s;
     
     // compare with keywords
     for (int i=0; i<N_KEYWORDS; i++){
         if (compare(s, KEYWORDS[i])){
-            t.type = TokenPrimaryType::TOKEN_KEYWORD;
+            t.type = TokenPrimaryType::TOKEN_KEYWORDS_START + i + 1;
             break;
         }
     }
@@ -188,7 +187,6 @@ Token Tokenizer::getStringLiteralToken(){
 
     Token t;
     t.type = TokenPrimaryType::TOKEN_STRING_LITERAL;
-    t.type2 = TokenSecondaryType::TOKEN_NONE;
     t.string = s;
     
     return t;

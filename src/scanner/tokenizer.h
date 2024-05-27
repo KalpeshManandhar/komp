@@ -24,14 +24,10 @@ private:
     Token getStringLiteralToken();
     Token getPunctuatorToken();
 
-    Token getIntegerToken_Hex();
-    Token getIntegerToken_Binary();
-    Token getIntegerToken_Decimal();
-
-
 
     bool checkForComments();
     void skipComments();
+    
     void skipUntil(char c);
     void skipNonWhitespaces();
     void skipWhitespaces();
