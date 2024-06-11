@@ -33,7 +33,17 @@ private:
     void skipWhitespaces();
     bool isEOF();
 
+    char peekChar();
+    char consumeNextChar();
+
+
 public:    
+
+    size_t lineNo;
+    size_t charNo;
+    char fileName[100];
+    size_t errors;
+
     void init();
     void loadFileToBuffer(const char *filepath);
     Token nextToken();

@@ -129,25 +129,25 @@ struct NumConstDFA: public DFA{
         Token t;
         switch (this->currentState){
         case STATE_BINARY:  
-            t.type = TokenPrimaryType::TOKEN_NUMERIC_BIN; break;
+            t.type = TokenType::TOKEN_NUMERIC_BIN; break;
         
         case STATE_ZERO:  
         case STATE_DECIMAL:  
-            t.type = TokenPrimaryType::TOKEN_NUMERIC_DEC; break;
+            t.type = TokenType::TOKEN_NUMERIC_DEC; break;
         
         case STATE_OCTAL:  
-            t.type = TokenPrimaryType::TOKEN_NUMERIC_OCT; break;
+            t.type = TokenType::TOKEN_NUMERIC_OCT; break;
         
         case STATE_DOUBLE:  
-            t.type = TokenPrimaryType::TOKEN_NUMERIC_DOUBLE; break;
+            t.type = TokenType::TOKEN_NUMERIC_DOUBLE; break;
         case STATE_FLOAT:  
-            t.type = TokenPrimaryType::TOKEN_NUMERIC_FLOAT; break;
+            t.type = TokenType::TOKEN_NUMERIC_FLOAT; break;
         
         case STATE_HEX:  
-            t.type = TokenPrimaryType::TOKEN_NUMERIC_HEX; break;
+            t.type = TokenType::TOKEN_NUMERIC_HEX; break;
         
         default:
-            t.type = TokenPrimaryType::TOKEN_ERROR;
+            t.type = TokenType::TOKEN_ERROR;
             break;
         }
 
@@ -317,10 +317,10 @@ struct PunctuatorDFA: public DFA{
         Token t;
         
         if (this->currentState > ACCEPTING_STATES_START){
-            t.type = TokenPrimaryType::TOKEN_PUNCTUATORS_START + (this->currentState - ACCEPTING_STATES_START); 
+            t.type = TokenType::TOKEN_PUNCTUATORS_START + (this->currentState - ACCEPTING_STATES_START); 
         }
         else{
-            t.type = TokenPrimaryType::TOKEN_ERROR;
+            t.type = TokenType::TOKEN_ERROR;
         }
         return t;
     }
@@ -371,10 +371,10 @@ struct StringLitDFA: public DFA{
         Token t;
         
         if (this->currentState == STATE_END_QUOTE){
-            t.type = TokenPrimaryType::TOKEN_STRING_LITERAL;
+            t.type = TokenType::TOKEN_STRING_LITERAL;
         }
         else{
-            t.type = TokenPrimaryType::TOKEN_ERROR;
+            t.type = TokenType::TOKEN_ERROR;
         }
         return t;
 
