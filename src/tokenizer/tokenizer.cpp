@@ -83,19 +83,19 @@ static bool isStringLiteralChar(char c){
 
 void Tokenizer::skipNonWhitespaces(){
     while (!isWhitespace(this->buffer[this->cursor])){
-        this->consumeNextChar();
+        this->consumeChar();
     }
 }
 
 void Tokenizer::skipWhitespaces(){
     while (isWhitespace(this->buffer[this->cursor])){
-        this->consumeNextChar();
+        this->consumeChar();
     }
 }
 
 void Tokenizer::skipUntil(char c){
     while (!this->isEOF() && this->buffer[this->cursor] != c){
-        this->consumeNextChar();
+        this->consumeChar();
     }
 }
 
@@ -104,14 +104,14 @@ void Tokenizer::skipComments(){
         // if single line comment, skip until a newline
         if ((this->cursor + 1) < this->bufferSize && this->buffer[this->cursor + 1] == '/'){
             this->skipUntil('\n');
-            this->consumeNextChar();
+            this->consumeChar();
         }
         // if multi line comment, skip until */ is found
         else if ((this->cursor + 1) < this->bufferSize && this->buffer[this->cursor + 1] == '*'){
             // skip until a *, then check if next char is a /
             while (true){
                 this->skipUntil('*');
-                this->consumeNextChar();
+                this->consumeChar();
                 
                 // if eof is encountered before finding a */, return error
                 if (this->isEOF()){
@@ -119,7 +119,7 @@ void Tokenizer::skipComments(){
                     return;
                 } 
                 if (this->buffer[this->cursor] == '/'){
-                    this->consumeNextChar();
+                    this->consumeChar();
                     break;
                 }
             }
@@ -151,7 +151,7 @@ void Tokenizer::init(){
 Token Tokenizer::getIdentifierToken(){
     size_t tokenStart = this->cursor;
     while (!this->isEOF() && isIdentifierChar(this->peekChar())){
-        this->consumeNextChar();
+        this->consumeChar();
     }
 
     Splice s;
@@ -183,7 +183,7 @@ Token Tokenizer::getStringLiteralToken(){
             break;
         }
         this->strDFA.transition(this->buffer[this->cursor]);
-        this->consumeNextChar();
+        this->consumeChar();
     }
 
     Splice s;
@@ -204,7 +204,7 @@ Token Tokenizer::getNumberToken(){
     while (!this->isEOF() && !isWhitespace(this->buffer[this->cursor])
             && (!isPunctuatorChar(this->buffer[this->cursor]) || isNumberChar(this->buffer[this->cursor]))){
         this->numDFA.transition(this->buffer[this->cursor]);
-        this->consumeNextChar();
+        this->consumeChar();
     }
 
     
@@ -228,7 +228,7 @@ Token Tokenizer::getPunctuatorToken(){
             break;
         }
         this->puncDFA.transition(this->buffer[this->cursor]);
-        this->consumeNextChar();
+        this->consumeChar();
     }
     
     Splice s;
@@ -262,7 +262,7 @@ Token Tokenizer::nextToken(){
     }
 
     if (this->isEOF()){
-        std::cout<<"Errors: "<< errors;
+        std::cout<<errors << " errors generated\n";
         return Token{
             .type = TOKEN_EOF
         };
@@ -344,7 +344,7 @@ char Tokenizer::peekChar(){
     return this->buffer[this->cursor];
 }
 
-char Tokenizer::consumeNextChar(){
+char Tokenizer::consumeChar(){
     char c = this->buffer[this->cursor];
     if (c == '\n'){
         this->lineNo++;

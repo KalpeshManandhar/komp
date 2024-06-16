@@ -3,6 +3,11 @@
 #include "str.h"
 
 
+struct Token{
+    int type;
+    Splice string;
+};
+
 enum TokenType{
     TOKEN_ERROR,
     TOKEN_IDENTIFIER,
@@ -269,8 +274,3 @@ static const char *TOKEN_TYPE_STRING[] = {
 };
 
 
-
-struct Token{
-    int type;
-    Splice string;
-};

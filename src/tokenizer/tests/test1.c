@@ -31,7 +31,7 @@ Vec2 moves(int n){
 
 
 int main(){
-    const int N = 0b124;
+    const int N = 5;
     for (int i=0; i<N*N; i++){
         Vec2 v = moves(i+1);
         printf("(%d %d)\t", v.x, v.y);

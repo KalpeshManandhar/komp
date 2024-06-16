@@ -19,6 +19,7 @@ private:
     StringLitDFA strDFA;
 
 
+
     Token getIdentifierToken();
     Token getNumberToken();
     Token getStringLiteralToken();
@@ -34,7 +35,7 @@ private:
     bool isEOF();
 
     char peekChar();
-    char consumeNextChar();
+    char consumeChar();
 
 
 public:    
