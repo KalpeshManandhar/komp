@@ -1,1 +1,1 @@
-hello = 0x12;
+hello = (hii << 0x123)/125;

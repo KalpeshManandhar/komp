@@ -1,12 +1,6 @@
 #include "parser.h"
 
 
-void printParseTree(){
-    
-}
-
-
-
 int main(int argc, char **argv){
     if (argc < 2){
         fprintf(stderr, "Usage: %s <c file to parse>", argv[0]);

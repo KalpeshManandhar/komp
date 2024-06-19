@@ -15,7 +15,7 @@ int main(int argc, char ** argv){
 
     while (true){
         Token token = t.nextToken();
-        // std::cout<<token.string<<":\t"<<TOKEN_TYPE_STRING[token.type]<<"\n";
+        std::cout<<token.string<<":\t"<<TOKEN_TYPE_STRING[token.type]<<"\n";
         if (token.type == TOKEN_EOF){
             break;
         }
