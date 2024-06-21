@@ -15,7 +15,9 @@ int main(int argc, char **argv){
     p.init(&t);
 
     if (p.parse()){
-        fprintf(stdout, "Parse succeeded :)");
+        fprintf(stdout, "Parse succeeded :)\n");
+
+        printParseTree(p.root);
     }
 
     

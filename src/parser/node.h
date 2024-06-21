@@ -4,28 +4,43 @@
 
 /*
 statement: expr;
-expr : assignment 
-assignment : lvalue = rvalue
+expr : assignment
 
+
+assignment : lvalue = rvalue
 lvalue : identifier
-rvalue : primary | subexpr
+rvalue : subexpr
 subexpr : primary operator subexpr | primary
 primary : (subexpr) | identifier | literal
-
 operator : + | - | / | * 
+
 */
 
 
 struct Node{
+    enum Tag{
+        NODE_SUBEXPR,
+        NODE_LVALUE,
+        NODE_RVALUE,
+        NODE_ASSIGNMENT,
+    };
     int tag;
 };
 
+static const char* NODE_TAG_STRINGS[] = {
+    "SUBEXPR",
+    "LVALUE",
+    "RVALUE",
+    "ASSIGNMENT",
+};
+
 struct Subexpr: public Node{
-    enum Tag{
-        SUBEXPR_RECURSE_PARENTHESIS,
+    enum SubTag{
+        SUBEXPR_RECURSE_PARENTHESIS = 1,
         SUBEXPR_RECURSE_OP,
+        SUBEXPR_STOP_RECURSE,
         SUBEXPR_LEAF,
-    }tag;
+    }subtag;
     
     union{
         struct{        

@@ -37,4 +37,4 @@ public:
 };
 
 
-void printParseTree(Parser *const p);
+void printParseTree(Node *const root, int depth = 0);
