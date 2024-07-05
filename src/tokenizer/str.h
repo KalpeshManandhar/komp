@@ -19,8 +19,9 @@ static int copyToArr(Splice src, char *dest, int destSize){
 }
 
 static bool compare(Splice s, const char* str){
-    int last = std::min(strlen(str), s.len);
-    return strncmp(s.data, str, last) == 0;
+    if (strlen(str) != s.len) 
+        return false; 
+    return strncmp(s.data, str, s.len) == 0;
 }
 
 static std::ostream & operator <<(std::ostream &out, Splice s){
