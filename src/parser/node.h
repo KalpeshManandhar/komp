@@ -4,8 +4,7 @@
 
 /*
 statement: expr;
-expr : assignment
-
+statement: (assignment | declaration);
 
 assignment : lvalue = rvalue
 lvalue : identifier
@@ -13,6 +12,10 @@ rvalue : subexpr
 subexpr : primary operator subexpr | primary
 primary : (subexpr) | identifier | literal
 operator : + | - | / | * 
+
+
+declaration: type identifier (= rvalue)*
+
 
 */
 
@@ -69,6 +72,6 @@ struct Assignment: public Node{
 
 
 struct Declaration: public Node{
-    
+    Token type;
 };
 

@@ -5,7 +5,7 @@
 
 #define ARRAY_COUNT(x) sizeof((x))/sizeof(*(x))
 
-static TokenType primaryTokenTypes[] = {
+static TokenType PRIMARY_TOKEN_TYPES[] = {
     TOKEN_IDENTIFIER, 
     TOKEN_CHARACTER_LITERAL, 
     TOKEN_STRING_LITERAL, 
@@ -17,7 +17,7 @@ static TokenType primaryTokenTypes[] = {
     TOKEN_NUMERIC_OCT
 };
 
-static TokenType binaryOperators[] = {
+static TokenType BINARY_OP_TOKENS[] = {
     TOKEN_PLUS, 
     TOKEN_MINUS, 
     TOKEN_STAR, 
@@ -30,11 +30,39 @@ static TokenType binaryOperators[] = {
 };
 
 
-bool Parser::expect(TokenType type){
+// referenced from https://en.cppreference.com/w/c/language/operator_precedence
+int precedence(Token opToken){
+    switch (opToken.type){
+    case TOKEN_STAR:
+    case TOKEN_SLASH:
+        return 3;
+    case TOKEN_PLUS:
+    case TOKEN_MINUS:
+        return 4;
+    case TOKEN_SHIFT_LEFT:
+    case TOKEN_SHIFT_RIGHT:
+        return 5;
+    case TOKEN_AMPERSAND:
+        return 8;
+    case TOKEN_BITWISE_XOR:
+        return 9;
+    case TOKEN_BITWISE_OR:
+        return 10;
+    
+    default:
+        return INT32_MAX;
+    }
+}
+
+
+
+
+
+bool Parser::match(TokenType type){
     return currentToken.type == type;
 }
 
-bool Parser::expectv(TokenType type[], int n){
+bool Parser::matchv(TokenType type[], int n){
     for (int i=0; i<n; i++){
         if (currentToken.type == type[i]){
             return true;
@@ -56,7 +84,7 @@ Token Parser::consumeToken(){
 
 
 Node* Parser::parseLVal(){
-    assert(this->expect(TOKEN_IDENTIFIER));
+    assert(this->match(TOKEN_IDENTIFIER));
     
     Lvalue *l = new Lvalue;
     l->tag = Node::NODE_LVALUE;
@@ -72,20 +100,34 @@ Node* Parser::parseRVal(){
 }
 
 Node* Parser::parseSubexpr(){
-    Subexpr *s = new Subexpr;
-    s->tag = Node::NODE_SUBEXPR;
+    
+    Subexpr *left = (Subexpr*)this->parsePrimary();
 
-    s->left = (Subexpr*)this->parsePrimary();
+    Subexpr *s;
 
-
-    if (expectv(binaryOperators, ARRAY_COUNT(binaryOperators))){
+    if (matchv(BINARY_OP_TOKENS, ARRAY_COUNT(BINARY_OP_TOKENS))){
+        s = new Subexpr;
+        s->tag = Node::NODE_SUBEXPR;
+        
+        s->left = left;
         s->op = this->consumeToken();
 
-        s->right = (Subexpr*)this->parseSubexpr();
+        Subexpr *child = (Subexpr*)this->parseSubexpr();
+        s->right  = child;
         s->subtag = Subexpr::SUBEXPR_RECURSE_OP;
+        
+        // if child is not a leaf then compare precedences of current op and child subexpr op
+        if (child->subtag != Subexpr::SUBEXPR_LEAF){
+            if (precedence(s->op) < precedence(child->op)){
+                s->right = child->left;
+                child->left = s;
+                s = child;
+            }
+        }
     }     
     else{
-        s->subtag = Subexpr::SUBEXPR_STOP_RECURSE;
+        s = left;
+        s->subtag = Subexpr::SUBEXPR_LEAF;
     }
 
     return s;
@@ -94,16 +136,16 @@ Node* Parser::parseSubexpr(){
 Node* Parser::parsePrimary(){
     Subexpr *s = new Subexpr;
     s->tag = Node::NODE_SUBEXPR;
-    if (expect(TOKEN_PARENTHESIS_OPEN)){
+    if (match(TOKEN_PARENTHESIS_OPEN)){
         this->consumeToken();
         s->inside = (Subexpr*)this->parseSubexpr();
         
-        assert(expect(TOKEN_PARENTHESIS_CLOSE));
+        assert(match(TOKEN_PARENTHESIS_CLOSE));
         this->consumeToken();
 
         s->subtag = Subexpr::SUBEXPR_RECURSE_PARENTHESIS;
     }
-    else if (expectv(primaryTokenTypes, ARRAY_COUNT(primaryTokenTypes))){
+    else if (matchv(PRIMARY_TOKEN_TYPES, ARRAY_COUNT(PRIMARY_TOKEN_TYPES))){
         s->leaf = this->consumeToken();
         s->subtag = Subexpr::SUBEXPR_LEAF;
     }
@@ -115,13 +157,13 @@ Node* Parser::parsePrimary(){
 Node* Parser::parseAssignment(){
     Lvalue *left = (Lvalue*)parseLVal();
 
-    assert(this->expect(TOKEN_ASSIGNMENT));
+    assert(this->match(TOKEN_ASSIGNMENT));
     this->consumeToken();
     
     Rvalue *right = (Rvalue*)parseRVal();
 
 
-    assert(this->expect(TOKEN_SEMI_COLON));
+    assert(this->match(TOKEN_SEMI_COLON));
     this->consumeToken();
 
     Assignment *a = new Assignment;
@@ -153,10 +195,6 @@ void printParseTree(Node *const current, int depth){
             std::cout<<"OP: " << s->op.string<< "\n";
             
             printParseTree(s->right, depth + 1);   
-            break;
-        }
-        case Subexpr::SUBEXPR_STOP_RECURSE :{
-            printParseTree(s->left, depth + 1);
             break;
         }
 

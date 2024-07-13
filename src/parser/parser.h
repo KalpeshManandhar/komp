@@ -10,8 +10,8 @@ struct Parser{
     Tokenizer * tokenizer;
     Token currentToken;
 
-    bool expect(TokenType type);
-    bool expectv(TokenType type[], int n);
+    bool match(TokenType type);
+    bool matchv(TokenType type[], int n);
     Token peekToken();
     Token consumeToken();  
 
