@@ -2,10 +2,11 @@
 
 #include "node.h"
 #include <tokenizer/tokenizer.h>
+#include <vector>
 
 
 struct Parser{
-    Node * root;
+    std::vector<Node *> statements;
 
     Tokenizer * tokenizer;
     Token currentToken;
@@ -21,6 +22,8 @@ struct Parser{
     Node* parsePrimary();
     Node* parseAssignment();
     Node* parseSubexpr(int precedence);
+    Node* parseDeclaration();
+    Node* parseStatement();
 
 
 public:
@@ -31,7 +34,9 @@ public:
     }
     
     bool parse(){
-        this->root = parseAssignment();
+        while (currentToken.type != TOKEN_EOF){
+            this->statements.push_back(this->parseStatement());
+        }
         return true;
     }
 };

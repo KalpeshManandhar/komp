@@ -16,8 +16,10 @@ int main(int argc, char **argv){
 
     if (p.parse()){
         fprintf(stdout, "Parse succeeded :)\n");
-
-        printParseTree(p.root);
+        
+        for (auto &stmt : p.statements){
+            printParseTree(stmt);
+        }
     }
 
     

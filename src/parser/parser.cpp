@@ -28,6 +28,22 @@ static TokenType BINARY_OP_TOKENS[] = {
     TOKEN_SHIFT_LEFT, 
     TOKEN_SHIFT_RIGHT,
 };
+static TokenType UNARY_OP_TOKENS[] = {
+    TOKEN_PLUS, 
+    TOKEN_MINUS, 
+    TOKEN_STAR, 
+    TOKEN_LOGICAL_NOT, 
+    TOKEN_BITWISE_NOT
+};
+
+static TokenType DATA_TYPE_TOKENS[] = {
+    TOKEN_INT,
+    TOKEN_FLOAT, 
+    TOKEN_LONG, 
+    TOKEN_CHAR,
+    TOKEN_DOUBLE,
+    TOKEN_SHORT
+};
 
 
 // referenced from https://en.cppreference.com/w/c/language/operator_precedence
@@ -84,7 +100,7 @@ Token Parser::consumeToken(){
 
 
 Node* Parser::parseLVal(){
-    assert(this->match(TOKEN_IDENTIFIER));
+    assert(match(TOKEN_IDENTIFIER));
     
     Lvalue *l = new Lvalue;
     l->tag = Node::NODE_LVALUE;
@@ -132,6 +148,7 @@ Node* Parser::parseSubexpr(int precedence){
 Node* Parser::parsePrimary(){
     Subexpr *s = new Subexpr;
     s->tag = Node::NODE_SUBEXPR;
+    // for (subexpr)
     if (match(TOKEN_PARENTHESIS_OPEN)){
         this->consumeToken();
         s->inside = (Subexpr*)this->parseSubexpr(INT32_MAX);
@@ -141,6 +158,14 @@ Node* Parser::parsePrimary(){
 
         s->subtag = Subexpr::SUBEXPR_RECURSE_PARENTHESIS;
     }
+    // for unary 
+    else if (matchv(UNARY_OP_TOKENS, ARRAY_COUNT(UNARY_OP_TOKENS))){
+        s->unaryOp = this->consumeToken();
+
+        s->unarySubexpr = (Subexpr *)this->parsePrimary();
+        s->subtag = Subexpr::SUBEXPR_UNARY;
+    }
+    // for terminal
     else if (matchv(PRIMARY_TOKEN_TYPES, ARRAY_COUNT(PRIMARY_TOKEN_TYPES))){
         s->leaf = this->consumeToken();
         s->subtag = Subexpr::SUBEXPR_LEAF;
@@ -153,14 +178,10 @@ Node* Parser::parsePrimary(){
 Node* Parser::parseAssignment(){
     Lvalue *left = (Lvalue*)parseLVal();
 
-    assert(this->match(TOKEN_ASSIGNMENT));
+    assert(match(TOKEN_ASSIGNMENT));
     this->consumeToken();
     
     Rvalue *right = (Rvalue*)parseRVal();
-
-
-    assert(this->match(TOKEN_SEMI_COLON));
-    this->consumeToken();
 
     Assignment *a = new Assignment;
     a->tag = Node::NODE_ASSIGNMENT;    
@@ -168,6 +189,39 @@ Node* Parser::parseAssignment(){
     a->right = right;
     return a;
 }
+
+
+Node* Parser::parseDeclaration(){
+    assert(matchv(DATA_TYPE_TOKENS, ARRAY_COUNT(DATA_TYPE_TOKENS)));
+    Token type = this->consumeToken();
+
+    assert(match(TOKEN_IDENTIFIER));
+    Token id = this->consumeToken();
+
+    Declaration *d = new Declaration;
+    d->type = type;
+    d->identifier = id;
+    d->tag = Node::NODE_DECLARATION;
+    
+    return d; 
+}
+
+
+Node* Parser::parseStatement(){
+    Node *statement;
+    if (matchv(DATA_TYPE_TOKENS, ARRAY_COUNT(DATA_TYPE_TOKENS))){
+        statement = parseDeclaration();
+    }
+    else{
+        statement = parseAssignment();
+    }
+
+    assert(match(TOKEN_SEMI_COLON));
+    this->consumeToken();
+
+    return statement;
+}
+
 
 
 void printParseTree(Node *const current, int depth){
@@ -209,6 +263,12 @@ void printParseTree(Node *const current, int depth){
             break;
         }
 
+        case Subexpr::SUBEXPR_UNARY : {
+            printTabs(depth + 1);
+            std::cout<<"UNARY OP: " <<s->unaryOp.string << "\n";
+            printParseTree(s->unarySubexpr, depth + 1);
+            break;
+        }
         default:
             break;
         }
@@ -228,14 +288,19 @@ void printParseTree(Node *const current, int depth){
 
     case Node::NODE_ASSIGNMENT: {   
         Assignment *a = (Assignment*)current;
-        printTabs(depth + 1);
-        std::cout<<"Left: ";
+        printTabs(depth);
         printParseTree(a->left, depth + 1);
 
-        printTabs(depth + 1);
-        std::cout<<"Right: ";
+        printTabs(depth);
         printParseTree(a->right, depth + 1);
         break;
+    }
+    case Node::NODE_DECLARATION: {
+        Declaration *d = (Declaration*) current;
+        printTabs(depth + 1);
+        std::cout<< "type: " << d->type.string << "\n";
+        printTabs(depth + 1);
+        std::cout<< "id:   " << d->identifier.string << "\n";
     }
     default:
         break;

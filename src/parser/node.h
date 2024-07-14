@@ -10,11 +10,12 @@ assignment : lvalue = rvalue
 lvalue : identifier
 rvalue : subexpr
 subexpr : primary operator subexpr | primary
-primary : (subexpr) | identifier | literal
+primary : (subexpr) | unary 
+unary   : (-|+|*|!|~| ) (identifier | literal)
 operator : + | - | / | * 
 
 
-declaration: type identifier (= rvalue)*
+declaration: type identifier (= rvalue)
 
 
 */
@@ -26,6 +27,7 @@ struct Node{
         NODE_LVALUE,
         NODE_RVALUE,
         NODE_ASSIGNMENT,
+        NODE_DECLARATION,
     };
     int tag;
 };
@@ -35,6 +37,7 @@ static const char* NODE_TAG_STRINGS[] = {
     "LVALUE",
     "RVALUE",
     "ASSIGNMENT",
+    "DECLARATION",
 };
 
 struct Subexpr: public Node{
@@ -42,6 +45,7 @@ struct Subexpr: public Node{
         SUBEXPR_RECURSE_PARENTHESIS = 1,
         SUBEXPR_RECURSE_OP,
         SUBEXPR_LEAF,
+        SUBEXPR_UNARY,
     }subtag;
     
     union{
@@ -50,8 +54,14 @@ struct Subexpr: public Node{
             Token op; 
             Subexpr *right; 
         };
+
         Token leaf;
         Subexpr *inside;
+        
+        struct {
+            Token unaryOp;
+            Subexpr *unarySubexpr;
+        };
     };
 };
 
@@ -72,5 +82,6 @@ struct Assignment: public Node{
 
 struct Declaration: public Node{
     Token type;
+    Token identifier;
 };
 
