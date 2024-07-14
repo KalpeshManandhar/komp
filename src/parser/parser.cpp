@@ -31,7 +31,7 @@ static TokenType BINARY_OP_TOKENS[] = {
 
 
 // referenced from https://en.cppreference.com/w/c/language/operator_precedence
-int precedence(Token opToken){
+int getPrecedence(Token opToken){
     switch (opToken.type){
     case TOKEN_STAR:
     case TOKEN_SLASH:
@@ -95,40 +95,36 @@ Node* Parser::parseLVal(){
 Node* Parser::parseRVal(){
     Rvalue *r = new Rvalue;
     r->tag = Node::NODE_RVALUE;
-    r->subexpr = (Subexpr *)parseSubexpr();
+    r->subexpr = (Subexpr *)parseSubexpr(INT32_MAX);
     return r;
 }
 
-Node* Parser::parseSubexpr(){
+Node* Parser::parseSubexpr(int precedence){
     
     Subexpr *left = (Subexpr*)this->parsePrimary();
 
-    Subexpr *s;
-
-    if (matchv(BINARY_OP_TOKENS, ARRAY_COUNT(BINARY_OP_TOKENS))){
+    Subexpr *s = left;
+    
+    // while next token is an operator and its precedence is higher (value is lower) than current one, add to the tree 
+    while (matchv(BINARY_OP_TOKENS, ARRAY_COUNT(BINARY_OP_TOKENS))){
+        // for left to right associativity, break out when next op has a lower or equal precedence than current one
+        if (getPrecedence(currentToken) >= precedence){
+            break;
+        }
+        
         s = new Subexpr;
         s->tag = Node::NODE_SUBEXPR;
         
         s->left = left;
         s->op = this->consumeToken();
+        
 
-        Subexpr *child = (Subexpr*)this->parseSubexpr();
-        s->right  = child;
+        Subexpr *next = (Subexpr*)this->parseSubexpr(getPrecedence(s->op));
+        s->right  = next;
         s->subtag = Subexpr::SUBEXPR_RECURSE_OP;
         
-        // if child is not a leaf then compare precedences of current op and child subexpr op
-        if (child->subtag != Subexpr::SUBEXPR_LEAF){
-            if (precedence(s->op) < precedence(child->op)){
-                s->right = child->left;
-                child->left = s;
-                s = child;
-            }
-        }
+        left = s;
     }     
-    else{
-        s = left;
-        s->subtag = Subexpr::SUBEXPR_LEAF;
-    }
 
     return s;
 }
@@ -138,7 +134,7 @@ Node* Parser::parsePrimary(){
     s->tag = Node::NODE_SUBEXPR;
     if (match(TOKEN_PARENTHESIS_OPEN)){
         this->consumeToken();
-        s->inside = (Subexpr*)this->parseSubexpr();
+        s->inside = (Subexpr*)this->parseSubexpr(INT32_MAX);
         
         assert(match(TOKEN_PARENTHESIS_CLOSE));
         this->consumeToken();

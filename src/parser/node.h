@@ -41,7 +41,6 @@ struct Subexpr: public Node{
     enum SubTag{
         SUBEXPR_RECURSE_PARENTHESIS = 1,
         SUBEXPR_RECURSE_OP,
-        SUBEXPR_STOP_RECURSE,
         SUBEXPR_LEAF,
     }subtag;
     
