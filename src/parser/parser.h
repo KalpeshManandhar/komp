@@ -24,6 +24,7 @@ struct Parser{
     Node* parseSubexpr(int precedence);
     Node* parseDeclaration();
     Node* parseStatement();
+    Node* parseIf();
 
 
 public:

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <tokenizer/token.h>
+#include <vector>
 
 /*
 statement: expr;
@@ -10,12 +11,14 @@ assignment : lvalue = rvalue
 lvalue : identifier
 rvalue : subexpr
 subexpr : primary operator subexpr | primary
-primary : (subexpr) | unary 
-unary   : (-|+|*|!|~| ) (identifier | literal)
+primary : (subexpr) | unary | identifier | literal 
+unary   : (-|+|*|!|~)? primary
 operator : + | - | / | * 
 
 
-declaration: type identifier (= rvalue)
+declaration: type identifier
+
+if_     : if (condition) {(statement)*}
 
 
 */
@@ -28,6 +31,7 @@ struct Node{
         NODE_RVALUE,
         NODE_ASSIGNMENT,
         NODE_DECLARATION,
+        NODE_IF,
     };
     int tag;
 };
@@ -38,6 +42,7 @@ static const char* NODE_TAG_STRINGS[] = {
     "RVALUE",
     "ASSIGNMENT",
     "DECLARATION",
+    "IF",
 };
 
 struct Subexpr: public Node{
@@ -85,3 +90,7 @@ struct Declaration: public Node{
     Token identifier;
 };
 
+struct IfNode: public Node{
+    Subexpr *condition;
+    std::vector<Node *> statements;
+};

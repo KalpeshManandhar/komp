@@ -22,18 +22,30 @@ static TokenType BINARY_OP_TOKENS[] = {
     TOKEN_MINUS, 
     TOKEN_STAR, 
     TOKEN_SLASH, 
+    TOKEN_MODULO, 
     TOKEN_AMPERSAND, 
     TOKEN_BITWISE_OR, 
     TOKEN_BITWISE_XOR, 
     TOKEN_SHIFT_LEFT, 
     TOKEN_SHIFT_RIGHT,
+    TOKEN_LOGICAL_AND,
+    TOKEN_LOGICAL_OR,
+    TOKEN_EQUALITY_CHECK,
+    TOKEN_NOT_EQUALS,
+    TOKEN_GREATER_EQUALS,
+    TOKEN_GREATER_THAN,
+    TOKEN_LESS_EQUALS,
+    TOKEN_LESS_THAN,
 };
+
+
 static TokenType UNARY_OP_TOKENS[] = {
     TOKEN_PLUS, 
     TOKEN_MINUS, 
     TOKEN_STAR, 
     TOKEN_LOGICAL_NOT, 
-    TOKEN_BITWISE_NOT
+    TOKEN_BITWISE_NOT,
+    TOKEN_AMPERSAND,
 };
 
 static TokenType DATA_TYPE_TOKENS[] = {
@@ -51,6 +63,7 @@ int getPrecedence(Token opToken){
     switch (opToken.type){
     case TOKEN_STAR:
     case TOKEN_SLASH:
+    case TOKEN_MODULO:
         return 3;
     case TOKEN_PLUS:
     case TOKEN_MINUS:
@@ -58,13 +71,24 @@ int getPrecedence(Token opToken){
     case TOKEN_SHIFT_LEFT:
     case TOKEN_SHIFT_RIGHT:
         return 5;
+    case TOKEN_GREATER_EQUALS: 
+    case TOKEN_GREATER_THAN: 
+    case TOKEN_LESS_EQUALS: 
+    case TOKEN_LESS_THAN:
+        return 6;
+    case TOKEN_EQUALITY_CHECK: 
+    case TOKEN_NOT_EQUALS:
+        return 7;
     case TOKEN_AMPERSAND:
         return 8;
     case TOKEN_BITWISE_XOR:
         return 9;
     case TOKEN_BITWISE_OR:
         return 10;
-    
+    case TOKEN_LOGICAL_AND: 
+        return 11;
+    case TOKEN_LOGICAL_OR: 
+        return 12;
     default:
         return INT32_MAX;
     }
@@ -104,7 +128,7 @@ Node* Parser::parseLVal(){
     
     Lvalue *l = new Lvalue;
     l->tag = Node::NODE_LVALUE;
-    l->leaf = this->consumeToken();
+    l->leaf = consumeToken();
     return l; 
 }
 
@@ -132,7 +156,7 @@ Node* Parser::parseSubexpr(int precedence){
         s->tag = Node::NODE_SUBEXPR;
         
         s->left = left;
-        s->op = this->consumeToken();
+        s->op = consumeToken();
         
 
         Subexpr *next = (Subexpr*)this->parseSubexpr(getPrecedence(s->op));
@@ -150,24 +174,24 @@ Node* Parser::parsePrimary(){
     s->tag = Node::NODE_SUBEXPR;
     // for (subexpr)
     if (match(TOKEN_PARENTHESIS_OPEN)){
-        this->consumeToken();
+        consumeToken();
         s->inside = (Subexpr*)this->parseSubexpr(INT32_MAX);
         
         assert(match(TOKEN_PARENTHESIS_CLOSE));
-        this->consumeToken();
+        consumeToken();
 
         s->subtag = Subexpr::SUBEXPR_RECURSE_PARENTHESIS;
     }
     // for unary 
     else if (matchv(UNARY_OP_TOKENS, ARRAY_COUNT(UNARY_OP_TOKENS))){
-        s->unaryOp = this->consumeToken();
+        s->unaryOp = consumeToken();
 
         s->unarySubexpr = (Subexpr *)this->parsePrimary();
         s->subtag = Subexpr::SUBEXPR_UNARY;
     }
     // for terminal
     else if (matchv(PRIMARY_TOKEN_TYPES, ARRAY_COUNT(PRIMARY_TOKEN_TYPES))){
-        s->leaf = this->consumeToken();
+        s->leaf = consumeToken();
         s->subtag = Subexpr::SUBEXPR_LEAF;
     }
     return s;
@@ -179,7 +203,7 @@ Node* Parser::parseAssignment(){
     Lvalue *left = (Lvalue*)parseLVal();
 
     assert(match(TOKEN_ASSIGNMENT));
-    this->consumeToken();
+    consumeToken();
     
     Rvalue *right = (Rvalue*)parseRVal();
 
@@ -193,10 +217,10 @@ Node* Parser::parseAssignment(){
 
 Node* Parser::parseDeclaration(){
     assert(matchv(DATA_TYPE_TOKENS, ARRAY_COUNT(DATA_TYPE_TOKENS)));
-    Token type = this->consumeToken();
+    Token type = consumeToken();
 
     assert(match(TOKEN_IDENTIFIER));
-    Token id = this->consumeToken();
+    Token id = consumeToken();
 
     Declaration *d = new Declaration;
     d->type = type;
@@ -211,16 +235,51 @@ Node* Parser::parseStatement(){
     Node *statement;
     if (matchv(DATA_TYPE_TOKENS, ARRAY_COUNT(DATA_TYPE_TOKENS))){
         statement = parseDeclaration();
+        assert(match(TOKEN_SEMI_COLON));
+        consumeToken();
+    }
+    else if (match(TOKEN_IF)){
+        statement = parseIf();
     }
     else{
         statement = parseAssignment();
+        assert(match(TOKEN_SEMI_COLON));
+        consumeToken();
     }
 
-    assert(match(TOKEN_SEMI_COLON));
-    this->consumeToken();
+
 
     return statement;
 }
+
+
+Node* Parser::parseIf(){
+    IfNode *ifNode = new IfNode;
+    assert(match(TOKEN_IF));
+    consumeToken();
+
+    assert(match(TOKEN_PARENTHESIS_OPEN));
+    consumeToken();
+
+    ifNode->tag = Node::NODE_IF; 
+    ifNode->condition = (Subexpr *)parseSubexpr(INT32_MAX);
+
+    assert(match(TOKEN_PARENTHESIS_CLOSE));
+    consumeToken();
+
+    assert(match(TOKEN_CURLY_OPEN));
+    consumeToken();
+    
+    while (!match(TOKEN_CURLY_CLOSE)){
+        ifNode->statements.push_back(parseStatement());
+    }
+
+    assert(match(TOKEN_CURLY_CLOSE));
+    consumeToken();
+
+    return ifNode;
+}
+
 
 
 
@@ -301,7 +360,23 @@ void printParseTree(Node *const current, int depth){
         std::cout<< "type: " << d->type.string << "\n";
         printTabs(depth + 1);
         std::cout<< "id:   " << d->identifier.string << "\n";
+        break;
     }
+
+    case Node::NODE_IF: {
+        IfNode *i = (IfNode*) current;
+        printTabs(depth + 1);
+        std::cout<< "condition: \n";
+        printParseTree(i->condition, depth + 1);
+        printTabs(depth + 1);
+        std::cout<< "statements: \n";
+        
+        for (auto &stmt: i->statements){
+            printParseTree(stmt, depth + 1);
+        }
+        break;
+    }
+
     default:
         break;
     }
