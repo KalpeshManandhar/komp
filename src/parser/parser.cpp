@@ -1,6 +1,8 @@
 #include <stdio.h>
 #include <assert.h>
 
+#include <logger/logger.h>
+
 #include "parser.h"
 
 #define ARRAY_COUNT(x) sizeof((x))/sizeof(*(x))
@@ -98,6 +100,17 @@ int getPrecedence(Token opToken){
 
 
 
+bool Parser::expect(TokenType type){
+    if (!match(type)) {
+        fprintf(stderr, "Expected token %s but found %.*s\n", TOKEN_TYPE_STRING[type], (int)this->currentToken.string.len, this->currentToken.string.data);
+
+        assert(false && "Implement error recovery scrub");
+        return false;
+    }
+    consumeToken();
+    return true;
+}
+
 bool Parser::match(TokenType type){
     return currentToken.type == type;
 }
@@ -177,7 +190,7 @@ Node* Parser::parsePrimary(){
         consumeToken();
         s->inside = (Subexpr*)this->parseSubexpr(INT32_MAX);
         
-        assert(match(TOKEN_PARENTHESIS_CLOSE));
+        expect(TOKEN_PARENTHESIS_CLOSE);
         consumeToken();
 
         s->subtag = Subexpr::SUBEXPR_RECURSE_PARENTHESIS;
@@ -241,6 +254,9 @@ Node* Parser::parseStatement(){
     else if (match(TOKEN_IF)){
         statement = parseIf();
     }
+    else if (match(TOKEN_WHILE)){
+        statement = parseWhile();
+    }
     else{
         statement = parseAssignment();
         assert(match(TOKEN_SEMI_COLON));
@@ -255,31 +271,64 @@ Node* Parser::parseStatement(){
 
 Node* Parser::parseIf(){
     IfNode *ifNode = new IfNode;
-    assert(match(TOKEN_IF));
-    consumeToken();
 
-    assert(match(TOKEN_PARENTHESIS_OPEN));
-    consumeToken();
+    ifNode->nextIf = NULL;
+    ifNode->tag = Node::NODE_IF_BLOCK; 
 
-    ifNode->tag = Node::NODE_IF; 
-    ifNode->condition = (Subexpr *)parseSubexpr(INT32_MAX);
 
-    assert(match(TOKEN_PARENTHESIS_CLOSE));
-    consumeToken();
+    // parses 'if' with condition     
+    if (match(TOKEN_IF)){
+        consumeToken();
 
-    assert(match(TOKEN_CURLY_OPEN));
-    consumeToken();
+        // parse condition
+        expect(TOKEN_PARENTHESIS_OPEN);
+        ifNode->condition = (Subexpr *)parseSubexpr(INT32_MAX);
+        expect(TOKEN_PARENTHESIS_CLOSE);
     
+        ifNode->subtag = IfNode::IfNodeType::IF_NODE;
+    }
+    // else it is statement block of 'else'
+    else{
+        ifNode->subtag = IfNode::IfNodeType::ELSE_NODE;
+    }
+
+    // parse statement block
+    expect(TOKEN_CURLY_OPEN);
     while (!match(TOKEN_CURLY_CLOSE)){
         ifNode->statements.push_back(parseStatement());
     }
+    expect(TOKEN_CURLY_CLOSE);
 
-    assert(match(TOKEN_CURLY_CLOSE));
-    consumeToken();
-
+    // if there is an 'else' or 'else if', then consumes the 'else' token and recursively parse new 'if' or statement block
+    if (match(TOKEN_ELSE)){
+        consumeToken();
+        
+        ifNode->nextIf = (IfNode *)parseIf();
+    }
     return ifNode;
 }
 
+
+Node* Parser::parseWhile(){
+    WhileNode *whileNode = new WhileNode;
+
+    whileNode->tag = Node::NODE_WHILE; 
+
+    expect(TOKEN_WHILE);
+    // parse condition
+    expect(TOKEN_PARENTHESIS_OPEN);
+    whileNode->condition = (Subexpr *)parseSubexpr(INT32_MAX);
+    expect(TOKEN_PARENTHESIS_CLOSE);
+    
+    // parse statement block
+    expect(TOKEN_CURLY_OPEN);
+    while (!match(TOKEN_CURLY_CLOSE)){
+        whileNode->statements.push_back(parseStatement());
+    }
+    expect(TOKEN_CURLY_CLOSE);
+
+    return whileNode;
+}
 
 
 
@@ -363,15 +412,65 @@ void printParseTree(Node *const current, int depth){
         break;
     }
 
-    case Node::NODE_IF: {
+    case Node::NODE_IF_BLOCK: {
         IfNode *i = (IfNode*) current;
+        
+        printTabs(depth + 1);
+        std::cout<<"{\n";
+        
+
+        while (i){
+            printTabs(depth + 1);
+
+            switch (i->subtag){
+                case IfNode::IF_NODE:{
+                    std::cout<< "IF: \n";
+
+                    printTabs(depth + 1);
+                    std::cout<< "condition: \n";
+                    printParseTree(i->condition, depth + 1);
+                    printTabs(depth + 1);
+                    std::cout<< "statements: \n";
+                    
+                    for (auto &stmt: i->statements){
+                        printParseTree(stmt, depth + 1);
+                    }
+
+                    if (i->nextIf){
+                        printTabs(depth + 1);
+                        std::cout<< "ELSE ";
+                    }
+                    break;
+                }
+                case IfNode::ELSE_NODE:{
+                    std::cout<< ": \n";
+                    printTabs(depth + 1);
+                    std::cout<< "statements: \n";
+                    
+                    for (auto &stmt: i->statements){
+                        printParseTree(stmt, depth + 1);
+                    }
+                    
+                    break;
+                }
+            }
+            i = i->nextIf;
+        }
+        
+        std::cout<<"}\n";
+        break;
+    }
+
+    case Node::NODE_WHILE: {
+        WhileNode *w = (WhileNode*) current;
+        
         printTabs(depth + 1);
         std::cout<< "condition: \n";
-        printParseTree(i->condition, depth + 1);
+        printParseTree(w->condition, depth + 1);
         printTabs(depth + 1);
         std::cout<< "statements: \n";
-        
-        for (auto &stmt: i->statements){
+                    
+        for (auto &stmt: w->statements){
             printParseTree(stmt, depth + 1);
         }
         break;

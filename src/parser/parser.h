@@ -11,6 +11,7 @@ struct Parser{
     Tokenizer * tokenizer;
     Token currentToken;
 
+    bool expect(TokenType type);
     bool match(TokenType type);
     bool matchv(TokenType type[], int n);
     Token peekToken();
@@ -25,6 +26,8 @@ struct Parser{
     Node* parseDeclaration();
     Node* parseStatement();
     Node* parseIf();
+    Node* parseWhile();
+    Node* parseFor();
 
 
 public:

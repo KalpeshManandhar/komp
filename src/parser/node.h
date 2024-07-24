@@ -31,7 +31,9 @@ struct Node{
         NODE_RVALUE,
         NODE_ASSIGNMENT,
         NODE_DECLARATION,
-        NODE_IF,
+        NODE_IF_BLOCK,
+        NODE_WHILE,
+        NODE_FOR,
     };
     int tag;
 };
@@ -42,7 +44,9 @@ static const char* NODE_TAG_STRINGS[] = {
     "RVALUE",
     "ASSIGNMENT",
     "DECLARATION",
-    "IF",
+    "IF_BLOCK",
+    "WHILE",
+    "FOR",
 };
 
 struct Subexpr: public Node{
@@ -92,5 +96,28 @@ struct Declaration: public Node{
 
 struct IfNode: public Node{
     Subexpr *condition;
+    IfNode *nextIf;
+
+    enum IfNodeType{
+        IF_NODE = 0, // 'if' and 'else if' blocks with conditions
+        ELSE_NODE,   // 'else' block without condition
+    }subtag;
+    std::vector<Node *> statements;
+
+};
+
+
+
+struct WhileNode: public Node{
+    Subexpr *condition;
     std::vector<Node *> statements;
 };
+
+struct ForNode: public Node{
+    Subexpr *exitCondition;
+    Declaration *init;
+    Assignment  *update;
+    std::vector<Node *> statements;
+};
+
+

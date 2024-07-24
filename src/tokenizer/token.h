@@ -3,7 +3,7 @@
 #include "str.h"
 
 struct Token{
-    int    type;
+    int type;
     Splice string;
 };
 
