@@ -11,14 +11,28 @@ assignment : lvalue = rvalue
 lvalue : identifier
 rvalue : subexpr
 subexpr : primary operator subexpr | primary
-primary : (subexpr) | unary | identifier | literal 
+primary : '('subexpr')' | unary | identifier | literal 
 unary   : (-|+|*|!|~)? primary
 operator : + | - | / | * 
 
 
-declaration: type identifier
+declaration: type identifier (= rvalue) (, identifier (= rvalue))*  
 
-if_     : if (condition) {(statement)*}
+if_     : if (condition) {
+            (statement)*
+          } 
+          (else if_|{
+            (statement)*
+          })?
+
+while_  : while (condition) {
+            (statement | break; | continue;)*
+          }
+
+for_    : for (declaration; subexpr; assignment){
+            (statement | break; | continue;)*
+          }
+
 
 
 */
@@ -91,7 +105,11 @@ struct Assignment: public Node{
 
 struct Declaration: public Node{
     Token type;
-    Token identifier;
+    struct DeclInfo{
+        Token identifier;
+        Subexpr *initValue;
+    };
+    std::vector<DeclInfo> decln;
 };
 
 struct IfNode: public Node{

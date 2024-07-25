@@ -232,14 +232,25 @@ Node* Parser::parseDeclaration(){
     assert(matchv(DATA_TYPE_TOKENS, ARRAY_COUNT(DATA_TYPE_TOKENS)));
     Token type = consumeToken();
 
-    assert(match(TOKEN_IDENTIFIER));
-    Token id = consumeToken();
-
     Declaration *d = new Declaration;
     d->type = type;
-    d->identifier = id;
     d->tag = Node::NODE_DECLARATION;
-    
+
+    do {
+        assert(match(TOKEN_IDENTIFIER));
+        Token id = consumeToken();
+
+        Declaration::DeclInfo var;
+        var.identifier = id;
+        var.initValue = 0;
+        
+        if (match(TOKEN_ASSIGNMENT)){
+            consumeToken();
+            var.initValue = (Subexpr *)parseSubexpr(INT32_MAX);
+        }
+        d->decln.push_back(var);
+    }while (match(TOKEN_COMMA) && expect(TOKEN_COMMA));
+
     return d; 
 }
 
@@ -256,6 +267,9 @@ Node* Parser::parseStatement(){
     }
     else if (match(TOKEN_WHILE)){
         statement = parseWhile();
+    }
+    else if (match(TOKEN_FOR)){
+        statement = parseFor();
     }
     else{
         statement = parseAssignment();
@@ -328,6 +342,34 @@ Node* Parser::parseWhile(){
     expect(TOKEN_CURLY_CLOSE);
 
     return whileNode;
+}
+
+
+Node* Parser::parseFor(){
+    ForNode *forNode = new ForNode;
+
+    forNode->tag = Node::NODE_FOR; 
+
+    expect(TOKEN_FOR);
+    // parse condition
+    expect(TOKEN_PARENTHESIS_OPEN);
+    forNode->init = (Declaration *)parseDeclaration();
+    expect(TOKEN_SEMI_COLON);
+    
+    forNode->exitCondition = (Subexpr *)parseSubexpr(INT32_MAX);
+    expect(TOKEN_SEMI_COLON);
+
+    forNode->update = (Assignment *)parseAssignment();
+    expect(TOKEN_PARENTHESIS_CLOSE);
+    
+    // parse statement block
+    expect(TOKEN_CURLY_OPEN);
+    while (!match(TOKEN_CURLY_CLOSE)){
+        forNode->statements.push_back(parseStatement());
+    }
+    expect(TOKEN_CURLY_CLOSE);
+
+    return forNode;
 }
 
 
@@ -407,8 +449,17 @@ void printParseTree(Node *const current, int depth){
         Declaration *d = (Declaration*) current;
         printTabs(depth + 1);
         std::cout<< "type: " << d->type.string << "\n";
-        printTabs(depth + 1);
-        std::cout<< "id:   " << d->identifier.string << "\n";
+        
+        for (auto &decl: d->decln){
+            printTabs(depth + 1);
+            std::cout<< "id:   " << decl.identifier.string << "\n";
+            
+            if (decl.initValue){
+                printTabs(depth + 1);
+                std::cout<< "initializer value: ";
+                printParseTree(decl.initValue, depth + 1);
+            }
+        }
         break;
     }
 
@@ -471,6 +522,30 @@ void printParseTree(Node *const current, int depth){
         std::cout<< "statements: \n";
                     
         for (auto &stmt: w->statements){
+            printParseTree(stmt, depth + 1);
+        }
+        break;
+    }
+    
+    case Node::NODE_FOR: {
+        ForNode *f = (ForNode*) current;
+        
+        printTabs(depth + 1);
+        std::cout<< "init: \n";
+        printParseTree(f->init, depth+1);
+
+        printTabs(depth + 1);
+        std::cout<< "exit condition: \n";
+        printParseTree(f->exitCondition, depth+1);
+
+        printTabs(depth + 1);
+        std::cout<< "update: \n";
+        printParseTree(f->update, depth+1);
+        
+        printTabs(depth + 1);
+        std::cout<< "statements: \n";
+                    
+        for (auto &stmt: f->statements){
             printParseTree(stmt, depth + 1);
         }
         break;
