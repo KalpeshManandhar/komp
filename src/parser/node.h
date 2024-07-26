@@ -1,7 +1,10 @@
 #pragma once
 
 #include <tokenizer/token.h>
+#include <symbol-table/symbol-table.h>
 #include <vector>
+
+
 
 /*
 statement: expr;
@@ -48,6 +51,7 @@ struct Node{
         NODE_IF_BLOCK,
         NODE_WHILE,
         NODE_FOR,
+        NODE_STMT_BLOCK,
     };
     int tag;
 };
@@ -61,6 +65,7 @@ static const char* NODE_TAG_STRINGS[] = {
     "IF_BLOCK",
     "WHILE",
     "FOR",
+    "STMT_BLOCK",
 };
 
 struct Subexpr: public Node{
@@ -112,6 +117,12 @@ struct Declaration: public Node{
     std::vector<DeclInfo> decln;
 };
 
+struct StatementBlock: public Node{
+    std::vector<Node *> statements;
+    SymbolTable symbols;
+};
+
+
 struct IfNode: public Node{
     Subexpr *condition;
     IfNode *nextIf;
@@ -120,22 +131,22 @@ struct IfNode: public Node{
         IF_NODE = 0, // 'if' and 'else if' blocks with conditions
         ELSE_NODE,   // 'else' block without condition
     }subtag;
-    std::vector<Node *> statements;
-
+    StatementBlock *block;
 };
 
 
 
 struct WhileNode: public Node{
     Subexpr *condition;
-    std::vector<Node *> statements;
+    StatementBlock *block;
 };
 
 struct ForNode: public Node{
     Subexpr *exitCondition;
     Declaration *init;
     Assignment  *update;
-    std::vector<Node *> statements;
+    StatementBlock *block;
 };
+
 
 

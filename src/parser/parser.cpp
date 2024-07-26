@@ -211,7 +211,6 @@ Node* Parser::parsePrimary(){
 }
 
 
-
 Node* Parser::parseAssignment(){
     Lvalue *left = (Lvalue*)parseLVal();
 
@@ -244,6 +243,7 @@ Node* Parser::parseDeclaration(){
         var.identifier = id;
         var.initValue = 0;
         
+        // if there is an initializer value
         if (match(TOKEN_ASSIGNMENT)){
             consumeToken();
             var.initValue = (Subexpr *)parseSubexpr(INT32_MAX);
@@ -273,13 +273,26 @@ Node* Parser::parseStatement(){
     }
     else{
         statement = parseAssignment();
-        assert(match(TOKEN_SEMI_COLON));
-        consumeToken();
+        expect(TOKEN_SEMI_COLON);
     }
 
 
 
     return statement;
+}
+
+
+Node* Parser::parseStatementBlock(){
+    StatementBlock *block = new StatementBlock;
+    block->tag = Node::NODE_STMT_BLOCK;
+    
+    expect(TOKEN_CURLY_OPEN);
+    while (!match(TOKEN_CURLY_CLOSE)){
+        block->statements.push_back(parseStatement());
+    }
+    expect(TOKEN_CURLY_CLOSE);
+
+    return block;
 }
 
 
@@ -306,12 +319,8 @@ Node* Parser::parseIf(){
         ifNode->subtag = IfNode::IfNodeType::ELSE_NODE;
     }
 
-    // parse statement block
-    expect(TOKEN_CURLY_OPEN);
-    while (!match(TOKEN_CURLY_CLOSE)){
-        ifNode->statements.push_back(parseStatement());
-    }
-    expect(TOKEN_CURLY_CLOSE);
+    ifNode->block = (StatementBlock *)parseStatementBlock();
+
 
     // if there is an 'else' or 'else if', then consumes the 'else' token and recursively parse new 'if' or statement block
     if (match(TOKEN_ELSE)){
@@ -334,12 +343,7 @@ Node* Parser::parseWhile(){
     whileNode->condition = (Subexpr *)parseSubexpr(INT32_MAX);
     expect(TOKEN_PARENTHESIS_CLOSE);
     
-    // parse statement block
-    expect(TOKEN_CURLY_OPEN);
-    while (!match(TOKEN_CURLY_CLOSE)){
-        whileNode->statements.push_back(parseStatement());
-    }
-    expect(TOKEN_CURLY_CLOSE);
+    whileNode->block = (StatementBlock *)parseStatementBlock();
 
     return whileNode;
 }
@@ -362,12 +366,7 @@ Node* Parser::parseFor(){
     forNode->update = (Assignment *)parseAssignment();
     expect(TOKEN_PARENTHESIS_CLOSE);
     
-    // parse statement block
-    expect(TOKEN_CURLY_OPEN);
-    while (!match(TOKEN_CURLY_CLOSE)){
-        forNode->statements.push_back(parseStatement());
-    }
-    expect(TOKEN_CURLY_CLOSE);
+    forNode->block = (StatementBlock *)parseStatementBlock();
 
     return forNode;
 }
@@ -462,6 +461,17 @@ void printParseTree(Node *const current, int depth){
         }
         break;
     }
+    
+    case Node::NODE_STMT_BLOCK: {
+        StatementBlock *b = (StatementBlock*) current;
+
+        for (auto &stmt: b->statements){
+            printParseTree(stmt, depth + 1);
+        }
+
+        break;
+    }
+
 
     case Node::NODE_IF_BLOCK: {
         IfNode *i = (IfNode*) current;
@@ -483,9 +493,7 @@ void printParseTree(Node *const current, int depth){
                     printTabs(depth + 1);
                     std::cout<< "statements: \n";
                     
-                    for (auto &stmt: i->statements){
-                        printParseTree(stmt, depth + 1);
-                    }
+                    printParseTree(i->block, depth + 1);
 
                     if (i->nextIf){
                         printTabs(depth + 1);
@@ -497,10 +505,7 @@ void printParseTree(Node *const current, int depth){
                     std::cout<< ": \n";
                     printTabs(depth + 1);
                     std::cout<< "statements: \n";
-                    
-                    for (auto &stmt: i->statements){
-                        printParseTree(stmt, depth + 1);
-                    }
+                    printParseTree(i->block, depth + 1);
                     
                     break;
                 }
@@ -521,9 +526,8 @@ void printParseTree(Node *const current, int depth){
         printTabs(depth + 1);
         std::cout<< "statements: \n";
                     
-        for (auto &stmt: w->statements){
-            printParseTree(stmt, depth + 1);
-        }
+        printParseTree(w->block, depth + 1);
+
         break;
     }
     
@@ -544,10 +548,8 @@ void printParseTree(Node *const current, int depth){
         
         printTabs(depth + 1);
         std::cout<< "statements: \n";
-                    
-        for (auto &stmt: f->statements){
-            printParseTree(stmt, depth + 1);
-        }
+        printParseTree(f->block, depth + 1);
+
         break;
     }
 

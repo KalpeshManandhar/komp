@@ -1,4 +1,5 @@
-int a;
-float b = 12;
-char c = 12 + 32;
-int d = 0x23, e = 0b1011;
+int a; // simple declaration
+float b = 12; // with initializer
+char c = 12 + 32; // initializer with operation
+int d, e; // multiple var declaration 
+int f = 0x23, g = 0b1011; // w/initializer
