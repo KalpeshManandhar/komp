@@ -1,11 +1,11 @@
 for (int a; a <= 12; a = a + 1){
-    bitch = lasagna;
+    hello = world;
 }
 
 
 // if statements
-if (ishwor == gay){
-    isIshworGay = true;
+if (ishwor == god){
+    isIshworGod = true;
 }
 else if (ishwor == veryGood){
     willIshworDoParser = true;
