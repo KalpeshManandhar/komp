@@ -6,6 +6,7 @@ float c = 12.0f;
 // block scope
 if (a > c){
     char d = 12;
+    int f = 1;
     d = a + c;
     // nested block
     {

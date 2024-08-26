@@ -22,7 +22,7 @@ int main(int argc, char **argv){
             printParseTree(stmt);
         }
 
-        for (auto &pair : SYMBOL_TABLE.variables){
+        for (auto &pair : p.global.symbols.variables){
             std::cout<<pair.first <<": " << pair.second << "\n";
         }
     }

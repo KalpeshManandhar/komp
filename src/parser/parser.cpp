@@ -444,10 +444,8 @@ void printParseTree(Node *const current, int depth){
 
     case Node::NODE_ASSIGNMENT: {   
         Assignment *a = (Assignment*)current;
-        printTabs(depth);
         printParseTree(a->left, depth + 1);
 
-        printTabs(depth);
         printParseTree(a->right, depth + 1);
         break;
     }
@@ -462,7 +460,7 @@ void printParseTree(Node *const current, int depth){
             
             if (decl.initValue){
                 printTabs(depth + 1);
-                std::cout<< "initializer value: ";
+                std::cout<< "initializer value: \n";
                 printParseTree(decl.initValue, depth + 1);
             }
         }
@@ -475,7 +473,13 @@ void printParseTree(Node *const current, int depth){
         for (auto &stmt: b->statements){
             printParseTree(stmt, depth + 1);
         }
-
+        
+        printTabs(depth+1);
+        std::cout<<"Symbol table:\n";
+        for (auto &pair : b->symbols.variables){
+            printTabs(depth + 2);
+            std::cout<<pair.first <<": " << pair.second << "\n";
+        }
         break;
     }
 
