@@ -11,6 +11,9 @@ struct Parser{
     Tokenizer * tokenizer;
     Token currentToken;
 
+    StatementBlock global;
+
+
     bool expect(TokenType type);
     bool match(TokenType type);
     bool matchv(TokenType type[], int n);
@@ -23,8 +26,8 @@ struct Parser{
     Node* parsePrimary();
     Node* parseAssignment();
     Node* parseSubexpr(int precedence);
-    Node* parseDeclaration();
-    Node* parseStatement();
+    Node* parseDeclaration(StatementBlock *scope);
+    Node* parseStatement(StatementBlock *scope);
     Node* parseStatementBlock();
     Node* parseIf();
     Node* parseWhile();
@@ -40,7 +43,7 @@ public:
     
     bool parse(){
         while (currentToken.type != TOKEN_EOF){
-            this->statements.push_back(this->parseStatement());
+            this->statements.push_back(this->parseStatement(&global));
         }
         return true;
     }

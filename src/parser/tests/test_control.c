@@ -1,9 +1,10 @@
-for (int a; a <= 12; a = a + 1){
+// for loops
+for (a = 0; a <= 12; a = a + 1){
     hello = world;
 }
 
 
-// if statements
+// if blocks
 if (ishwor == god){
     isIshworGod = true;
 }
@@ -11,7 +12,25 @@ else if (ishwor == veryGood){
     willIshworDoParser = true;
 }
 else{
-    while (ishwor == gyani){
-        willIshworGiveUsTreat = true;
-    }
+    elseBlock = a;
 }
+
+// only if
+if (a){
+    a = 1;
+}
+
+// with else if only
+if (a){
+    a = 1;
+}
+else if (b){
+    b = 1;
+}
+
+
+// while loop
+while (ishwor == gyani){
+    willIshworGiveUsTreat = true;
+}
+

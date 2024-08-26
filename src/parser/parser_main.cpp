@@ -1,5 +1,6 @@
 #include "parser.h"
 
+SymbolTable SYMBOL_TABLE;
 
 int main(int argc, char **argv){
     if (argc < 2){
@@ -19,6 +20,10 @@ int main(int argc, char **argv){
         
         for (auto &stmt : p.statements){
             printParseTree(stmt);
+        }
+
+        for (auto &pair : SYMBOL_TABLE.variables){
+            std::cout<<pair.first <<": " << pair.second << "\n";
         }
     }
 

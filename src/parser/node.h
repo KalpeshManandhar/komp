@@ -110,6 +110,7 @@ struct Assignment: public Node{
 
 struct Declaration: public Node{
     Token type;
+    // info for a single variable
     struct DeclInfo{
         Token identifier;
         Subexpr *initValue;
@@ -143,8 +144,8 @@ struct WhileNode: public Node{
 
 struct ForNode: public Node{
     Subexpr *exitCondition;
-    Declaration *init;
-    Assignment  *update;
+    Assignment *init;
+    Assignment *update;
     StatementBlock *block;
 };
 

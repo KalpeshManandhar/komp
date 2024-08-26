@@ -99,7 +99,7 @@ int getPrecedence(Token opToken){
 
 
 
-
+// consumes expected token
 bool Parser::expect(TokenType type){
     if (!match(type)) {
         fprintf(stderr, "Expected token %s but found %.*s\n", TOKEN_TYPE_STRING[type], (int)this->currentToken.string.len, this->currentToken.string.data);
@@ -111,6 +111,7 @@ bool Parser::expect(TokenType type){
     return true;
 }
 
+// checks if current token matches given type
 bool Parser::match(TokenType type){
     return currentToken.type == type;
 }
@@ -191,7 +192,6 @@ Node* Parser::parsePrimary(){
         s->inside = (Subexpr*)this->parseSubexpr(INT32_MAX);
         
         expect(TOKEN_PARENTHESIS_CLOSE);
-        consumeToken();
 
         s->subtag = Subexpr::SUBEXPR_RECURSE_PARENTHESIS;
     }
@@ -227,7 +227,7 @@ Node* Parser::parseAssignment(){
 }
 
 
-Node* Parser::parseDeclaration(){
+Node* Parser::parseDeclaration(StatementBlock *scope){
     assert(matchv(DATA_TYPE_TOKENS, ARRAY_COUNT(DATA_TYPE_TOKENS)));
     Token type = consumeToken();
 
@@ -237,10 +237,9 @@ Node* Parser::parseDeclaration(){
 
     do {
         assert(match(TOKEN_IDENTIFIER));
-        Token id = consumeToken();
-
+        
         Declaration::DeclInfo var;
-        var.identifier = id;
+        var.identifier = consumeToken();;
         var.initValue = 0;
         
         // if there is an initializer value
@@ -249,16 +248,21 @@ Node* Parser::parseDeclaration(){
             var.initValue = (Subexpr *)parseSubexpr(INT32_MAX);
         }
         d->decln.push_back(var);
+
+        scope->symbols.variables[std::string(var.identifier.string.data, var.identifier.string.len)] = 
+            std::string(type.string.data, type.string.len);
+            
+        
     }while (match(TOKEN_COMMA) && expect(TOKEN_COMMA));
 
     return d; 
 }
 
 
-Node* Parser::parseStatement(){
+Node* Parser::parseStatement(StatementBlock *scope){
     Node *statement;
     if (matchv(DATA_TYPE_TOKENS, ARRAY_COUNT(DATA_TYPE_TOKENS))){
-        statement = parseDeclaration();
+        statement = parseDeclaration(scope);
         assert(match(TOKEN_SEMI_COLON));
         consumeToken();
     }
@@ -270,6 +274,9 @@ Node* Parser::parseStatement(){
     }
     else if (match(TOKEN_FOR)){
         statement = parseFor();
+    }
+    else if (match(TOKEN_CURLY_OPEN)){
+        statement = parseStatementBlock();
     }
     else{
         statement = parseAssignment();
@@ -288,7 +295,7 @@ Node* Parser::parseStatementBlock(){
     
     expect(TOKEN_CURLY_OPEN);
     while (!match(TOKEN_CURLY_CLOSE)){
-        block->statements.push_back(parseStatement());
+        block->statements.push_back(parseStatement(block));
     }
     expect(TOKEN_CURLY_CLOSE);
 
@@ -357,7 +364,7 @@ Node* Parser::parseFor(){
     expect(TOKEN_FOR);
     // parse condition
     expect(TOKEN_PARENTHESIS_OPEN);
-    forNode->init = (Declaration *)parseDeclaration();
+    forNode->init = (Assignment *)parseAssignment();
     expect(TOKEN_SEMI_COLON);
     
     forNode->exitCondition = (Subexpr *)parseSubexpr(INT32_MAX);
