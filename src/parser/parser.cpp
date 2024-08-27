@@ -101,13 +101,21 @@ int getPrecedence(Token opToken){
 
 // consumes expected token
 bool Parser::expect(TokenType type){
-    if (!match(type)) {
-        fprintf(stderr, "Expected token %s but found %.*s\n", TOKEN_TYPE_STRING[type], (int)this->currentToken.string.len, this->currentToken.string.data);
 
-        assert(false && "Implement error recovery scrub");
-        return false;
+    // unexpected token
+    if (!match(type)) {
+        fprintf(stderr, "Expected token %s but found \"%.*s\"\n", TOKEN_TYPE_STRING[type], (int)this->currentToken.string.len, this->currentToken.string.data);
+        errors++;
+        
+        // error recovery: skip until the next semi colon or until EOF
+        while (!match(TOKEN_SEMI_COLON) && !match(TOKEN_EOF)){
+            consumeToken();
+        }
+        
     }
-    consumeToken();
+    else{
+        consumeToken();
+    }
     return true;
 }
 
@@ -129,10 +137,13 @@ Token Parser::peekToken(){
     return currentToken;
 }
 
-
+// advance to next token. will not advance past an EOF token
 Token Parser::consumeToken(){
     Token current = this->currentToken;
-    this->currentToken = this->tokenizer->nextToken();
+
+    if (current.type != TOKEN_EOF){
+        this->currentToken = this->tokenizer->nextToken();
+    }
     return current;
 }
 

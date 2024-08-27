@@ -35,17 +35,24 @@ struct Parser{
 
 
 public:
+        
+    size_t errors;
+
 
     void init(Tokenizer *t){
         this->tokenizer = t;
         this->currentToken = t->nextToken();
+        this->errors = 0;
+
     }
     
     bool parse(){
         while (currentToken.type != TOKEN_EOF){
             this->statements.push_back(this->parseStatement(&global));
         }
-        return true;
+        
+        fprintf(stdout, "[Parser] %llu errors generated.\n", errors);
+        return errors == 0;
     }
 };
 

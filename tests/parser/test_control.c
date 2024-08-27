@@ -1,4 +1,7 @@
-// for loops
+// for loops supports
+// initializer: one assignment (no declaration)
+// end cond:    one subexpression 
+// update:      one assignment 
 for (a = 0; a <= 12; a = a + 1){
     hello = world;
 }
