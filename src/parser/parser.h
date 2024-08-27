@@ -17,8 +17,11 @@ struct Parser{
     bool expect(TokenType type);
     bool match(TokenType type);
     bool matchv(TokenType type[], int n);
+    bool tryRecover();
     Token peekToken();
     Token consumeToken();  
+
+
 
 
     Node* parseLVal();

@@ -262,7 +262,6 @@ Token Tokenizer::nextToken(){
     }
 
     if (this->isEOF()){
-        std::cout<<errors << " errors generated\n";
         return Token{
             .type = TOKEN_EOF
         };

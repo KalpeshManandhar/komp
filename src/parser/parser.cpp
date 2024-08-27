@@ -97,6 +97,22 @@ int getPrecedence(Token opToken){
 }
 
 
+// error recovery: skip until the next semi colon, end of scope or until EOF
+bool Parser::tryRecover(){
+    TokenType recoveryDelimiters[] = {
+        TOKEN_SEMI_COLON, 
+        TOKEN_PARENTHESIS_CLOSE,
+        TOKEN_CURLY_CLOSE,
+        TOKEN_SQUARE_CLOSE,
+        TOKEN_EOF,
+    };
+
+    while (!matchv(recoveryDelimiters, ARRAY_COUNT(recoveryDelimiters))){
+        consumeToken();
+    }
+    return true;
+}
+
 
 
 // consumes expected token
@@ -104,14 +120,14 @@ bool Parser::expect(TokenType type){
 
     // unexpected token
     if (!match(type)) {
-        fprintf(stderr, "Expected token %s but found \"%.*s\"\n", TOKEN_TYPE_STRING[type], (int)this->currentToken.string.len, this->currentToken.string.data);
+        fprintf(stderr, "[ERROR] Expected token %s but found \"%.*s\"\n", TOKEN_TYPE_STRING[type], (int)this->currentToken.string.len, this->currentToken.string.data);
         errors++;
         
-        // error recovery: skip until the next semi colon or until EOF
-        while (!match(TOKEN_SEMI_COLON) && !match(TOKEN_EOF)){
+        tryRecover();
+        
+        if (match(type)){
             consumeToken();
         }
-        
     }
     else{
         consumeToken();
@@ -218,6 +234,13 @@ Node* Parser::parsePrimary(){
         s->leaf = consumeToken();
         s->subtag = Subexpr::SUBEXPR_LEAF;
     }
+    else{
+        errors++;
+        // TODO: more descriptive errors pls
+        fprintf(stderr, "[ERROR] Unexpected token. Should be a subexpression.\n");
+        // skip until a semicolon/end of scope
+        tryRecover();
+    }
     return s;
 }
 
@@ -274,8 +297,7 @@ Node* Parser::parseStatement(StatementBlock *scope){
     Node *statement;
     if (matchv(DATA_TYPE_TOKENS, ARRAY_COUNT(DATA_TYPE_TOKENS))){
         statement = parseDeclaration(scope);
-        assert(match(TOKEN_SEMI_COLON));
-        consumeToken();
+        expect(TOKEN_SEMI_COLON);
     }
     else if (match(TOKEN_IF)){
         statement = parseIf();
@@ -289,9 +311,17 @@ Node* Parser::parseStatement(StatementBlock *scope){
     else if (match(TOKEN_CURLY_OPEN)){
         statement = parseStatementBlock();
     }
-    else{
+    else if (match(TOKEN_IDENTIFIER)){
         statement = parseAssignment();
         expect(TOKEN_SEMI_COLON);
+    }
+    else {
+        errors++;
+        // TODO: more descriptive errors pls
+        fprintf(stderr, "[ERROR] Unexpected token somewhere\n");
+        // skip until a semicolon/end of scope
+        tryRecover();
+        consumeToken();
     }
 
 

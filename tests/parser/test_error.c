@@ -1,3 +1,15 @@
 a = (12 + 6; // missing end parenthesis
-b = 12 + 5
 
+// missing terminal
+a = 12 +; 
+
+// missing terminal inside parenthesis
+a = (12 * +);
+a = (12 * (+12 /));
+
+
+// missing semi colon
+b = 12 + 5 
+c = 3;
+// unexpected token
++ 1
