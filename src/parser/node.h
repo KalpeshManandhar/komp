@@ -1,7 +1,7 @@
 #pragma once
 
 #include <tokenizer/token.h>
-#include <symbol-table/symbol-table.h>
+#include "symbol-table.h"
 #include <vector>
 
 
@@ -121,6 +121,7 @@ struct Declaration: public Node{
 struct StatementBlock: public Node{
     std::vector<Node *> statements;
     SymbolTable symbols;
+    SymbolTable *parentSymbols;
 };
 
 
