@@ -121,7 +121,7 @@ struct Declaration: public Node{
 struct StatementBlock: public Node{
     std::vector<Node *> statements;
     SymbolTable symbols;
-    SymbolTable *parentSymbols;
+    StatementBlock *parent;
 };
 
 

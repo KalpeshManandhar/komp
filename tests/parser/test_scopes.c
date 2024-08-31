@@ -7,7 +7,6 @@ float c = 12.0f;
 if (a > c){
     char d = 12;
     int f = 1;
-    d = a + c;
     // nested block
     {
         int e = 12;

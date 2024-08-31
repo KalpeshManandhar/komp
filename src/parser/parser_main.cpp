@@ -23,7 +23,7 @@ int main(int argc, char **argv){
         }
 
         for (auto &pair : p.global.symbols.variables){
-            std::cout<<pair.first <<": " << pair.second << "\n";
+            std::cout<<pair.second.identifier <<": " << pair.second.info << "\n";
         }
     }
 

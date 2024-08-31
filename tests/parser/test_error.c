@@ -1,17 +1,13 @@
-a = (12 + 6; // missing end parenthesis
+int a = 0;
 
-// missing terminal
-a = 12 +; 
+// undeclared identifier: d
+int b = a + d;
 
-// missing terminal inside parenthesis
-a = (12 * +
-a = (12 * +);
-a = (12 * (+12 /));
+{
+    // a and b are from parent scope
+    int c = a;
+    int e = b;
+}
 
-
-// missing semi colon
-b = 12 + 5 
-c = 3 / ; // <- doesnt find the missing terminal here as it skips to the semicolon
-
-// unexpected token
-+ 1
+// c has gone out of scope 
+int f = c;

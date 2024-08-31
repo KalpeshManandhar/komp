@@ -1,3 +1,5 @@
+int a,b;
+
 // parenthesis
 a = (a);
 a = (a + b); 

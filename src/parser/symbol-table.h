@@ -2,6 +2,7 @@
 
 #include <string>
 #include <unordered_map>
+#include <tokenizer/str.h>
 
 struct DataType{
     const char *name;
@@ -33,12 +34,49 @@ namespace DataTypes{
 
 
 struct SymbolTableEntry{
-    DataType datatype;
+    Splice identifier;
+    Splice info;
 };
 
 
+// yoinked with courtesy from https://en.wikipedia.org/wiki/Adler-32
+static uint32_t adler32(unsigned char *data, size_t len) 
+{
+    const uint32_t MOD_ADLER = 65521;
+    uint32_t a = 1, b = 0;
+    size_t index;
+    
+    for (index = 0; index < len; ++index)
+    {
+        a = (a + data[index]) % MOD_ADLER;
+        b = (b + a) % MOD_ADLER;
+    }
+    
+    return (b << 16) | a;
+}
+
+
+
 struct SymbolTable{
-    std::unordered_map<std::string, std::string> variables;
+    // TODO: create a separate declaration entry and also add to declaration node
+    std::unordered_map<uint32_t, SymbolTableEntry> variables;
+
+    void addSymbol(Splice name, Splice type){
+        uint32_t hash = adler32((unsigned char *)name.data, name.len);
+
+        variables.insert({hash, {name, type}});
+    }
+
+    bool existKey(Splice name){
+        uint32_t hash = adler32((unsigned char *)name.data, name.len);
+        return variables.contains(hash);
+    }
+
+    SymbolTableEntry getInfo(Splice name){
+        uint32_t hash = adler32((unsigned char *)name.data, name.len);
+        return variables[hash];
+    }
+
 };
 
 extern SymbolTable SYMBOL_TABLE;

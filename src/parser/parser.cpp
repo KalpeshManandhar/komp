@@ -166,6 +166,42 @@ Token Parser::consumeToken(){
 }
 
 
+/* TODO: fix this? it returns a subexpr instead of a node* as the parsePrimary also allocates memory 
+which could lead to a memory leak
+*/
+Subexpr Parser::parseIdentifier(StatementBlock *scope){
+    assert(match(TOKEN_IDENTIFIER));
+
+
+    Subexpr identifier;
+    identifier.tag = Node::NODE_SUBEXPR;
+
+    // check if identifier has been declared
+    auto checkDeclaration = [&](Splice name) -> bool{
+        StatementBlock *currentScope = scope;
+        while(currentScope){
+            if (currentScope->symbols.existKey(name)){
+                return true;
+            }
+            currentScope = currentScope->parent;
+        }
+        return false;
+    };
+
+    identifier.leaf = consumeToken();
+    identifier.subtag = Subexpr::SUBEXPR_LEAF;
+
+    if (!checkDeclaration(identifier.leaf.string)){
+        fprintf(stderr, "[ERROR] Undeclared identifier \"%.*s\"\n", (int)identifier.leaf.string.len, identifier.leaf.string.data);
+        errors++;
+    }
+
+    return identifier;
+
+}
+
+
+// TODO: change this to parse an identifier instead of an lvalue
 Node* Parser::parseLVal(StatementBlock *scope){
     assert(match(TOKEN_IDENTIFIER));
     
@@ -231,16 +267,14 @@ Node* Parser::parsePrimary(StatementBlock *scope){
         s->unarySubexpr = (Subexpr *)parsePrimary(scope);
         s->subtag = Subexpr::SUBEXPR_UNARY;
     }
+    // identifiers
+    else if(match(TOKEN_IDENTIFIER)){
+        *s = parseIdentifier(scope);
+    }
     // terminal
     else if (matchv(PRIMARY_TOKEN_TYPES, ARRAY_COUNT(PRIMARY_TOKEN_TYPES))){
         s->leaf = consumeToken();
-        s->subtag = Subexpr::SUBEXPR_LEAF;
-        
-        
-        // TODO: post-unary operators and struct reference checks if token is identifier
-        if (s->leaf.type == TOKEN_IDENTIFIER){
-            
-        }
+        s->subtag = Subexpr::SUBEXPR_LEAF;   
     }
     else{
         errors++;
@@ -290,8 +324,7 @@ Node* Parser::parseDeclaration(StatementBlock *scope){
         }
         d->decln.push_back(var);
 
-        scope->symbols.variables[std::string(var.identifier.string.data, var.identifier.string.len)] = 
-            std::string(type.string.data, type.string.len);
+        scope->symbols.addSymbol(var.identifier.string, type.string);
             
         
     }while (match(TOKEN_COMMA) && expect(TOKEN_COMMA));
@@ -340,7 +373,7 @@ Node* Parser::parseStatement(StatementBlock *scope){
 Node* Parser::parseStatementBlock(StatementBlock *scope){
     StatementBlock *block = new StatementBlock;
     block->tag = Node::NODE_STMT_BLOCK;
-    block->parentSymbols = &scope->symbols;
+    block->parent = scope;
     
     expect(TOKEN_CURLY_OPEN);
     while (!match(TOKEN_CURLY_CLOSE)){
@@ -527,7 +560,7 @@ void printParseTree(Node *const current, int depth){
         std::cout<<"Symbol table:\n";
         for (auto &pair : b->symbols.variables){
             printTabs(depth + 2);
-            std::cout<<pair.first <<": " << pair.second << "\n";
+            std::cout<<pair.second.identifier <<": " << pair.second.info << "\n";
         }
         break;
     }

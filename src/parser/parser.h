@@ -24,6 +24,7 @@ struct Parser{
 
 
 
+    Subexpr parseIdentifier(StatementBlock *scope);
     Node* parseLVal(StatementBlock *scope);
     Node* parseRVal(StatementBlock *scope);
     Node* parsePrimary(StatementBlock *scope);
@@ -46,6 +47,7 @@ public:
         this->tokenizer = t;
         this->currentToken = t->nextToken();
         this->errors = 0;
+        this->global.parent = 0;
 
     }
     
