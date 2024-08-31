@@ -7,6 +7,8 @@ for (a = 0; a <= 12; a = a + 1){
 }
 
 
+
+
 // if blocks
 if (ishwor == god){
     isIshworGod = true;

@@ -37,4 +37,5 @@ int main(){
         printf("(%d %d)\t", v.x, v.y);
     }
     return 0;
+    int a;
 }

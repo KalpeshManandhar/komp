@@ -48,6 +48,8 @@ static TokenType UNARY_OP_TOKENS[] = {
     TOKEN_LOGICAL_NOT, 
     TOKEN_BITWISE_NOT,
     TOKEN_AMPERSAND,
+    TOKEN_PLUS_PLUS,
+    TOKEN_MINUS_MINUS,
 };
 
 static TokenType DATA_TYPE_TOKENS[] = {
@@ -120,7 +122,7 @@ bool Parser::expect(TokenType type){
 
     // unexpected token
     if (!match(type)) {
-        fprintf(stderr, "[ERROR] Expected token %s but found \"%.*s\"\n", TOKEN_TYPE_STRING[type], (int)this->currentToken.string.len, this->currentToken.string.data);
+        fprintf(stderr, "[ERROR] Expected token %s but found \"%.*s\"\n", TOKEN_TYPE_STRING[type], (int)currentToken.string.len, currentToken.string.data);
         errors++;
         
         tryRecover();
@@ -155,16 +157,16 @@ Token Parser::peekToken(){
 
 // advance to next token. will not advance past an EOF token
 Token Parser::consumeToken(){
-    Token current = this->currentToken;
+    Token current = currentToken;
 
     if (current.type != TOKEN_EOF){
-        this->currentToken = this->tokenizer->nextToken();
+        currentToken = tokenizer->nextToken();
     }
     return current;
 }
 
 
-Node* Parser::parseLVal(){
+Node* Parser::parseLVal(StatementBlock *scope){
     assert(match(TOKEN_IDENTIFIER));
     
     Lvalue *l = new Lvalue;
@@ -173,16 +175,16 @@ Node* Parser::parseLVal(){
     return l; 
 }
 
-Node* Parser::parseRVal(){
+Node* Parser::parseRVal(StatementBlock *scope){
     Rvalue *r = new Rvalue;
     r->tag = Node::NODE_RVALUE;
-    r->subexpr = (Subexpr *)parseSubexpr(INT32_MAX);
+    r->subexpr = (Subexpr *)parseSubexpr(INT32_MAX, scope);
     return r;
 }
 
-Node* Parser::parseSubexpr(int precedence){
+Node* Parser::parseSubexpr(int precedence, StatementBlock *scope){
     
-    Subexpr *left = (Subexpr*)this->parsePrimary();
+    Subexpr *left = (Subexpr*)parsePrimary(scope);
 
     Subexpr *s = left;
     
@@ -200,7 +202,7 @@ Node* Parser::parseSubexpr(int precedence){
         s->op = consumeToken();
         
 
-        Subexpr *next = (Subexpr*)this->parseSubexpr(getPrecedence(s->op));
+        Subexpr *next = (Subexpr*)parseSubexpr(getPrecedence(s->op), scope);
         s->right  = next;
         s->subtag = Subexpr::SUBEXPR_RECURSE_OP;
         
@@ -210,29 +212,35 @@ Node* Parser::parseSubexpr(int precedence){
     return s;
 }
 
-Node* Parser::parsePrimary(){
+Node* Parser::parsePrimary(StatementBlock *scope){
     Subexpr *s = new Subexpr;
     s->tag = Node::NODE_SUBEXPR;
-    // for (subexpr)
+    // (subexpr)
     if (match(TOKEN_PARENTHESIS_OPEN)){
         consumeToken();
-        s->inside = (Subexpr*)this->parseSubexpr(INT32_MAX);
+        s->inside = (Subexpr*)parseSubexpr(INT32_MAX, scope);
         
         expect(TOKEN_PARENTHESIS_CLOSE);
 
         s->subtag = Subexpr::SUBEXPR_RECURSE_PARENTHESIS;
     }
-    // for unary 
+    // unary 
     else if (matchv(UNARY_OP_TOKENS, ARRAY_COUNT(UNARY_OP_TOKENS))){
         s->unaryOp = consumeToken();
 
-        s->unarySubexpr = (Subexpr *)this->parsePrimary();
+        s->unarySubexpr = (Subexpr *)parsePrimary(scope);
         s->subtag = Subexpr::SUBEXPR_UNARY;
     }
-    // for terminal
+    // terminal
     else if (matchv(PRIMARY_TOKEN_TYPES, ARRAY_COUNT(PRIMARY_TOKEN_TYPES))){
         s->leaf = consumeToken();
         s->subtag = Subexpr::SUBEXPR_LEAF;
+        
+        
+        // TODO: post-unary operators and struct reference checks if token is identifier
+        if (s->leaf.type == TOKEN_IDENTIFIER){
+            
+        }
     }
     else{
         errors++;
@@ -245,13 +253,12 @@ Node* Parser::parsePrimary(){
 }
 
 
-Node* Parser::parseAssignment(){
-    Lvalue *left = (Lvalue*)parseLVal();
+Node* Parser::parseAssignment(StatementBlock *scope){
+    Lvalue *left = (Lvalue*)parseLVal(scope);
 
-    assert(match(TOKEN_ASSIGNMENT));
-    consumeToken();
+    expect(TOKEN_ASSIGNMENT);
     
-    Rvalue *right = (Rvalue*)parseRVal();
+    Rvalue *right = (Rvalue*)parseRVal(scope);
 
     Assignment *a = new Assignment;
     a->tag = Node::NODE_ASSIGNMENT;    
@@ -279,7 +286,7 @@ Node* Parser::parseDeclaration(StatementBlock *scope){
         // if there is an initializer value
         if (match(TOKEN_ASSIGNMENT)){
             consumeToken();
-            var.initValue = (Subexpr *)parseSubexpr(INT32_MAX);
+            var.initValue = (Subexpr *)parseSubexpr(INT32_MAX, scope);
         }
         d->decln.push_back(var);
 
@@ -300,19 +307,19 @@ Node* Parser::parseStatement(StatementBlock *scope){
         expect(TOKEN_SEMI_COLON);
     }
     else if (match(TOKEN_IF)){
-        statement = parseIf();
+        statement = parseIf(scope);
     }
     else if (match(TOKEN_WHILE)){
-        statement = parseWhile();
+        statement = parseWhile(scope);
     }
     else if (match(TOKEN_FOR)){
-        statement = parseFor();
+        statement = parseFor(scope);
     }
     else if (match(TOKEN_CURLY_OPEN)){
-        statement = parseStatementBlock();
+        statement = parseStatementBlock(scope);
     }
     else if (match(TOKEN_IDENTIFIER)){
-        statement = parseAssignment();
+        statement = parseAssignment(scope);
         expect(TOKEN_SEMI_COLON);
     }
     else {
@@ -330,9 +337,10 @@ Node* Parser::parseStatement(StatementBlock *scope){
 }
 
 
-Node* Parser::parseStatementBlock(){
+Node* Parser::parseStatementBlock(StatementBlock *scope){
     StatementBlock *block = new StatementBlock;
     block->tag = Node::NODE_STMT_BLOCK;
+    block->parentSymbols = &scope->symbols;
     
     expect(TOKEN_CURLY_OPEN);
     while (!match(TOKEN_CURLY_CLOSE)){
@@ -344,7 +352,7 @@ Node* Parser::parseStatementBlock(){
 }
 
 
-Node* Parser::parseIf(){
+Node* Parser::parseIf(StatementBlock *scope){
     IfNode *ifNode = new IfNode;
 
     ifNode->nextIf = NULL;
@@ -357,7 +365,7 @@ Node* Parser::parseIf(){
 
         // parse condition
         expect(TOKEN_PARENTHESIS_OPEN);
-        ifNode->condition = (Subexpr *)parseSubexpr(INT32_MAX);
+        ifNode->condition = (Subexpr *)parseSubexpr(INT32_MAX, scope);
         expect(TOKEN_PARENTHESIS_CLOSE);
     
         ifNode->subtag = IfNode::IfNodeType::IF_NODE;
@@ -367,20 +375,20 @@ Node* Parser::parseIf(){
         ifNode->subtag = IfNode::IfNodeType::ELSE_NODE;
     }
 
-    ifNode->block = (StatementBlock *)parseStatementBlock();
+    ifNode->block = (StatementBlock *)parseStatementBlock(scope);
 
 
     // if there is an 'else' or 'else if', then consumes the 'else' token and recursively parse new 'if' or statement block
     if (match(TOKEN_ELSE)){
         consumeToken();
         
-        ifNode->nextIf = (IfNode *)parseIf();
+        ifNode->nextIf = (IfNode *)parseIf(scope);
     }
     return ifNode;
 }
 
 
-Node* Parser::parseWhile(){
+Node* Parser::parseWhile(StatementBlock *scope){
     WhileNode *whileNode = new WhileNode;
 
     whileNode->tag = Node::NODE_WHILE; 
@@ -388,16 +396,16 @@ Node* Parser::parseWhile(){
     expect(TOKEN_WHILE);
     // parse condition
     expect(TOKEN_PARENTHESIS_OPEN);
-    whileNode->condition = (Subexpr *)parseSubexpr(INT32_MAX);
+    whileNode->condition = (Subexpr *)parseSubexpr(INT32_MAX, scope);
     expect(TOKEN_PARENTHESIS_CLOSE);
     
-    whileNode->block = (StatementBlock *)parseStatementBlock();
+    whileNode->block = (StatementBlock *)parseStatementBlock(scope);
 
     return whileNode;
 }
 
 
-Node* Parser::parseFor(){
+Node* Parser::parseFor(StatementBlock *scope){
     ForNode *forNode = new ForNode;
 
     forNode->tag = Node::NODE_FOR; 
@@ -405,16 +413,16 @@ Node* Parser::parseFor(){
     expect(TOKEN_FOR);
     // parse condition
     expect(TOKEN_PARENTHESIS_OPEN);
-    forNode->init = (Assignment *)parseAssignment();
+    forNode->init = (Assignment *)parseAssignment(scope);
     expect(TOKEN_SEMI_COLON);
     
-    forNode->exitCondition = (Subexpr *)parseSubexpr(INT32_MAX);
+    forNode->exitCondition = (Subexpr *)parseSubexpr(INT32_MAX, scope);
     expect(TOKEN_SEMI_COLON);
 
-    forNode->update = (Assignment *)parseAssignment();
+    forNode->update = (Assignment *)parseAssignment(scope);
     expect(TOKEN_PARENTHESIS_CLOSE);
     
-    forNode->block = (StatementBlock *)parseStatementBlock();
+    forNode->block = (StatementBlock *)parseStatementBlock(scope);
 
     return forNode;
 }

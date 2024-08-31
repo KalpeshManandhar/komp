@@ -24,17 +24,17 @@ struct Parser{
 
 
 
-    Node* parseLVal();
-    Node* parseRVal();
-    Node* parsePrimary();
-    Node* parseAssignment();
-    Node* parseSubexpr(int precedence);
+    Node* parseLVal(StatementBlock *scope);
+    Node* parseRVal(StatementBlock *scope);
+    Node* parsePrimary(StatementBlock *scope);
+    Node* parseAssignment(StatementBlock *scope);
+    Node* parseSubexpr(int precedence, StatementBlock *scope);
     Node* parseDeclaration(StatementBlock *scope);
     Node* parseStatement(StatementBlock *scope);
-    Node* parseStatementBlock();
-    Node* parseIf();
-    Node* parseWhile();
-    Node* parseFor();
+    Node* parseStatementBlock(StatementBlock *scope);
+    Node* parseIf(StatementBlock *scope);
+    Node* parseWhile(StatementBlock *scope);
+    Node* parseFor(StatementBlock *scope);
 
 
 public:

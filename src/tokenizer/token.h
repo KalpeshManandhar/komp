@@ -79,8 +79,8 @@ enum TokenType{
     TOKEN_DOT, // .
     TOKEN_ARROW, // ->
     
-    TOKEN_INC, // ++
-    TOKEN_DEC, // --
+    TOKEN_PLUS_PLUS, // ++
+    TOKEN_MINUS_MINUS, // --
     
     
     // bitwise operators 
@@ -212,8 +212,8 @@ static const char *TOKEN_TYPE_STRING[] = {
     "TOKEN_DOT", // .
     "TOKEN_ARROW", // ->
     
-    "TOKEN_INC", // ++
-    "TOKEN_DEC", // --
+    "TOKEN_PLUS_PLUS", // ++
+    "TOKEN_MINUS_MINUS", // --
     
     
     // bitwise operators 
