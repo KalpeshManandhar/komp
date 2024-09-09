@@ -48,6 +48,8 @@ public:
     void init();
     void loadFileToBuffer(const char *filepath);
     Token nextToken();
+    
+    void rewindTo(Token checkpoint);
 };
 
 

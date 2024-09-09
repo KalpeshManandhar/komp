@@ -12,6 +12,7 @@ struct Parser{
     Token currentToken;
 
     StatementBlock global;
+    SymbolTable<Function> functions;
 
 
     bool expect(TokenType type);
@@ -19,7 +20,8 @@ struct Parser{
     bool matchv(TokenType type[], int n);
     bool tryRecover();
     Token peekToken();
-    Token consumeToken();  
+    Token consumeToken(); 
+    void rewindTo(Token checkpoint);  
 
 
     DataType parseDataType();
@@ -53,7 +55,10 @@ public:
     
     bool parse(){
         while (currentToken.type != TOKEN_EOF){
-            this->statements.push_back(this->parseStatement(&global));
+            Node *stmt = this->parseStatement(&global);
+            if (stmt){
+                this->statements.push_back(stmt);
+            }
         }
         
         fprintf(stdout, "[Parser] %llu errors generated.\n", errors);

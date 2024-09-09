@@ -168,6 +168,18 @@ Token Parser::consumeToken(){
 }
 
 
+// rewind the current token to given checkpoint
+void Parser::rewindTo(Token checkpoint){
+    currentToken = checkpoint;
+
+    // also rewind the tokenizer to a point after the tokenization of given checkpoint token
+    Token tokenizerCheckpoint;
+    tokenizerCheckpoint.charNo = checkpoint.charNo + checkpoint.string.len;
+    tokenizerCheckpoint.lineNo = checkpoint.lineNo;
+    tokenizerCheckpoint.string.data = checkpoint.string.data + checkpoint.string.len;
+    tokenizer->rewindTo(tokenizerCheckpoint);
+}
+
 
 DataType Parser::parseDataType(){
     assert(matchv(DATA_TYPE_TOKENS, ARRAY_COUNT(DATA_TYPE_TOKENS)));
@@ -330,33 +342,78 @@ Node* Parser::parseAssignment(StatementBlock *scope){
 }
 
 
+
 Node* Parser::parseDeclaration(StatementBlock *scope){
     assert(matchv(DATA_TYPE_TOKENS, ARRAY_COUNT(DATA_TYPE_TOKENS)));
+    DataType type = parseDataType();
 
-    Declaration *d = new Declaration;
-    d->type = parseDataType();
-    d->tag = Node::NODE_DECLARATION;
+    assert(match(TOKEN_IDENTIFIER));
+    Token identifier = consumeToken();
 
-    do {
-        assert(match(TOKEN_IDENTIFIER));
+    // if ( is present, then it is func declaration
+    if (match(TOKEN_PARENTHESIS_OPEN)){
+        expect(TOKEN_PARENTHESIS_OPEN);
         
-        Declaration::DeclInfo var;
-        var.identifier = consumeToken();;
-        var.initValue = 0;
-        
-        // if there is an initializer value
-        if (match(TOKEN_ASSIGNMENT)){
-            consumeToken();
-            var.initValue = (Subexpr *)parseSubexpr(INT32_MAX, scope);
-        }
-        d->decln.push_back(var);
+        Function foo;
+        foo.returnType = type;
+        foo.funcName = identifier;
 
-        scope->symbols.addSymbol(var.identifier.string, d->type);
+        // parse parameters
+        while (matchv(DATA_TYPE_TOKENS, ARRAY_COUNT(DATA_TYPE_TOKENS))){
+            Function::Parameter p;
+            p.type = parseDataType();
             
-        
-    }while (match(TOKEN_COMMA) && expect(TOKEN_COMMA));
+            assert(match(TOKEN_IDENTIFIER));
+            p.identifier = consumeToken();
 
-    return d; 
+            foo.parameters.push_back(p);
+            
+            if (!match(TOKEN_COMMA)){
+                break;
+            }
+            else{
+                consumeToken();
+            }
+        };
+
+        expect(TOKEN_PARENTHESIS_CLOSE);
+        
+        foo.block = (StatementBlock*) parseStatementBlock(&global);
+
+        functions.add(foo.funcName.string, foo);
+        // TODO: maybe refactor so that no need to return NULL?
+        return NULL;
+    }
+    // else it is var declaration
+    else{        
+        Declaration *d = new Declaration;
+        d->type = type;
+        d->tag = Node::NODE_DECLARATION;
+
+        rewindTo(identifier);
+        
+        do {
+            assert(match(TOKEN_IDENTIFIER));
+            
+            Declaration::DeclInfo var;
+            var.identifier = consumeToken();
+            var.initValue = 0;
+            
+            // if there is an initializer value
+            if (match(TOKEN_ASSIGNMENT)){
+                consumeToken();
+                var.initValue = (Subexpr *)parseSubexpr(INT32_MAX, scope);
+            }
+            d->decln.push_back(var);
+
+            scope->symbols.add(var.identifier.string, d->type);
+                
+            
+        }while (match(TOKEN_COMMA) && expect(TOKEN_COMMA));
+        expect(TOKEN_SEMI_COLON);
+
+        return d; 
+    }
 }
 
 
@@ -364,7 +421,6 @@ Node* Parser::parseStatement(StatementBlock *scope){
     Node *statement;
     if (matchv(DATA_TYPE_TOKENS, ARRAY_COUNT(DATA_TYPE_TOKENS))){
         statement = parseDeclaration(scope);
-        expect(TOKEN_SEMI_COLON);
     }
     else if (match(TOKEN_IF)){
         statement = parseIf(scope);
@@ -381,6 +437,10 @@ Node* Parser::parseStatement(StatementBlock *scope){
     else if (match(TOKEN_IDENTIFIER)){
         statement = parseAssignment(scope);
         expect(TOKEN_SEMI_COLON);
+    }
+    else if (match(TOKEN_SEMI_COLON)){
+        statement = NULL;
+        consumeToken();
     }
     else {
         errors++;
@@ -404,7 +464,10 @@ Node* Parser::parseStatementBlock(StatementBlock *scope){
     
     expect(TOKEN_CURLY_OPEN);
     while (!match(TOKEN_CURLY_CLOSE)){
-        block->statements.push_back(parseStatement(block));
+        Node *stmt = parseStatement(block);
+        if (stmt){
+            block->statements.push_back(stmt);
+        }
     }
     expect(TOKEN_CURLY_CLOSE);
 
@@ -592,7 +655,7 @@ void printParseTree(Node *const current, int depth){
         
         printTabs(depth+1);
         std::cout<<"Symbol table:\n";
-        for (auto &pair : b->symbols.variables){
+        for (auto &pair : b->symbols.entries){
             printTabs(depth + 2);
             std::cout<<pair.second.identifier <<": ";
             DataType *type = &pair.second.info;

@@ -5,6 +5,8 @@
 struct Token{
     int type;
     Splice string;
+    int charNo;
+    int lineNo;
 };
 
 enum TokenType{

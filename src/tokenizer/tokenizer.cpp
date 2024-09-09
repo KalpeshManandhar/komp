@@ -263,14 +263,14 @@ Token Tokenizer::nextToken(){
 
     if (this->isEOF()){
         return Token{
-            .type = TOKEN_EOF
+            .type = TOKEN_EOF,
         };
     }
 
-
-
-
     Token t = {0};
+    t.charNo = this->charNo;
+    t.lineNo = this->lineNo;
+
     
     // starts with an alphabet or _
     if (isNonNumeric(this->buffer[this->cursor])){
@@ -291,6 +291,7 @@ Token Tokenizer::nextToken(){
     else{
         t.type = TOKEN_ERROR;
     }
+    
     
 
     if (t.type == TOKEN_ERROR){
@@ -354,4 +355,10 @@ char Tokenizer::consumeChar(){
     }
     this->cursor++;
     return c;
+}
+
+void Tokenizer::rewindTo(Token checkpoint){
+    this->charNo = checkpoint.charNo;
+    this->lineNo = checkpoint.lineNo;
+    this->cursor = checkpoint.string.data - this->buffer;
 }

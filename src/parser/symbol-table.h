@@ -46,10 +46,6 @@ struct DataType{
 };
 
 
-struct SymbolTableEntry{
-    Splice identifier;
-    DataType info;
-};
 
 
 // yoinked with courtesy from https://en.wikipedia.org/wiki/Adler-32
@@ -69,27 +65,31 @@ static uint32_t adler32(unsigned char *data, size_t len)
 }
 
 
-
+template <typename T>
 struct SymbolTable{
-    // TODO: create a separate declaration entry and also add to declaration node
-    std::unordered_map<uint32_t, SymbolTableEntry> variables;
+    struct SymbolTableEntry{
+        Splice identifier;
+        T info;
+    };
 
-    void addSymbol(Splice name, DataType type){
+
+    // TODO: create a separate declaration entry and also add to declaration node
+    std::unordered_map<uint32_t, SymbolTableEntry> entries;
+
+    void add(Splice name, T type){
         uint32_t hash = adler32((unsigned char *)name.data, name.len);
 
-        variables.insert({hash, {name, type}});
+        entries.insert({hash, {name, type}});
     }
 
     bool existKey(Splice name){
         uint32_t hash = adler32((unsigned char *)name.data, name.len);
-        return variables.contains(hash);
+        return entries.contains(hash);
     }
 
-    SymbolTableEntry getInfo(Splice name){
+    T getInfo(Splice name){
         uint32_t hash = adler32((unsigned char *)name.data, name.len);
-        return variables[hash];
+        return entries[hash];
     }
 
 };
-
-extern SymbolTable SYMBOL_TABLE;

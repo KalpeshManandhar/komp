@@ -119,23 +119,27 @@ struct Declaration: public Node{
 };
 
 
-struct FuncDeclaration: public Node{
-    Token returnType;
+struct StatementBlock: public Node{
+    std::vector<Node *> statements;
+    SymbolTable<DataType> symbols;
+    StatementBlock *parent;
+};
+
+struct Function: public Node{
+    DataType returnType;
     Token funcName;
 
     struct Parameter{
-        Token type;
+        DataType type;
         Token identifier;
     };
     std::vector<Parameter> parameters;
+
+    StatementBlock *block;
 };
 
 
-struct StatementBlock: public Node{
-    std::vector<Node *> statements;
-    SymbolTable symbols;
-    StatementBlock *parent;
-};
+
 
 
 struct IfNode: public Node{

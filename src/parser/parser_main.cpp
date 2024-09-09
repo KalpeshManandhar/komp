@@ -1,6 +1,18 @@
 #include "parser.h"
 
-SymbolTable SYMBOL_TABLE;
+std::ostream& operator<<(std::ostream& o, DataType d){
+    DataType *type = &d;
+    for (; type->tag == DataType::TYPE_PTR; type = type->ptrTo){
+        o<<"*";
+    }
+    o<<type->type.string;
+    return o;
+}
+
+
+
+
+
 
 int main(int argc, char **argv){
     if (argc < 2){
@@ -22,13 +34,24 @@ int main(int argc, char **argv){
             printParseTree(stmt);
         }
 
-        for (auto &pair : p.global.symbols.variables){
+        for (auto &pair : p.global.symbols.entries){
             std::cout<<pair.second.identifier <<": ";
-            DataType *type = &pair.second.info;
-            for (; type->tag == DataType::TYPE_PTR; type = type->ptrTo){
-                std::cout<<"*";
+            std::cout<<pair.second.info<<"\n";
+        }
+
+        for (auto &pair: p.functions.entries){
+            std::cout<<"Function: " <<pair.second.identifier <<"{\n";
+            Function *foo = &pair.second.info;
+            std::cout<<"\tReturn type: " <<foo->returnType<<"\n";
+            std::cout<<"\tParameters: " <<"{\n";
+            for (auto &param: foo->parameters){
+                std::cout<<"\t"<<param.identifier.string<< " : " <<param.type<<"\n";
             }
-            std::cout<<type->type.string<<"\n";
+            std::cout<<"}\n";
+            
+            printParseTree(foo->block, 1);
+            std::cout<<"}\n";
+            
         }
     }
 
