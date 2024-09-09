@@ -22,7 +22,7 @@ struct Parser{
     Token consumeToken();  
 
 
-
+    DataType parseDataType();
 
     Subexpr parseIdentifier(StatementBlock *scope);
     Node* parseLVal(StatementBlock *scope);

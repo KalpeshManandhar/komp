@@ -23,7 +23,12 @@ int main(int argc, char **argv){
         }
 
         for (auto &pair : p.global.symbols.variables){
-            std::cout<<pair.second.identifier <<": " << pair.second.info << "\n";
+            std::cout<<pair.second.identifier <<": ";
+            DataType *type = &pair.second.info;
+            for (; type->tag == DataType::TYPE_PTR; type = type->ptrTo){
+                std::cout<<"*";
+            }
+            std::cout<<type->type.string<<"\n";
         }
     }
 

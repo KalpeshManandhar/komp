@@ -58,7 +58,8 @@ static TokenType DATA_TYPE_TOKENS[] = {
     TOKEN_LONG, 
     TOKEN_CHAR,
     TOKEN_DOUBLE,
-    TOKEN_SHORT
+    TOKEN_SHORT,
+    TOKEN_STRUCT
 };
 
 
@@ -155,6 +156,7 @@ Token Parser::peekToken(){
     return currentToken;
 }
 
+
 // advance to next token. will not advance past an EOF token
 Token Parser::consumeToken(){
     Token current = currentToken;
@@ -164,6 +166,32 @@ Token Parser::consumeToken(){
     }
     return current;
 }
+
+
+
+DataType Parser::parseDataType(){
+    assert(matchv(DATA_TYPE_TOKENS, ARRAY_COUNT(DATA_TYPE_TOKENS)));
+
+
+    DataType d;
+    d.type = consumeToken();
+    d.tag = DataType::TYPE_PRIMARY;
+
+    // if a pointer
+    while (match(TOKEN_STAR)){
+        DataType *ptrTo = new DataType;
+        *ptrTo = d;
+        
+        d.ptrTo = ptrTo;
+        d.tag = DataType::TYPE_PTR;
+        consumeToken(); 
+    }
+    
+    return d;
+}
+
+
+
 
 
 /* TODO: fix this? it returns a subexpr instead of a node* as the parsePrimary also allocates memory 
@@ -304,10 +332,9 @@ Node* Parser::parseAssignment(StatementBlock *scope){
 
 Node* Parser::parseDeclaration(StatementBlock *scope){
     assert(matchv(DATA_TYPE_TOKENS, ARRAY_COUNT(DATA_TYPE_TOKENS)));
-    Token type = consumeToken();
 
     Declaration *d = new Declaration;
-    d->type = type;
+    d->type = parseDataType();
     d->tag = Node::NODE_DECLARATION;
 
     do {
@@ -324,7 +351,7 @@ Node* Parser::parseDeclaration(StatementBlock *scope){
         }
         d->decln.push_back(var);
 
-        scope->symbols.addSymbol(var.identifier.string, type.string);
+        scope->symbols.addSymbol(var.identifier.string, d->type);
             
         
     }while (match(TOKEN_COMMA) && expect(TOKEN_COMMA));
@@ -534,8 +561,15 @@ void printParseTree(Node *const current, int depth){
     case Node::NODE_DECLARATION: {
         Declaration *d = (Declaration*) current;
         printTabs(depth + 1);
-        std::cout<< "type: " << d->type.string << "\n";
-        
+
+        std::cout<< "type: ";
+        DataType *type;
+        for (type = &d->type; type->tag == DataType::TYPE_PTR; type = type->ptrTo){
+            std::cout<<"*";
+        }
+        std::cout<<type->type.string<<"\n";
+
+
         for (auto &decl: d->decln){
             printTabs(depth + 1);
             std::cout<< "id:   " << decl.identifier.string << "\n";
@@ -560,7 +594,12 @@ void printParseTree(Node *const current, int depth){
         std::cout<<"Symbol table:\n";
         for (auto &pair : b->symbols.variables){
             printTabs(depth + 2);
-            std::cout<<pair.second.identifier <<": " << pair.second.info << "\n";
+            std::cout<<pair.second.identifier <<": ";
+            DataType *type = &pair.second.info;
+            for (; type->tag == DataType::TYPE_PTR; type = type->ptrTo){
+                std::cout<<"*";
+            }
+            std::cout<<type->type.string<<"\n";
         }
         break;
     }

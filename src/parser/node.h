@@ -109,7 +109,7 @@ struct Assignment: public Node{
 
 
 struct Declaration: public Node{
-    Token type;
+    DataType type;
     // info for a single variable
     struct DeclInfo{
         Token identifier;
@@ -117,6 +117,19 @@ struct Declaration: public Node{
     };
     std::vector<DeclInfo> decln;
 };
+
+
+struct FuncDeclaration: public Node{
+    Token returnType;
+    Token funcName;
+
+    struct Parameter{
+        Token type;
+        Token identifier;
+    };
+    std::vector<Parameter> parameters;
+};
+
 
 struct StatementBlock: public Node{
     std::vector<Node *> statements;
