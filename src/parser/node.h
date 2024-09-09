@@ -5,37 +5,92 @@
 #include <vector>
 
 
+/*
+
+TODO:
+    break/continue/return
+    function params into symbols table
+    character literal tokenization
+    += -= operators in assignment
+    structs
+    function parsing only in global
+
+
+*/
+
+
 
 /*
-statement: expr;
-statement: (assignment | declaration);
-
-assignment : lvalue = rvalue
-lvalue : identifier
-rvalue : subexpr
-subexpr : primary operator subexpr | primary
-primary : '('subexpr')' | unary | identifier | literal 
-unary   : (-|+|*|!|~)? primary
-operator : + | - | / | * 
+The grammar *currently* used in the parser. 
+NOTE: 
+    - Literals are surrounded with double quotes "" 
+    - (x)? denotes 0 or 1 occurence of x
+    - (x|y) denotes either x or y
+    - (x)* denotes 0 or more occurences of x
 
 
-declaration: type identifier (= rvalue) (, identifier (= rvalue))*  
+program: 
+        declaration
+        | function_definition
+        
 
-if_     : if (condition) {
-            (statement)*
-          } 
-          (else if_|{
-            (statement)*
-          })?
 
-while_  : while (condition) {
-            (statement | break; | continue;)*
-          }
+statement: 
+        assignment ";" 
+        | declaration ";" 
+        | WHILE 
+        | IF 
+        | FOR
 
-for_    : for (declaration; subexpr; assignment){
-            (statement | break; | continue;)*
-          }
+assignment : 
+        lvalue "=" rvalue
 
+lvalue : 
+        identifier
+
+rvalue : 
+        subexpr
+
+subexpr : 
+        primary binary_op subexpr 
+        | primary
+
+primary : 
+        "("subexpr")" 
+        | unary_op primary
+        | identifier 
+        | literal 
+
+unary_op :  
+        "-" | "+" | "*" | "!" | "~" | "++" | "--" | "&"
+
+binary_op : 
+        "+" | "-" | "/" | "*" | "%" | "&" | "|" | "<<" 
+        | ">>" | "&&" | "||" | "==" | "!=" | ">" | "<" | ">=" | "<="
+
+declaration: 
+        data_type identifier ( "=" subexpr )? ("," identifier ( "=" subexpr )? )*  
+
+statement_block:
+        "{"
+            ( statement )*
+        "}"
+
+IF : 
+        "if" "("condition")" statement_block
+        ( "else" ( IF | statement_block ) )?
+
+WHILE : 
+        "while" "("subexpr")" statement_block
+
+FOR : 
+        "for" "("assignment";" subexpr";" assignment")" statement_block
+
+function_definition:
+        data_type identifier "("data_type identifier ( "," data_type identifier )* ) statement_block
+
+data_type:
+        ("int" | "float" | "double" | "short" | "long" | "char" | "struct") ("*")* 
 
 
 */

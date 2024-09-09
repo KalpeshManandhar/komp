@@ -32,7 +32,11 @@
 //     inline DataType Pointer = {.name = "pointer", .sizeInBytes = 8, .type = DataType::Type::DATATYPE_POINTER};
 // };
 
+
+
 struct DataType{
+    // Pointer types have the ptrTo member set to their corresponding data types
+    // example: an "int*" datatype would have its ptrTo pointing to an "int" datatype
     enum {
         TYPE_PRIMARY,
         TYPE_STRUCT,
@@ -72,14 +76,12 @@ struct SymbolTable{
         T info;
     };
 
-
-    // TODO: create a separate declaration entry and also add to declaration node
     std::unordered_map<uint32_t, SymbolTableEntry> entries;
 
-    void add(Splice name, T type){
+    void add(Splice name, T info){
         uint32_t hash = adler32((unsigned char *)name.data, name.len);
 
-        entries.insert({hash, {name, type}});
+        entries.insert({hash, {name, info}});
     }
 
     bool existKey(Splice name){
@@ -87,7 +89,7 @@ struct SymbolTable{
         return entries.contains(hash);
     }
 
-    T getInfo(Splice name){
+    SymbolTableEntry<T> getInfo(Splice name){
         uint32_t hash = adler32((unsigned char *)name.data, name.len);
         return entries[hash];
     }
