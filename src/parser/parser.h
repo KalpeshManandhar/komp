@@ -23,7 +23,6 @@ struct Parser{
     Token consumeToken(); 
     void rewindTo(Token checkpoint);  
 
-
     DataType parseDataType();
 
     Subexpr parseFunctionCall(StatementBlock *scope);

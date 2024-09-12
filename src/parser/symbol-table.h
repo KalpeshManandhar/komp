@@ -87,8 +87,8 @@ struct SymbolTable{
     bool existKey(Splice name){
         uint32_t hash = adler32((unsigned char *)name.data, name.len);
         return entries.contains(hash);
-    }
 
+    }
     SymbolTableEntry getInfo(Splice name){
         uint32_t hash = adler32((unsigned char *)name.data, name.len);
         return entries[hash];

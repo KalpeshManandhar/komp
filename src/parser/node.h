@@ -8,11 +8,12 @@
 /*
 
 TODO:
+    function params into symbols table - done
     break/continue/return
-    function params into symbols table
     character literal tokenization
     += -= operators in assignment
     structs
+    arrays
     function parsing only in global
 
 

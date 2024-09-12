@@ -8,6 +8,7 @@ a = 12 +;
 // missing terminal inside parenthesis
 a = (12 * +
 a = (12 * +);
+a = (12 * )
 a = (12 * (+12 /));
 
 

@@ -2,6 +2,12 @@
 
 #include <stdio.h>
 
+
+#define logErrorMessage(errorAtToken, message, ...)  \
+        fprintf(stderr, "[ERROR] %3d:%-3d " message, errorAtToken.lineNo, errorAtToken.charNo, __VA_ARGS__);
+
+
+
 enum ErrorCode{
     ERROR_UNKNOWN,
 

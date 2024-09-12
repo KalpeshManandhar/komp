@@ -1,5 +1,6 @@
 #include <stdio.h>
 #include <assert.h>
+#include <cstdarg>
 
 #include <logger/logger.h>
 
@@ -124,7 +125,7 @@ bool Parser::expect(TokenType type){
 
     // unexpected token
     if (!match(type)) {
-        fprintf(stderr, "[ERROR] Expected token %s but found \"%.*s\"\n", TOKEN_TYPE_STRING[type], (int)currentToken.string.len, currentToken.string.data);
+        logErrorMessage(peekToken(), "Expected token %s but found \"%.*s\"\n", TOKEN_TYPE_STRING[type], (int)currentToken.string.len, currentToken.string.data);
         errors++;
         
         tryRecover();
@@ -182,6 +183,9 @@ void Parser::rewindTo(Token checkpoint){
 }
 
 
+
+
+
 DataType Parser::parseDataType(){
     assert(matchv(DATA_TYPE_TOKENS, ARRAY_COUNT(DATA_TYPE_TOKENS)));
 
@@ -233,7 +237,7 @@ Subexpr Parser::parseIdentifier(StatementBlock *scope){
     identifier.subtag = Subexpr::SUBEXPR_LEAF;
 
     if (!checkDeclaration(identifier.leaf.string)){
-        fprintf(stderr, "[ERROR] Undeclared identifier \"%.*s\"\n", (int)identifier.leaf.string.len, identifier.leaf.string.data);
+        logErrorMessage(identifier.leaf, "Undeclared identifier \"%.*s\"\n", (int)identifier.leaf.string.len, identifier.leaf.string.data);
         errors++;
     }
 
@@ -343,7 +347,7 @@ Subexpr* Parser::parsePrimary(StatementBlock *scope){
 
             if (foo.parameters.size() != nArgs){
                 errors++;
-                fprintf(stderr, "[ERROR] In function \"%.*s\", required %llu but found %llu arguments.\n", 
+                logErrorMessage(identifier, "In function \"%.*s\", required %llu but found %llu arguments.\n", 
                             (int)fooCall->funcName.string.len, fooCall->funcName.string.data,
                             foo.parameters.size(), nArgs);
             }
@@ -364,7 +368,7 @@ Subexpr* Parser::parsePrimary(StatementBlock *scope){
         s->tag = Node::NODE_ERROR;
         errors++;
         // TODO: more descriptive errors pls
-        fprintf(stderr, "[ERROR] Unexpected token. Should be a subexpression.\n");
+        logErrorMessage(peekToken(), "Unexpected token \"%.*s\". Should be a subexpression.\n", (int)peekToken().string.len, peekToken().string.data);
         // skip until a semicolon/end of scope
         tryRecover();
     }
@@ -522,7 +526,7 @@ Node* Parser::parseStatement(StatementBlock *scope){
     else {
         errors++;
         // TODO: more descriptive errors pls
-        fprintf(stderr, "[ERROR] Unexpected token somewhere\n");
+        logErrorMessage(peekToken(), "Unexpected token \"%.*s\".\n", (int)peekToken().string.len, peekToken().string.data);
         // skip until a semicolon/end of scope
         tryRecover();
         consumeToken();
