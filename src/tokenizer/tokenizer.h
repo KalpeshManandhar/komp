@@ -40,8 +40,8 @@ private:
 
 public:    
 
-    size_t lineNo;
-    size_t charNo;
+    int lineNo;
+    int charNo;
     char fileName[100];
     size_t errors;
 

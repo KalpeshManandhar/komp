@@ -268,8 +268,8 @@ Token Tokenizer::nextToken(){
     }
 
     Token t = {0};
-    t.charNo = this->charNo;
-    t.lineNo = this->lineNo;
+    int tokenCharNo = this->charNo;
+    int tokenLineNo = this->lineNo;
 
     
     // starts with an alphabet or _
@@ -300,6 +300,8 @@ Token Tokenizer::nextToken(){
         logErrorCode(this->fileName, this->lineNo, this->charNo, ERROR_UNKNOWN);
         this->skipNonWhitespaces();
     }
+    t.lineNo = tokenLineNo;
+    t.charNo = tokenCharNo;
     return t;
 
 }
