@@ -258,7 +258,7 @@ Node* Parser::parseRVal(StatementBlock *scope){
     return r;
 }
 
-Node* Parser::parseSubexpr(int precedence, StatementBlock *scope){
+Subexpr* Parser::parseSubexpr(int precedence, StatementBlock *scope){
     
     Subexpr *left = (Subexpr*)parsePrimary(scope);
 
@@ -288,7 +288,7 @@ Node* Parser::parseSubexpr(int precedence, StatementBlock *scope){
     return s;
 }
 
-Node* Parser::parsePrimary(StatementBlock *scope){
+Subexpr* Parser::parsePrimary(StatementBlock *scope){
     Subexpr *s = new Subexpr;
     s->tag = Node::NODE_SUBEXPR;
     // (subexpr)
@@ -357,7 +357,8 @@ Node* Parser::parseDeclaration(StatementBlock *scope){
         Function foo;
         foo.returnType = type;
         foo.funcName = identifier;
-
+        foo.block = new StatementBlock;
+        
         // parse parameters
         while (matchv(DATA_TYPE_TOKENS, ARRAY_COUNT(DATA_TYPE_TOKENS))){
             Function::Parameter p;
@@ -367,6 +368,8 @@ Node* Parser::parseDeclaration(StatementBlock *scope){
             p.identifier = consumeToken();
 
             foo.parameters.push_back(p);
+            // add to symbol table
+            foo.block->symbols.add(p.identifier.string, p.type);
             
             if (!match(TOKEN_COMMA)){
                 break;
@@ -378,7 +381,25 @@ Node* Parser::parseDeclaration(StatementBlock *scope){
 
         expect(TOKEN_PARENTHESIS_CLOSE);
         
-        foo.block = (StatementBlock*) parseStatementBlock(&global);
+        // parse function block
+        /* NOTE: i wouldve liked to use parseStatementBlock() but that function is pretty much a standalone function that parses an independent block 
+           for function definition, the parameters need to be preadded to the symbol table before calling parseStatementBlock(), 
+           which would require modifying the function somehow, hence the repetition
+           
+           maybe keeping the symboltable as a reference instead of a member in a statement block might work, 
+           by ensuring that the table is allocated by the calling function
+        */
+        foo.block->tag = Node::NODE_STMT_BLOCK;
+        foo.block->parent = &global;
+        
+        expect(TOKEN_CURLY_OPEN);
+        while (!match(TOKEN_CURLY_CLOSE)){
+            Node *stmt = parseStatement(foo.block);
+            if (stmt){
+                foo.block->statements.push_back(stmt);
+            }
+        }
+        expect(TOKEN_CURLY_CLOSE);
 
         functions.add(foo.funcName.string, foo);
         // TODO: maybe refactor so that no need to return NULL?
@@ -457,7 +478,7 @@ Node* Parser::parseStatement(StatementBlock *scope){
 }
 
 
-Node* Parser::parseStatementBlock(StatementBlock *scope){
+StatementBlock* Parser::parseStatementBlock(StatementBlock *scope){
     StatementBlock *block = new StatementBlock;
     block->tag = Node::NODE_STMT_BLOCK;
     block->parent = scope;

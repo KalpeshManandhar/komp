@@ -89,7 +89,7 @@ struct SymbolTable{
         return entries.contains(hash);
     }
 
-    SymbolTableEntry<T> getInfo(Splice name){
+    SymbolTableEntry getInfo(Splice name){
         uint32_t hash = adler32((unsigned char *)name.data, name.len);
         return entries[hash];
     }

@@ -29,12 +29,12 @@ struct Parser{
     Subexpr parseIdentifier(StatementBlock *scope);
     Node* parseLVal(StatementBlock *scope);
     Node* parseRVal(StatementBlock *scope);
-    Node* parsePrimary(StatementBlock *scope);
+    Subexpr* parsePrimary(StatementBlock *scope);
     Node* parseAssignment(StatementBlock *scope);
-    Node* parseSubexpr(int precedence, StatementBlock *scope);
+    Subexpr* parseSubexpr(int precedence, StatementBlock *scope);
     Node* parseDeclaration(StatementBlock *scope);
     Node* parseStatement(StatementBlock *scope);
-    Node* parseStatementBlock(StatementBlock *scope);
+    StatementBlock* parseStatementBlock(StatementBlock *scope);
     Node* parseIf(StatementBlock *scope);
     Node* parseWhile(StatementBlock *scope);
     Node* parseFor(StatementBlock *scope);
