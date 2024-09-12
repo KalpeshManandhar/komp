@@ -45,9 +45,9 @@ int main(int argc, char **argv){
             std::cout<<"\tReturn type: " <<foo->returnType<<"\n";
             std::cout<<"\tParameters: " <<"{\n";
             for (auto &param: foo->parameters){
-                std::cout<<"\t"<<param.identifier.string<< " : " <<param.type<<"\n";
+                std::cout<<"\t\t"<<param.identifier.string<< " : " <<param.type<<"\n";
             }
-            std::cout<<"}\n";
+            std::cout<<"\t}\n";
             
             printParseTree(foo->block, 1);
             std::cout<<"}\n";

@@ -26,12 +26,14 @@ struct Parser{
 
     DataType parseDataType();
 
+    Subexpr parseFunctionCall(StatementBlock *scope);
     Subexpr parseIdentifier(StatementBlock *scope);
     Node* parseLVal(StatementBlock *scope);
     Node* parseRVal(StatementBlock *scope);
     Subexpr* parsePrimary(StatementBlock *scope);
     Node* parseAssignment(StatementBlock *scope);
     Subexpr* parseSubexpr(int precedence, StatementBlock *scope);
+    ReturnNode* parseReturn(StatementBlock *scope);
     Node* parseDeclaration(StatementBlock *scope);
     Node* parseStatement(StatementBlock *scope);
     StatementBlock* parseStatementBlock(StatementBlock *scope);

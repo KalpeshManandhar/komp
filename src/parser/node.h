@@ -60,6 +60,10 @@ primary :
         | unary_op primary
         | identifier 
         | literal 
+        | func_call
+
+func_call:
+        func_identifier "(" subexpr ( "," subexpr )* ")"
 
 unary_op :  
         "-" | "+" | "*" | "!" | "~" | "++" | "--" | "&"
@@ -107,6 +111,8 @@ struct Node{
         NODE_WHILE,
         NODE_FOR,
         NODE_STMT_BLOCK,
+        NODE_RETURN,
+        NODE_ERROR,
     };
     int tag;
 };
@@ -121,7 +127,13 @@ static const char* NODE_TAG_STRINGS[] = {
     "WHILE",
     "FOR",
     "STMT_BLOCK",
+    "RETURN",
+    "ERROR",
+
 };
+
+struct FunctionCall;
+
 
 struct Subexpr: public Node{
     enum SubTag{
@@ -129,6 +141,7 @@ struct Subexpr: public Node{
         SUBEXPR_RECURSE_OP,
         SUBEXPR_LEAF,
         SUBEXPR_UNARY,
+        SUBEXPR_FUNCTION_CALL,
     }subtag;
     
     union{
@@ -145,6 +158,9 @@ struct Subexpr: public Node{
             Token unaryOp;
             Subexpr *unarySubexpr;
         };
+
+
+        FunctionCall *functionCall;        
     };
 };
 
@@ -160,6 +176,11 @@ struct Rvalue: public Node{
 struct Assignment: public Node{
     Lvalue *left;
     Rvalue *right;
+};
+
+
+struct ReturnNode: public Node{
+    Subexpr *returnVal;
 };
 
 
@@ -194,7 +215,10 @@ struct Function: public Node{
 };
 
 
-
+struct FunctionCall{
+    Token funcName; 
+    std::vector<Subexpr*> arguments; 
+};
 
 
 struct IfNode: public Node{

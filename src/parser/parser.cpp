@@ -104,6 +104,7 @@ int getPrecedence(Token opToken){
 bool Parser::tryRecover(){
     TokenType recoveryDelimiters[] = {
         TOKEN_SEMI_COLON, 
+        TOKEN_COMMA, 
         TOKEN_PARENTHESIS_CLOSE,
         TOKEN_CURLY_CLOSE,
         TOKEN_SQUARE_CLOSE,
@@ -309,7 +310,50 @@ Subexpr* Parser::parsePrimary(StatementBlock *scope){
     }
     // identifiers
     else if(match(TOKEN_IDENTIFIER)){
-        *s = parseIdentifier(scope);
+        Token identifier = peekToken();
+        // parse function call
+        if (functions.existKey(identifier.string)){
+            Function foo = functions.getInfo(identifier.string).info;
+            
+            FunctionCall *fooCall = new FunctionCall;
+            fooCall->funcName = consumeToken();
+            size_t nArgs = 0;
+
+            expect(TOKEN_PARENTHESIS_OPEN);
+            
+            if (!match(TOKEN_PARENTHESIS_CLOSE)){
+                while (true){
+                    Subexpr *arg = parseSubexpr(INT32_MAX, scope);
+                    fooCall->arguments.push_back(arg);
+                    nArgs++;
+
+                    if (match(TOKEN_COMMA)){
+                        consumeToken();
+                    }
+                    else{
+                        break;
+                    }
+                }
+            }
+
+            expect(TOKEN_PARENTHESIS_CLOSE);    
+            
+            s->functionCall = fooCall;
+            s->subtag = Subexpr::SUBEXPR_FUNCTION_CALL;
+
+            if (foo.parameters.size() != nArgs){
+                errors++;
+                fprintf(stderr, "[ERROR] In function \"%.*s\", required %llu but found %llu arguments.\n", 
+                            (int)fooCall->funcName.string.len, fooCall->funcName.string.data,
+                            foo.parameters.size(), nArgs);
+            }
+            
+        }
+        // parse identifier
+        else{
+            *s = parseIdentifier(scope);
+        }
+
     }
     // terminal
     else if (matchv(PRIMARY_TOKEN_TYPES, ARRAY_COUNT(PRIMARY_TOKEN_TYPES))){
@@ -317,6 +361,7 @@ Subexpr* Parser::parsePrimary(StatementBlock *scope){
         s->subtag = Subexpr::SUBEXPR_LEAF;   
     }
     else{
+        s->tag = Node::NODE_ERROR;
         errors++;
         // TODO: more descriptive errors pls
         fprintf(stderr, "[ERROR] Unexpected token. Should be a subexpression.\n");
@@ -333,6 +378,9 @@ Node* Parser::parseAssignment(StatementBlock *scope){
     expect(TOKEN_ASSIGNMENT);
     
     Rvalue *right = (Rvalue*)parseRVal(scope);
+    
+    expect(TOKEN_SEMI_COLON);
+
 
     Assignment *a = new Assignment;
     a->tag = Node::NODE_ASSIGNMENT;    
@@ -340,6 +388,12 @@ Node* Parser::parseAssignment(StatementBlock *scope){
     a->right = right;
     return a;
 }
+
+
+Subexpr Parser::parseFunctionCall(StatementBlock *scope){
+    return Subexpr{0};
+}
+
 
 
 
@@ -452,12 +506,14 @@ Node* Parser::parseStatement(StatementBlock *scope){
     else if (match(TOKEN_FOR)){
         statement = parseFor(scope);
     }
+    else if (match(TOKEN_RETURN)){
+        statement = parseReturn(scope);
+    }
     else if (match(TOKEN_CURLY_OPEN)){
         statement = parseStatementBlock(scope);
     }
     else if (match(TOKEN_IDENTIFIER)){
         statement = parseAssignment(scope);
-        expect(TOKEN_SEMI_COLON);
     }
     else if (match(TOKEN_SEMI_COLON)){
         statement = NULL;
@@ -476,6 +532,26 @@ Node* Parser::parseStatement(StatementBlock *scope){
 
     return statement;
 }
+
+
+// TODO: add function return value checks
+ReturnNode* Parser::parseReturn(StatementBlock *scope){
+    expect(TOKEN_RETURN);
+    
+    ReturnNode* r = new ReturnNode;
+    r->tag = Node::NODE_RETURN;
+
+    
+    if (!match(TOKEN_SEMI_COLON)){
+        r->returnVal = parseSubexpr(INT32_MAX, scope);
+    }
+    
+    expect(TOKEN_SEMI_COLON);
+
+    return r;
+}
+
+
 
 
 StatementBlock* Parser::parseStatementBlock(StatementBlock *scope){
@@ -574,6 +650,11 @@ Node* Parser::parseFor(StatementBlock *scope){
 
 
 void printParseTree(Node *const current, int depth){
+    if (!current){
+        return;
+    }
+
+
     auto printTabs = [&](int n){
         const int tabSize = 4;
         printf("%*s ", n * tabSize, "");
@@ -616,6 +697,18 @@ void printParseTree(Node *const current, int depth){
             printTabs(depth + 1);
             std::cout<<"UNARY OP: " <<s->unaryOp.string << "\n";
             printParseTree(s->unarySubexpr, depth + 1);
+            break;
+        }
+        case Subexpr::SUBEXPR_FUNCTION_CALL : {
+            printTabs(depth + 1);
+            std::cout<<"Function:  " <<s->functionCall->funcName.string << "\n";
+            printTabs(depth + 1);
+            std::cout<<"Parameters: \n ";
+
+            for (auto &arg : s->functionCall->arguments){
+                printParseTree(arg, depth + 1);
+            }
+
             break;
         }
         default:
@@ -765,6 +858,15 @@ void printParseTree(Node *const current, int depth){
         printTabs(depth + 1);
         std::cout<< "statements: \n";
         printParseTree(f->block, depth + 1);
+
+        break;
+    }
+    
+    case Node::NODE_RETURN: {
+        ReturnNode *r = (ReturnNode*) current;
+        printTabs(depth + 1);        
+        std::cout<<"Value: \n";
+        printParseTree(r->returnVal, depth + 1);
 
         break;
     }
