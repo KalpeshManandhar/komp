@@ -39,6 +39,44 @@ static TokenType BINARY_OP_TOKENS[] = {
     TOKEN_GREATER_THAN,
     TOKEN_LESS_EQUALS,
     TOKEN_LESS_THAN,
+    
+    // require checks for left operands: copied to another array
+    TOKEN_ASSIGNMENT,
+    TOKEN_PLUS_ASSIGN,
+    TOKEN_MINUS_ASSIGN,
+    TOKEN_MUL_ASSIGN,
+    TOKEN_DIV_ASSIGN,
+    TOKEN_SQUARE_OPEN,
+    TOKEN_LSHIFT_ASSIGN,
+    TOKEN_RSHIFT_ASSIGN,
+    TOKEN_BITWISE_AND_ASSIGN,
+    TOKEN_BITWISE_OR_ASSIGN,
+    TOKEN_BITWISE_XOR_ASSIGN,
+
+    // require checks for both left and right operands: copied to another array
+    TOKEN_ARROW,
+    TOKEN_DOT,
+};
+
+static TokenType LVAL_CHECK_OP[] = {
+    // require checks for left operands
+    TOKEN_ASSIGNMENT,
+    TOKEN_PLUS_ASSIGN,
+    TOKEN_MINUS_ASSIGN,
+    TOKEN_MUL_ASSIGN,
+    TOKEN_DIV_ASSIGN,
+    TOKEN_SQUARE_OPEN,
+    TOKEN_LSHIFT_ASSIGN,
+    TOKEN_RSHIFT_ASSIGN,
+    TOKEN_BITWISE_AND_ASSIGN,
+    TOKEN_BITWISE_OR_ASSIGN,
+    TOKEN_BITWISE_XOR_ASSIGN,
+};
+
+static TokenType LVAL_RVAL_CHECK_OP[] = {
+    // require checks for both left and right operands
+    TOKEN_ARROW,
+    TOKEN_DOT,
 };
 
 
@@ -67,6 +105,12 @@ static TokenType DATA_TYPE_TOKENS[] = {
 // referenced from https://en.cppreference.com/w/c/language/operator_precedence
 int getPrecedence(Token opToken){
     switch (opToken.type){
+    case TOKEN_PLUS_PLUS:
+    case TOKEN_MINUS_MINUS:
+    case TOKEN_SQUARE_OPEN:
+    case TOKEN_DOT:
+    case TOKEN_ARROW:
+        return 1;
     case TOKEN_STAR:
     case TOKEN_SLASH:
     case TOKEN_MODULO:
@@ -95,6 +139,12 @@ int getPrecedence(Token opToken){
         return 11;
     case TOKEN_LOGICAL_OR: 
         return 12;
+    case TOKEN_ASSIGNMENT: 
+    case TOKEN_PLUS_ASSIGN: 
+    case TOKEN_MINUS_ASSIGN: 
+    case TOKEN_MUL_ASSIGN: 
+    case TOKEN_DIV_ASSIGN: 
+        return 14;
     default:
         return INT32_MAX;
     }
@@ -272,8 +322,16 @@ Subexpr* Parser::parseSubexpr(int precedence, StatementBlock *scope){
     // while next token is an operator and its precedence is higher (value is lower) than current one, add to the tree 
     while (matchv(BINARY_OP_TOKENS, ARRAY_COUNT(BINARY_OP_TOKENS))){
         // for left to right associativity, break out when next op has a lower or equal precedence than current one
-        if (getPrecedence(currentToken) >= precedence){
-            break;
+        if (getPrecedence(peekToken()) >= precedence){
+            // right to left associativity for assignment operators, ie dont break out for same precedence
+            if (matchv(LVAL_CHECK_OP, ARRAY_COUNT(LVAL_CHECK_OP))){
+                if (getPrecedence(peekToken()) > precedence)
+                    break;
+            }
+            else{
+                break;
+            }
+
         }
         
         s = new Subexpr;
@@ -382,8 +440,6 @@ Node* Parser::parseAssignment(StatementBlock *scope){
     expect(TOKEN_ASSIGNMENT);
     
     Rvalue *right = (Rvalue*)parseRVal(scope);
-    
-    expect(TOKEN_SEMI_COLON);
 
 
     Assignment *a = new Assignment;
@@ -395,6 +451,9 @@ Node* Parser::parseAssignment(StatementBlock *scope){
 
 
 Subexpr Parser::parseFunctionCall(StatementBlock *scope){
+    int a = 0, b = 1, c = 2;
+    a = b = c;
+    
     return Subexpr{0};
 }
 
@@ -517,7 +576,8 @@ Node* Parser::parseStatement(StatementBlock *scope){
         statement = parseStatementBlock(scope);
     }
     else if (match(TOKEN_IDENTIFIER)){
-        statement = parseAssignment(scope);
+        statement = parseSubexpr(INT32_MAX, scope);
+        expect(TOKEN_SEMI_COLON);
     }
     else if (match(TOKEN_SEMI_COLON)){
         statement = NULL;
@@ -637,13 +697,13 @@ Node* Parser::parseFor(StatementBlock *scope){
     expect(TOKEN_FOR);
     // parse condition
     expect(TOKEN_PARENTHESIS_OPEN);
-    forNode->init = (Assignment *)parseAssignment(scope);
+    forNode->init = (Subexpr *)parseSubexpr(INT32_MAX, scope);
     expect(TOKEN_SEMI_COLON);
     
     forNode->exitCondition = (Subexpr *)parseSubexpr(INT32_MAX, scope);
     expect(TOKEN_SEMI_COLON);
 
-    forNode->update = (Assignment *)parseAssignment(scope);
+    forNode->update = (Subexpr *)parseSubexpr(INT32_MAX, scope);
     expect(TOKEN_PARENTHESIS_CLOSE);
     
     forNode->block = (StatementBlock *)parseStatementBlock(scope);

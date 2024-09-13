@@ -1,9 +1,11 @@
+int a, b, ishwor, veryGood, god, gyani;
+
 // for loops supports
 // initializer: one assignment (no declaration)
 // end cond:    one subexpression 
 // update:      one assignment 
 for (a = 0; a <= 12; a = a + 1){
-    hello = world;
+    int hello = 0;
 }
 
 
@@ -11,13 +13,13 @@ for (a = 0; a <= 12; a = a + 1){
 
 // if blocks
 if (ishwor == god){
-    isIshworGod = true;
+    int isIshworGod = 1;
 }
 else if (ishwor == veryGood){
-    willIshworDoParser = true;
+    int willIshworDoParser = 1;
 }
 else{
-    elseBlock = a;
+    int elseBlock = a;
 }
 
 // only if
@@ -36,6 +38,6 @@ else if (b){
 
 // while loop
 while (ishwor == gyani){
-    willIshworGiveUsTreat = true;
+    int willIshworGiveUsTreat = 1;
 }
 

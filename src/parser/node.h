@@ -242,8 +242,8 @@ struct WhileNode: public Node{
 
 struct ForNode: public Node{
     Subexpr *exitCondition;
-    Assignment *init;
-    Assignment *update;
+    Subexpr *init;
+    Subexpr *update;
     StatementBlock *block;
 };
 
