@@ -31,7 +31,7 @@ struct Parser{
     Subexpr parseFunctionCall(StatementBlock *scope);
     Subexpr parseIdentifier(StatementBlock *scope);
     Subexpr* parsePrimary(StatementBlock *scope);
-    Subexpr* parseSubexpr(int precedence, StatementBlock *scope);
+    Subexpr* parseSubexpr(int precedence, StatementBlock *scope); 
     ReturnNode* parseReturn(StatementBlock *scope);
     Node* parseDeclaration(StatementBlock *scope);
     Node* parseStatement(StatementBlock *scope);
@@ -45,6 +45,8 @@ public:
         
     size_t errors;
 
+    bool parseProgram();
+    
 
     void init(Tokenizer *t){
         this->tokenizer = t;

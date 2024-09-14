@@ -65,7 +65,6 @@ static TokenType LVAL_CHECK_OP[] = {
     TOKEN_MINUS_ASSIGN,
     TOKEN_MUL_ASSIGN,
     TOKEN_DIV_ASSIGN,
-    TOKEN_SQUARE_OPEN,
     TOKEN_LSHIFT_ASSIGN,
     TOKEN_RSHIFT_ASSIGN,
     TOKEN_BITWISE_AND_ASSIGN,
@@ -523,8 +522,17 @@ Node* Parser::parseDeclaration(StatementBlock *scope){
             }
         }
         expect(TOKEN_CURLY_CLOSE);
+    
+        // function definitions are valid only in global scope
+        if (scope == &global){
+            functions.add(foo.funcName.string, foo);
+        }
+        else{
+            logErrorMessage(foo.funcName, "Invalid function declaration \"%.*s\". Function declarations are valid only in global scope.",
+                            (int)foo.funcName.string.len, foo.funcName.string.data);
+            errors++;
+        }
 
-        functions.add(foo.funcName.string, foo);
         // TODO: maybe refactor so that no need to return NULL?
         return NULL;
     }
@@ -716,6 +724,32 @@ Node* Parser::parseFor(StatementBlock *scope){
 
     return forNode;
 }
+
+
+bool Parser::parseProgram(){
+    while (peekToken().type != TOKEN_EOF){
+        if (matchv(DATA_TYPE_TOKENS, ARRAY_COUNT(DATA_TYPE_TOKENS))){
+            Node *stmt = this->parseDeclaration(&global);
+            if (stmt){
+                this->statements.push_back(stmt);
+            }
+        }
+        else if (match(TOKEN_SEMI_COLON)){
+            consumeToken();
+        }
+        else{
+            logErrorMessage(peekToken(), "Not a valid function or variable declaration.");
+            errors++;
+            tryRecover();
+            consumeToken();
+        }
+
+    }
+    
+    fprintf(stdout, "[Parser] %llu errors generated.\n", errors);
+    return errors == 0;
+}
+
 
 
 

@@ -16,18 +16,26 @@ std::ostream& operator<<(std::ostream& o, DataType d){
 
 int main(int argc, char **argv){
     if (argc < 2){
-        fprintf(stderr, "Usage: %s <c file to parse>", argv[0]);
+        fprintf(stderr, "Usage: %s <c file to parse> [p]\n \t p: for parse program proper", argv[0]);
         return EXIT_FAILURE;
     }
 
     Tokenizer t;
     t.init();
     t.loadFileToBuffer(argv[1]);
-
+    
     Parser p;
     p.init(&t);
 
-    if (p.parse()){
+    bool success = false;
+    if (argc == 3 && strcmp(argv[2], "p") == 0){
+        success = p.parseProgram();
+    }
+    else{
+        success = p.parse();
+    }
+
+    if (success){
         fprintf(stdout, "Parse succeeded :)\n");
         
         for (auto &stmt : p.statements){

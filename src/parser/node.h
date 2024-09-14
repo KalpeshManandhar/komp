@@ -9,13 +9,14 @@
 
 TODO:
     function params into symbols table - done
-    break/continue/return
+    function parsing only in global - done
+    += -= operators in assignment + assignments are binary expressions - done
+    
+    break/continue/return - return somewhat supported
     character literal tokenization
-    += -= operators in assignment
     structs
     arrays
-    function parsing only in global
-
+    implement an arena to reduce chances of memory leaks and easy allocs/frees
 
 */
 
