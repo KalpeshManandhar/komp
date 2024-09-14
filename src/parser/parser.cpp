@@ -311,23 +311,6 @@ Subexpr Parser::parseIdentifier(StatementBlock *scope){
 }
 
 
-// TODO: change this to parse an identifier instead of an lvalue
-Node* Parser::parseLVal(StatementBlock *scope){
-    assert(match(TOKEN_IDENTIFIER));
-    
-    Lvalue *l = new Lvalue;
-    l->tag = Node::NODE_LVALUE;
-    l->leaf = consumeToken();
-    return l; 
-}
-
-Node* Parser::parseRVal(StatementBlock *scope){
-    Rvalue *r = new Rvalue;
-    r->tag = Node::NODE_RVALUE;
-    r->subexpr = (Subexpr *)parseSubexpr(INT32_MAX, scope);
-    return r;
-}
-
 bool Parser::isValidLvalue(Subexpr *expr){
     // single variable identifier
     if (expr->subtag == Subexpr::SUBEXPR_LEAF && expr->leaf.type == TOKEN_IDENTIFIER){
@@ -471,21 +454,6 @@ Subexpr* Parser::parsePrimary(StatementBlock *scope){
     return s;
 }
 
-
-Node* Parser::parseAssignment(StatementBlock *scope){
-    Lvalue *left = (Lvalue*)parseLVal(scope);
-
-    expect(TOKEN_ASSIGNMENT);
-    
-    Rvalue *right = (Rvalue*)parseRVal(scope);
-
-
-    Assignment *a = new Assignment;
-    a->tag = Node::NODE_ASSIGNMENT;    
-    a->left = left; 
-    a->right = right;
-    return a;
-}
 
 
 Subexpr Parser::parseFunctionCall(StatementBlock *scope){
@@ -816,25 +784,6 @@ void printParseTree(Node *const current, int depth){
         default:
             break;
         }
-        break;
-    }
-
-    case Node::NODE_LVALUE:{
-        printTabs(depth + 1);
-        std::cout<< ((Lvalue*)current)->leaf.string<< "\n";
-        break;
-    }
-    
-    case Node::NODE_RVALUE:{
-        printParseTree(((Rvalue*)current)->subexpr, depth + 1);
-        break;
-    }
-
-    case Node::NODE_ASSIGNMENT: {   
-        Assignment *a = (Assignment*)current;
-        printParseTree(a->left, depth + 1);
-
-        printParseTree(a->right, depth + 1);
         break;
     }
     case Node::NODE_DECLARATION: {
