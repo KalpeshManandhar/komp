@@ -4,9 +4,7 @@
 
 
 #define logErrorMessage(errorAtToken, message, ...)  \
-        fprintf(stderr, "[Error] %3d:%-3d " message "\n", errorAtToken.lineNo, errorAtToken.charNo, __VA_ARGS__);
-
-
+    fprintf(stderr, "[Error] %3d:%-3d " message "\n", errorAtToken.lineNo, errorAtToken.charNo, ##__VA_ARGS__);
 
 enum ErrorCode{
     ERROR_UNKNOWN,
