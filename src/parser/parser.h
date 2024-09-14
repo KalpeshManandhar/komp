@@ -18,11 +18,14 @@ struct Parser{
     bool expect(TokenType type);
     bool match(TokenType type);
     bool matchv(TokenType type[], int n);
+    bool match(Token token, TokenType type);
+    bool matchv(Token token, TokenType type[], int n);
     bool tryRecover();
     Token peekToken();
     Token consumeToken(); 
     void rewindTo(Token checkpoint);  
 
+    bool isValidLvalue(Subexpr *expr);
     DataType parseDataType();
 
     Subexpr parseFunctionCall(StatementBlock *scope);

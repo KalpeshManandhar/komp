@@ -175,7 +175,7 @@ bool Parser::expect(TokenType type){
 
     // unexpected token
     if (!match(type)) {
-        logErrorMessage(peekToken(), "Expected token %s but found \"%.*s\"\n", TOKEN_TYPE_STRING[type], (int)currentToken.string.len, currentToken.string.data);
+        logErrorMessage(peekToken(), "Expected token %s but found \"%.*s\"", TOKEN_TYPE_STRING[type], (int)currentToken.string.len, currentToken.string.data);
         errors++;
         
         tryRecover();
@@ -198,6 +198,21 @@ bool Parser::match(TokenType type){
 bool Parser::matchv(TokenType type[], int n){
     for (int i=0; i<n; i++){
         if (currentToken.type == type[i]){
+            return true;
+        }
+    }
+    return false;
+}
+
+
+// checks if current token matches given type
+bool Parser::match(Token token, TokenType type){
+    return token.type == type;
+}
+
+bool Parser::matchv(Token token, TokenType type[], int n){
+    for (int i=0; i<n; i++){
+        if (token.type == type[i]){
             return true;
         }
     }
@@ -287,7 +302,7 @@ Subexpr Parser::parseIdentifier(StatementBlock *scope){
     identifier.subtag = Subexpr::SUBEXPR_LEAF;
 
     if (!checkDeclaration(identifier.leaf.string)){
-        logErrorMessage(identifier.leaf, "Undeclared identifier \"%.*s\"\n", (int)identifier.leaf.string.len, identifier.leaf.string.data);
+        logErrorMessage(identifier.leaf, "Undeclared identifier \"%.*s\"", (int)identifier.leaf.string.len, identifier.leaf.string.data);
         errors++;
     }
 
@@ -313,6 +328,18 @@ Node* Parser::parseRVal(StatementBlock *scope){
     return r;
 }
 
+bool Parser::isValidLvalue(Subexpr *expr){
+    // single variable identifier
+    if (expr->subtag == Subexpr::SUBEXPR_LEAF && expr->leaf.type == TOKEN_IDENTIFIER){
+        return true;
+    }
+
+    return false;
+}
+
+
+
+
 Subexpr* Parser::parseSubexpr(int precedence, StatementBlock *scope){
     
     Subexpr *left = (Subexpr*)parsePrimary(scope);
@@ -321,10 +348,13 @@ Subexpr* Parser::parseSubexpr(int precedence, StatementBlock *scope){
     
     // while next token is an operator and its precedence is higher (value is lower) than current one, add to the tree 
     while (matchv(BINARY_OP_TOKENS, ARRAY_COUNT(BINARY_OP_TOKENS))){
+        bool lval_check = matchv(LVAL_CHECK_OP, ARRAY_COUNT(LVAL_CHECK_OP));
+        
+        
         // for left to right associativity, break out when next op has a lower or equal precedence than current one
         if (getPrecedence(peekToken()) >= precedence){
             // right to left associativity for assignment operators, ie dont break out for same precedence
-            if (matchv(LVAL_CHECK_OP, ARRAY_COUNT(LVAL_CHECK_OP))){
+            if (lval_check){
                 if (getPrecedence(peekToken()) > precedence)
                     break;
             }
@@ -344,6 +374,14 @@ Subexpr* Parser::parseSubexpr(int precedence, StatementBlock *scope){
         Subexpr *next = (Subexpr*)parseSubexpr(getPrecedence(s->op), scope);
         s->right  = next;
         s->subtag = Subexpr::SUBEXPR_RECURSE_OP;
+
+        // check if left operand is valid lvalue
+        if (lval_check){
+            if (!isValidLvalue(s->left)){
+                logErrorMessage(s->op, "Not a valid lvalue");
+                errors++;
+            }
+        }
         
         left = s;
     }     
@@ -405,7 +443,7 @@ Subexpr* Parser::parsePrimary(StatementBlock *scope){
 
             if (foo.parameters.size() != nArgs){
                 errors++;
-                logErrorMessage(identifier, "In function \"%.*s\", required %llu but found %llu arguments.\n", 
+                logErrorMessage(identifier, "In function \"%.*s\", required %llu but found %llu arguments.", 
                             (int)fooCall->funcName.string.len, fooCall->funcName.string.data,
                             foo.parameters.size(), nArgs);
             }
@@ -426,7 +464,7 @@ Subexpr* Parser::parsePrimary(StatementBlock *scope){
         s->tag = Node::NODE_ERROR;
         errors++;
         // TODO: more descriptive errors pls
-        logErrorMessage(peekToken(), "Unexpected token \"%.*s\". Should be a subexpression.\n", (int)peekToken().string.len, peekToken().string.data);
+        logErrorMessage(peekToken(), "Unexpected token \"%.*s\". Should be a subexpression.", (int)peekToken().string.len, peekToken().string.data);
         // skip until a semicolon/end of scope
         tryRecover();
     }
@@ -586,7 +624,7 @@ Node* Parser::parseStatement(StatementBlock *scope){
     else {
         errors++;
         // TODO: more descriptive errors pls
-        logErrorMessage(peekToken(), "Unexpected token \"%.*s\".\n", (int)peekToken().string.len, peekToken().string.data);
+        logErrorMessage(peekToken(), "Unexpected token \"%.*s\".", (int)peekToken().string.len, peekToken().string.data);
         // skip until a semicolon/end of scope
         tryRecover();
         consumeToken();

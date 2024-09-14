@@ -6,6 +6,7 @@ a = (a + b);
 a = (a + b/6); 
 a += a = b;
 b = a = b;
+b = a + b = b; // this should error
 
 b = --b;
 b = ++b;
