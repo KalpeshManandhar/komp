@@ -165,20 +165,6 @@ struct Subexpr: public Node{
     };
 };
 
-struct Lvalue: public Node{
-    Token leaf;
-};
-
-struct Rvalue: public Node{
-    Subexpr *subexpr;
-};
-
-
-struct Assignment: public Node{
-    Lvalue *left;
-    Rvalue *right;
-};
-
 
 struct ReturnNode: public Node{
     Subexpr *returnVal;
