@@ -392,16 +392,15 @@ Subexpr* Parser::parsePrimary(StatementBlock *scope){
     }
     // identifiers
     else if(match(TOKEN_IDENTIFIER)){
-        Token identifier = peekToken();
+        Token identifier = consumeToken();
         // parse function call
-        if (functions.existKey(identifier.string)){
-            Function foo = functions.getInfo(identifier.string).info;
-            
+        if (match(TOKEN_PARENTHESIS_OPEN)){
+            expect(TOKEN_PARENTHESIS_OPEN);
+
             FunctionCall *fooCall = new FunctionCall;
-            fooCall->funcName = consumeToken();
+            fooCall->funcName = identifier;
             size_t nArgs = 0;
 
-            expect(TOKEN_PARENTHESIS_OPEN);
             
             if (!match(TOKEN_PARENTHESIS_CLOSE)){
                 while (true){
@@ -422,17 +421,32 @@ Subexpr* Parser::parsePrimary(StatementBlock *scope){
             
             s->functionCall = fooCall;
             s->subtag = Subexpr::SUBEXPR_FUNCTION_CALL;
-
-            if (foo.parameters.size() != nArgs){
+            
+            if (!functions.existKey(identifier.string)){
                 errors++;
-                logErrorMessage(identifier, "In function \"%.*s\", required %llu but found %llu arguments.", 
-                            (int)fooCall->funcName.string.len, fooCall->funcName.string.data,
-                            foo.parameters.size(), nArgs);
+                logErrorMessage(identifier, "Invalid implicit declaration of function \"%.*s\"", 
+                                (int)identifier.string.len, identifier.string.data);
             }
+            else{
+                Function foo = functions.getInfo(identifier.string).info;
+
+                if (foo.parameters.size() != nArgs){
+                    errors++;
+                    logErrorMessage(identifier, "In function \"%.*s\", required %llu but found %llu arguments.", 
+                                (int)fooCall->funcName.string.len, fooCall->funcName.string.data,
+                                foo.parameters.size(), nArgs);
+                }
+            }
+            
+            
+        }
+        // parse array indexing
+        else if (match(TOKEN_SQUARE_OPEN)){
             
         }
         // parse identifier
         else{
+            rewindTo(identifier);
             *s = parseIdentifier(scope);
         }
 
@@ -446,7 +460,7 @@ Subexpr* Parser::parsePrimary(StatementBlock *scope){
         s->tag = Node::NODE_ERROR;
         errors++;
         // TODO: more descriptive errors pls
-        logErrorMessage(peekToken(), "Unexpected token \"%.*s\". Should be a subexpression.", (int)peekToken().string.len, peekToken().string.data);
+        logErrorMessage(peekToken(), "Invalid subexpression at token \"%.*s\".", (int)peekToken().string.len, peekToken().string.data);
         // skip until a semicolon/end of scope
         tryRecover();
     }

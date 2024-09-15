@@ -144,6 +144,7 @@ struct Subexpr: public Node{
         SUBEXPR_LEAF,
         SUBEXPR_UNARY,
         SUBEXPR_FUNCTION_CALL,
+        SUBEXPR_ARRAY_INDEX,
     }subtag;
     
     union{
