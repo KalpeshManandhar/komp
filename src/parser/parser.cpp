@@ -254,8 +254,8 @@ void Parser::rewindTo(Token checkpoint){
 
 DataType Parser::parseDataType(){
     if (match(TOKEN_VOID)){
-        consumeToken();
         DataType d = DataTypes::Void;
+        d.type = consumeToken();
         
         // if a void *
         while (match(TOKEN_STAR)){
