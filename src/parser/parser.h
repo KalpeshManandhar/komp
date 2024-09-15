@@ -26,6 +26,7 @@ struct Parser{
     void rewindTo(Token checkpoint);  
 
     bool isValidLvalue(Subexpr *expr);
+    DataType getDataType(Subexpr *operation, StatementBlock *scope);
     DataType parseDataType();
 
     Subexpr parseFunctionCall(StatementBlock *scope);

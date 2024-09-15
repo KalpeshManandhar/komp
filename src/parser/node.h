@@ -13,10 +13,22 @@ TODO:
     += -= operators in assignment + assignments are binary expressions - done
     
     break/continue/return - return somewhat supported
+    arrays - indexing works, declarations remain, initialization remain
+    type checking - somewhat done
+    
     character literal tokenization
     structs
-    arrays
-    implement an arena to reduce chances of memory leaks and easy allocs/frees
+    
+
+    Specific refactors:
+        - find a better way to call the type checking function.
+        - probably change declaration initializers to be an assignment 
+        - implement an arena to reduce chances of memory leaks and easy allocs/frees
+
+
+
+
+
 
 */
 

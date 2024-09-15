@@ -2,8 +2,8 @@
 
 std::ostream& operator<<(std::ostream& o, DataType d){
     DataType *type = &d;
-    for (; type->tag == DataType::TYPE_PTR; type = type->ptrTo){
-        o<<"*";
+    for (int level = 0; level < d.indirectionLevel; level++){
+        std::cout<<"*";
     }
     o<<type->type.string;
     return o;

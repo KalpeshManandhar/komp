@@ -1,8 +1,8 @@
 #pragma once
 
-#include <string>
 #include <unordered_map>
 #include <tokenizer/str.h>
+#include <tokenizer/token.h>
 
 // struct DataType{
 //     const char *name;
@@ -22,15 +22,6 @@
 
 
 
-// namespace DataTypes{
-//     inline DataType Char  = {.name = "char", .sizeInBytes = 1, .type = DataType::Type::DATATYPE_CHAR};
-//     inline DataType Short =  {.name = "short", .sizeInBytes = 2, .type = DataType::Type::DATATYPE_SHORT};
-//     inline DataType Int   = {.name = "int",  .sizeInBytes = 4, .type = DataType::Type::DATATYPE_INT};
-//     inline DataType Float = {.name = "float", .sizeInBytes = 4, .type = DataType::Type::DATATYPE_FLOAT};
-//     inline DataType Long =  {.name = "long", .sizeInBytes = 4, .type = DataType::Type::DATATYPE_LONG};
-//     inline DataType Double = {.name = "double", .sizeInBytes = 8, .type = DataType::Type::DATATYPE_DOUBLE};
-//     inline DataType Pointer = {.name = "pointer", .sizeInBytes = 8, .type = DataType::Type::DATATYPE_POINTER};
-// };
 
 
 
@@ -42,12 +33,44 @@ struct DataType{
         TYPE_STRUCT,
         TYPE_PTR,
         TYPE_VOID,
+        TYPE_ERROR,
     }tag;
-    union{
-        Token type;
-        DataType *ptrTo;
-    };
+    Token type;
+    int indirectionLevel;
+
 };
+
+namespace DataTypes{
+    inline DataType Char  = {.tag = DataType::TYPE_PRIMARY, .type = {TOKEN_CHAR, {"char", sizeof("char") - 1}, 0, 0}, .indirectionLevel = 0};
+    inline DataType Short  = {.tag = DataType::TYPE_PRIMARY, .type = {TOKEN_SHORT, {"short", sizeof("short") - 1}, 0, 0}, .indirectionLevel = 0};
+    inline DataType Int  = {.tag = DataType::TYPE_PRIMARY, .type = {TOKEN_INT, {"int", sizeof("int") - 1}, 0, 0}, .indirectionLevel = 0};
+    inline DataType Float  = {.tag = DataType::TYPE_PRIMARY, .type = {TOKEN_FLOAT, {"float", sizeof("float") - 1}, 0, 0}, .indirectionLevel = 0};
+    inline DataType Long  = {.tag = DataType::TYPE_PRIMARY, .type = {TOKEN_LONG, {"long", sizeof("long") - 1}, 0, 0}, .indirectionLevel = 0};
+    inline DataType Double = {.tag = DataType::TYPE_PRIMARY, .type = {TOKEN_DOUBLE, {"double", sizeof("double") - 1}, 0, 0}, .indirectionLevel = 0};
+    inline DataType String = {.tag = DataType::TYPE_PRIMARY, .type = {TOKEN_STRING_LITERAL, {"char", sizeof("char") - 1}, 0, 0}, .indirectionLevel = 1};
+    inline DataType Void = {.tag = DataType::TYPE_VOID, .type = {TOKEN_VOID, {"void", sizeof("void") - 1}, 0, 0}, .indirectionLevel = 0};
+    inline DataType Error = {.tag = DataType::TYPE_ERROR, .type = {TOKEN_ERROR, {"error", sizeof("error") - 1}, 0, 0}, .indirectionLevel = 0};
+};
+
+static const char* dataTypePrintf(DataType d){
+    static char scratchpad[1024];
+    static int sp = 0;
+
+    if (sp > 512){
+        sp = 0;
+    }
+
+    int start = sp;
+    for (int i = 0; i<d.type.string.len; i++){
+        scratchpad[sp++] = d.type.string.data[i];
+    }
+    for (int level = 0; level < d.indirectionLevel; level++){
+        scratchpad[sp++] = '*';
+    }
+    scratchpad[sp++] = 0;
+
+    return &scratchpad[start];
+}
 
 
 

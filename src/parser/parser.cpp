@@ -98,7 +98,8 @@ static TokenType DATA_TYPE_TOKENS[] = {
     TOKEN_CHAR,
     TOKEN_DOUBLE,
     TOKEN_SHORT,
-    TOKEN_STRUCT
+    TOKEN_STRUCT,
+    TOKEN_VOID,
 };
 
 
@@ -252,20 +253,28 @@ void Parser::rewindTo(Token checkpoint){
 
 
 DataType Parser::parseDataType(){
-    assert(matchv(DATA_TYPE_TOKENS, ARRAY_COUNT(DATA_TYPE_TOKENS)));
+    if (match(TOKEN_VOID)){
+        consumeToken();
+        DataType d = DataTypes::Void;
+        
+        // if a void *
+        while (match(TOKEN_STAR)){
+            d.indirectionLevel = 1;
+            consumeToken(); 
+        }
+        return d;
+    }
 
+    assert(matchv(DATA_TYPE_TOKENS, ARRAY_COUNT(DATA_TYPE_TOKENS)));
 
     DataType d;
     d.type = consumeToken();
+    d.indirectionLevel = 0;
     d.tag = DataType::TYPE_PRIMARY;
 
     // if a pointer
     while (match(TOKEN_STAR)){
-        DataType *ptrTo = new DataType;
-        *ptrTo = d;
-        
-        d.ptrTo = ptrTo;
-        d.tag = DataType::TYPE_PTR;
+        d.indirectionLevel++;
         consumeToken(); 
     }
     
@@ -325,10 +334,139 @@ bool Parser::isValidLvalue(Subexpr *expr){
 }
 
 
+DataType Parser::getDataType(Subexpr *expr, StatementBlock *scope){
+
+    switch (expr->subtag)
+    {
+        case Subexpr::SUBEXPR_BINARY_OP:{
+            
+            DataType leftType = getDataType(expr->left, scope);
+            DataType rightType = getDataType(expr->right, scope);
+            
+            if (leftType.tag == DataType::TYPE_ERROR || rightType.tag == DataType::TYPE_ERROR){
+                return DataTypes::Error;
+            }
+            if ((leftType.tag == DataType::TYPE_VOID && leftType.indirectionLevel == 0)
+                || rightType.tag == DataType::TYPE_VOID && rightType.indirectionLevel == 0){
+                logErrorMessage(expr->op, "Cannot perform operation \"%.*s\" with void type.", 
+                                    splicePrintf(expr->op.string));
+                errors++;
+                return DataTypes::Error;
+            }
+
+            // indexing only works with integers
+            if (expr->op.type == TOKEN_SQUARE_OPEN){
+                if (rightType.type.type != TOKEN_INT){
+                    logErrorMessage(expr->op, "Indexing only works with integer type.");
+                    errors++;
+                    return DataTypes::Error;
+                }
+                
+                DataType memberType = leftType;
+                memberType.indirectionLevel--;
+
+                return memberType;
+            }
+
+            auto getResultantType = [&](DataType left, DataType right) -> DataType{
+                if (left.indirectionLevel != right.indirectionLevel){
+                    logErrorMessage(expr->op, "No \"%.*s\" operator defined for type \"%s\" and \"%s\".", 
+                                    splicePrintf(expr->op.string),
+                                    dataTypePrintf(leftType), dataTypePrintf(rightType));
+                    errors++;
+                    return DataTypes::Error;
+                }
+
+                // TODO: implicit type conversion 
+                // truncate for assignments
+                // expand for other operations                
+                return DataTypes::Int;
+            };
+
+            return getResultantType(leftType, rightType);
+            break;
+        }
+            
+        case Subexpr::SUBEXPR_UNARY:{
+
+            DataType operand = getDataType(expr->unarySubexpr, scope);
+            if (match(expr->unaryOp, TOKEN_STAR)){
+                if (operand.indirectionLevel > 0){
+                    operand.indirectionLevel--;
+                    return operand;
+                }
+                else{
+                    logErrorMessage(expr->unaryOp, "Cannot be dereferenced. Not a valid pointer.");
+                    errors++;
+                    return DataTypes::Error;
+                }
+            }
+            else if (match(expr->unaryOp, TOKEN_AMPERSAND)){
+                if (expr->unarySubexpr->subtag == Subexpr::SUBEXPR_LEAF && 
+                    !match(expr->unarySubexpr->leaf, TOKEN_IDENTIFIER) &&
+                    matchv(expr->unarySubexpr->leaf, PRIMARY_TOKEN_TYPES, ARRAY_COUNT(PRIMARY_TOKEN_TYPES))){
+                    
+                    logErrorMessage(expr->unaryOp, "\"%.*s\" is not a valid identifier. Cannot get the address of a literal.",
+                                    splicePrintf(expr->unarySubexpr->leaf.string));
+                    errors++;
+                    return DataTypes::Error;
+                }
+                else{
+                    operand.indirectionLevel++;
+                    return operand;
+                }
+            }
+            return operand;
+            break;
+        }
+
+        case Subexpr::SUBEXPR_LEAF:{
+
+            if (match(expr->leaf, TOKEN_IDENTIFIER)){
+                assert(scope->symbols.existKey(expr->leaf.string));
+                
+                DataType type = scope->symbols.getInfo(expr->leaf.string).info;
+                return type;
+            }
+            
+            switch (expr->leaf.type){
+                case TOKEN_CHARACTER_LITERAL:
+                    return DataTypes::Char;
+                case TOKEN_NUMERIC_FLOAT:
+                    return DataTypes::Float;
+                case TOKEN_NUMERIC_DOUBLE:
+                    return DataTypes::Double;
+                case TOKEN_NUMERIC_DEC:
+                case TOKEN_NUMERIC_BIN:
+                case TOKEN_NUMERIC_HEX:
+                case TOKEN_NUMERIC_OCT:
+                    return DataTypes::Int;
+                case TOKEN_STRING_LITERAL:
+                    return DataTypes::String;
+                default:
+                    return DataTypes::Error;
+            }
+
+            break;
+        }
+
+
+        case Subexpr::SUBEXPR_FUNCTION_CALL:
+            return functions.getInfo(expr->functionCall->funcName.string).info.returnType;
+        
+        case Subexpr::SUBEXPR_RECURSE_PARENTHESIS:
+            return getDataType(expr->inside, scope);
+        
+        default:
+            return DataTypes::Void;
+    }
+
+}
+
+
 
 
 Subexpr* Parser::parseSubexpr(int precedence, StatementBlock *scope){
-    
     Subexpr *left = (Subexpr*)parsePrimary(scope);
 
     Subexpr *s = left;
@@ -378,6 +516,7 @@ Subexpr* Parser::parseSubexpr(int precedence, StatementBlock *scope){
         left = s;
     }     
 
+    
     return s;
 }
 
@@ -465,7 +604,6 @@ Subexpr* Parser::parsePrimary(StatementBlock *scope){
     else{
         s->tag = Node::NODE_ERROR;
         errors++;
-        // TODO: more descriptive errors pls
         logErrorMessage(peekToken(), "Invalid subexpression at token \"%.*s\".", (int)peekToken().string.len, peekToken().string.data);
         // skip until a semicolon/end of scope
         tryRecover();
@@ -575,6 +713,8 @@ Node* Parser::parseDeclaration(StatementBlock *scope){
             if (match(TOKEN_ASSIGNMENT)){
                 consumeToken();
                 var.initValue = (Subexpr *)parseSubexpr(INT32_MAX, scope);
+                getDataType(var.initValue, scope);
+
             }
             d->decln.push_back(var);
 
@@ -583,6 +723,12 @@ Node* Parser::parseDeclaration(StatementBlock *scope){
             
         }while (match(TOKEN_COMMA) && expect(TOKEN_COMMA));
         expect(TOKEN_SEMI_COLON);
+
+        // void type not allowed
+        if (type.tag == DataType::TYPE_VOID && type.indirectionLevel == 0){
+            errors++;
+            logErrorMessage(type.type, "void type is not allowed.");
+        }
 
         return d; 
     }
@@ -611,6 +757,8 @@ Node* Parser::parseStatement(StatementBlock *scope){
     }
     else if (match(TOKEN_IDENTIFIER)){
         statement = parseSubexpr(INT32_MAX, scope);
+        getDataType((Subexpr *)statement, scope);
+
         expect(TOKEN_SEMI_COLON);
     }
     else if (match(TOKEN_SEMI_COLON)){
@@ -619,7 +767,6 @@ Node* Parser::parseStatement(StatementBlock *scope){
     }
     else {
         errors++;
-        // TODO: more descriptive errors pls
         logErrorMessage(peekToken(), "Unexpected token \"%.*s\".", (int)peekToken().string.len, peekToken().string.data);
         // skip until a semicolon/end of scope
         tryRecover();
@@ -845,11 +992,10 @@ void printParseTree(Node *const current, int depth){
         printTabs(depth + 1);
 
         std::cout<< "type: ";
-        DataType *type;
-        for (type = &d->type; type->tag == DataType::TYPE_PTR; type = type->ptrTo){
+        for (int level = 0; level < d->type.indirectionLevel; level++){
             std::cout<<"*";
         }
-        std::cout<<type->type.string<<"\n";
+        std::cout<<d->type.type.string<<"\n";
 
 
         for (auto &decl: d->decln){
@@ -878,7 +1024,7 @@ void printParseTree(Node *const current, int depth){
             printTabs(depth + 2);
             std::cout<<pair.second.identifier <<": ";
             DataType *type = &pair.second.info;
-            for (; type->tag == DataType::TYPE_PTR; type = type->ptrTo){
+            for (int level = 0; level < type->indirectionLevel; level++){
                 std::cout<<"*";
             }
             std::cout<<type->type.string<<"\n";
