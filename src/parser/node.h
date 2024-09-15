@@ -140,7 +140,7 @@ struct FunctionCall;
 struct Subexpr: public Node{
     enum SubTag{
         SUBEXPR_RECURSE_PARENTHESIS = 1,
-        SUBEXPR_RECURSE_OP,
+        SUBEXPR_BINARY_OP,
         SUBEXPR_LEAF,
         SUBEXPR_UNARY,
         SUBEXPR_FUNCTION_CALL,
@@ -148,22 +148,27 @@ struct Subexpr: public Node{
     }subtag;
     
     union{
-        struct{        
+        // binary: left op right
+        struct {        
             Subexpr *left; 
             Token op; 
             Subexpr *right; 
         };
-
+        
+        // leaf 
         Token leaf;
+
+        // parenthesis: (inside)
         Subexpr *inside;
         
+        // unary: unaryOp unarySubexpr
         struct {
             Token unaryOp;
             Subexpr *unarySubexpr;
         };
-
-
+        
         FunctionCall *functionCall;        
+        
     };
 };
 

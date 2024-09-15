@@ -70,6 +70,7 @@ static TokenType LVAL_CHECK_OP[] = {
     TOKEN_BITWISE_AND_ASSIGN,
     TOKEN_BITWISE_OR_ASSIGN,
     TOKEN_BITWISE_XOR_ASSIGN,
+    TOKEN_SQUARE_OPEN,
 };
 
 static TokenType LVAL_RVAL_CHECK_OP[] = {
@@ -315,6 +316,10 @@ bool Parser::isValidLvalue(Subexpr *expr){
     if (expr->subtag == Subexpr::SUBEXPR_LEAF && expr->leaf.type == TOKEN_IDENTIFIER){
         return true;
     }
+    else if (expr->subtag == Subexpr::SUBEXPR_BINARY_OP && expr->op.type == TOKEN_SQUARE_OPEN){
+        return true;
+    }
+    
 
     return false;
 }
@@ -355,15 +360,20 @@ Subexpr* Parser::parseSubexpr(int precedence, StatementBlock *scope){
 
         Subexpr *next = (Subexpr*)parseSubexpr(getPrecedence(s->op), scope);
         s->right  = next;
-        s->subtag = Subexpr::SUBEXPR_RECURSE_OP;
+        s->subtag = Subexpr::SUBEXPR_BINARY_OP;
+        
+        if (match(s->op,TOKEN_SQUARE_OPEN)){
+            expect(TOKEN_SQUARE_CLOSE);
+        }
 
         // check if left operand is valid lvalue
         if (lval_check){
             if (!isValidLvalue(s->left)){
-                logErrorMessage(s->op, "Not a valid lvalue");
+                logErrorMessage(s->op, "Not a valid lvalue.");
                 errors++;
             }
         }
+
         
         left = s;
     }     
@@ -438,10 +448,6 @@ Subexpr* Parser::parsePrimary(StatementBlock *scope){
                 }
             }
             
-            
-        }
-        // parse array indexing
-        else if (match(TOKEN_SQUARE_OPEN)){
             
         }
         // parse identifier
@@ -786,7 +792,7 @@ void printParseTree(Node *const current, int depth){
         Subexpr * s = (Subexpr *)current;
 
         switch (s->subtag){
-        case Subexpr::SUBEXPR_RECURSE_OP :{
+        case Subexpr::SUBEXPR_BINARY_OP :{
             printParseTree(s->left, depth + 1);
             
             printTabs(depth + 1);
