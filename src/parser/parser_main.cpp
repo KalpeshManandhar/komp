@@ -1,17 +1,5 @@
 #include "parser.h"
 
-std::ostream& operator<<(std::ostream& o, DataType d){
-    DataType *type = &d;
-    for (int level = 0; level < d.indirectionLevel; level++){
-        std::cout<<"*";
-    }
-    o<<type->type.string;
-    return o;
-}
-
-
-
-
 
 
 int main(int argc, char **argv){
@@ -44,16 +32,16 @@ int main(int argc, char **argv){
 
         for (auto &pair : p.global.symbols.entries){
             std::cout<<pair.second.identifier <<": ";
-            std::cout<<pair.second.info<<"\n";
+            std::cout<<dataTypePrintf(pair.second.info)<<"\n";
         }
 
         for (auto &pair: p.functions.entries){
             std::cout<<"Function: " <<pair.second.identifier <<"{\n";
             Function *foo = &pair.second.info;
-            std::cout<<"\tReturn type: " <<foo->returnType<<"\n";
+            std::cout<<"\tReturn type: " <<dataTypePrintf(foo->returnType)<<"\n";
             std::cout<<"\tParameters: " <<"{\n";
             for (auto &param: foo->parameters){
-                std::cout<<"\t\t"<<param.identifier.string<< " : " <<param.type<<"\n";
+                std::cout<<"\t\t"<<param.identifier.string<< " : " <<dataTypePrintf(param.type)<<"\n";
             }
             std::cout<<"\t}\n";
             

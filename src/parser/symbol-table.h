@@ -1,5 +1,6 @@
 #pragma once
 
+#include <string.h>
 #include <unordered_map>
 #include <tokenizer/str.h>
 #include <tokenizer/token.h>
@@ -37,6 +38,21 @@ struct DataType{
     }tag;
     Token type;
     int indirectionLevel;
+    
+    enum Specifiers{
+        NONE = 0x0,
+        UNSIGNED = (0x1 << 0), 
+        VOLATILE = (0x1 << 1), 
+        EXTERN = (0x1 << 2), 
+        STATIC = (0x1 << 3), 
+        CONST = (0x1 << 4), 
+        LONG = (0x1 << 5), 
+        LONG_LONG = (0x1 << 6), 
+        SHORT = (0x1 << 7), 
+        SIGNED = (0x1 << 8), 
+    };
+    int specifierFlags;
+
 
 };
 
@@ -61,6 +77,25 @@ static const char* dataTypePrintf(DataType d){
     }
 
     int start = sp;
+    if (d.specifierFlags & DataType::Specifiers::UNSIGNED){
+        strcpy_s(&scratchpad[sp], 1024 - sp, "unsigned ");
+        sp += strlen("unsigned ");
+    }
+    if (d.specifierFlags & DataType::Specifiers::LONG){
+        strcpy_s(&scratchpad[sp], 1024 - sp, "long ");
+        sp += strlen("long ");
+    }
+    else if (d.specifierFlags & DataType::Specifiers::LONG_LONG){
+        strcpy_s(&scratchpad[sp], 1024 - sp, "long long ");
+        sp += strlen("long long ");
+    }
+    else if (d.specifierFlags & DataType::Specifiers::SHORT){
+        strcpy_s(&scratchpad[sp], 1024 - sp, "short ");
+        sp += strlen("short ");
+    }
+
+
+
     for (int i = 0; i<d.type.string.len; i++){
         scratchpad[sp++] = d.type.string.data[i];
     }

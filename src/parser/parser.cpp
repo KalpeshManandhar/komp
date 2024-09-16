@@ -94,12 +94,25 @@ static TokenType UNARY_OP_TOKENS[] = {
 static TokenType DATA_TYPE_TOKENS[] = {
     TOKEN_INT,
     TOKEN_FLOAT, 
-    TOKEN_LONG, 
     TOKEN_CHAR,
     TOKEN_DOUBLE,
-    TOKEN_SHORT,
     TOKEN_STRUCT,
     TOKEN_VOID,
+};
+
+static TokenType STORAGE_CLASS_SPECIFIER_TOKENS[] = {
+    TOKEN_VOLATILE,
+    TOKEN_CONST,
+    TOKEN_EXTERN,
+    TOKEN_STATIC,
+    TOKEN_INLINE,
+};
+
+static TokenType TYPE_MODIFIER_TOKENS[] = {
+    TOKEN_UNSIGNED,
+    TOKEN_SIGNED,
+    TOKEN_LONG,
+    TOKEN_SHORT,
 };
 
 
@@ -253,22 +266,78 @@ void Parser::rewindTo(Token checkpoint){
 
 
 DataType Parser::parseDataType(){
-    if (match(TOKEN_VOID)){
-        DataType d = DataTypes::Void;
-        d.type = consumeToken();
-        
-        // if a void *
-        while (match(TOKEN_STAR)){
-            d.indirectionLevel = 1;
-            consumeToken(); 
-        }
-        return d;
-    }
+    assert(matchv(DATA_TYPE_TOKENS, ARRAY_COUNT(DATA_TYPE_TOKENS)) 
+            || matchv(TYPE_MODIFIER_TOKENS, ARRAY_COUNT(TYPE_MODIFIER_TOKENS)));
 
-    assert(matchv(DATA_TYPE_TOKENS, ARRAY_COUNT(DATA_TYPE_TOKENS)));
+    bool didError = false;
 
     DataType d;
-    d.type = consumeToken();
+    d.specifierFlags = DataType::Specifiers::NONE;
+    
+    while (matchv(TYPE_MODIFIER_TOKENS, ARRAY_COUNT(TYPE_MODIFIER_TOKENS))){
+        if (match(TOKEN_UNSIGNED)){
+            if (d.specifierFlags & DataType::Specifiers::UNSIGNED){
+                didError = true;
+            }
+            else{
+                d.specifierFlags |= DataType::Specifiers::UNSIGNED;
+            }   
+        }
+        else if (match(TOKEN_SIGNED)){
+            if (d.specifierFlags & DataType::Specifiers::SIGNED){
+                didError = true;
+            }
+            else{
+                d.specifierFlags |= DataType::Specifiers::SIGNED;
+            }
+        }
+        else if (match(TOKEN_LONG)){
+            if (d.specifierFlags & DataType::Specifiers::LONG_LONG){
+                didError = true;
+            }
+            else if (d.specifierFlags & DataType::Specifiers::LONG){
+                d.specifierFlags |= DataType::Specifiers::LONG_LONG;
+                d.specifierFlags ^= DataType::Specifiers::LONG;
+            }
+            else{
+                d.specifierFlags |= DataType::Specifiers::LONG;
+            }
+        }
+        else if (match(TOKEN_SHORT)){
+            if (d.specifierFlags & DataType::Specifiers::SHORT){
+                didError = true;
+            }
+            else{
+                d.specifierFlags |= DataType::Specifiers::SHORT;
+            }
+        }
+        consumeToken();
+    }
+
+    // long and short conflict
+    if ((d.specifierFlags & (DataType::Specifiers::LONG | DataType::Specifiers::LONG_LONG) )
+        && (d.specifierFlags & DataType::Specifiers::SHORT)){
+        didError = true;
+    }
+    // signed and unsigned conflict
+    if ((d.specifierFlags & (DataType::Specifiers::SIGNED))
+        && (d.specifierFlags & DataType::Specifiers::UNSIGNED)){
+        didError = true;
+    }
+
+    // default type is int if there are specifiers but no type
+    if (!matchv(DATA_TYPE_TOKENS, ARRAY_COUNT(DATA_TYPE_TOKENS))){
+        d.type = DataTypes::Int.type;
+    }
+    else{
+        d.type = consumeToken();
+        
+        // cannot use type modifiers with floats and doubles 
+        if (d.specifierFlags && (match(d.type, TOKEN_FLOAT) || match(d.type, TOKEN_DOUBLE) || match(d.type, TOKEN_VOID))){
+            didError = true;
+        }
+    }
+
     d.indirectionLevel = 0;
     d.tag = DataType::TYPE_PRIMARY;
 
@@ -278,6 +347,12 @@ DataType Parser::parseDataType(){
         consumeToken(); 
     }
     
+    if (didError){
+        logErrorMessage(peekToken(), "Invalid combination of type modifiers.");
+        errors++;
+        return DataTypes::Error;
+    }
+
     return d;
 }
 
@@ -334,6 +409,8 @@ bool Parser::isValidLvalue(Subexpr *expr){
 }
 
 
+// get the expected type of a subexpr while checking for errors
+// reference from https://en.cppreference.com/w/c/language/conversion
 DataType Parser::getDataType(Subexpr *expr, StatementBlock *scope){
 
     switch (expr->subtag)
@@ -624,7 +701,6 @@ Subexpr Parser::parseFunctionCall(StatementBlock *scope){
 
 
 Node* Parser::parseDeclaration(StatementBlock *scope){
-    assert(matchv(DATA_TYPE_TOKENS, ARRAY_COUNT(DATA_TYPE_TOKENS)));
     DataType type = parseDataType();
 
     assert(match(TOKEN_IDENTIFIER));
@@ -737,7 +813,8 @@ Node* Parser::parseDeclaration(StatementBlock *scope){
 
 Node* Parser::parseStatement(StatementBlock *scope){
     Node *statement;
-    if (matchv(DATA_TYPE_TOKENS, ARRAY_COUNT(DATA_TYPE_TOKENS))){
+    if (matchv(DATA_TYPE_TOKENS, ARRAY_COUNT(DATA_TYPE_TOKENS))
+        || matchv(TYPE_MODIFIER_TOKENS, ARRAY_COUNT(TYPE_MODIFIER_TOKENS))){
         statement = parseDeclaration(scope);
     }
     else if (match(TOKEN_IF)){
