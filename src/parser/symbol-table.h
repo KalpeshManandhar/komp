@@ -52,7 +52,11 @@ struct DataType{
         SIGNED = (0x1 << 8), 
     };
     int specifierFlags;
+    
 
+    bool isSet(Specifiers flag){
+        return specifierFlags & flag;
+    }
 
 };
 
