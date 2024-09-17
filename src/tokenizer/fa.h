@@ -68,6 +68,7 @@ struct NumConstDFA: public DFA{
         STATE_X,
         STATE_B,
         STATE_POINT,
+        STATE_MANTISSA,
         
         ACCEPTING_STATES_START,
 
@@ -98,7 +99,7 @@ struct NumConstDFA: public DFA{
         this->addTransition(STATE_ZERO, "01234567", STATE_OCTAL);
         this->addTransition(STATE_ZERO, "89", STATE_INVALID_OCTAL);
         this->addTransition(STATE_ZERO, ".", STATE_DOUBLE);
-        this->addTransition(STATE_DECIMAL, "e", STATE_DOUBLE);
+        this->addTransition(STATE_DECIMAL, "e", STATE_MANTISSA);
 
 
         this->addTransition(STATE_X, "0123456789abcdefABCDEF", STATE_HEX);
@@ -117,7 +118,7 @@ struct NumConstDFA: public DFA{
         this->addTransition(STATE_DECIMAL, "0123456789", STATE_DECIMAL);
         this->addTransition(STATE_DECIMAL, ".", STATE_DOUBLE);
 
-        
+        this->addTransition(STATE_MANTISSA, "0123456789+-", STATE_DOUBLE);
         this->addTransition(STATE_DOUBLE, "0123456789", STATE_DOUBLE);
         this->addTransition(STATE_DOUBLE, "f", STATE_FLOAT);
 

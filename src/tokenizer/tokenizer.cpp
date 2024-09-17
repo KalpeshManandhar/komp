@@ -71,7 +71,7 @@ static bool isIdentifierChar(char c){
 }
 
 static bool isNumberChar(char c){
-    return isNumeric(c) || c == '.' || c == 'x' || isBetween(c, 'a', 'f') || isBetween(c, 'A', 'F');
+    return isNumeric(c) || c == '.' || c == 'x' || isBetween(c, 'a', 'f') || isBetween(c, 'A', 'F') || c== '+'|| c== '-';
 }
 
 static bool isStringLiteralChar(char c){
@@ -201,8 +201,12 @@ Token Tokenizer::getNumberToken(){
     size_t tokenStart = this->cursor;
     
     this->numDFA.restart();
+
+    //isPunctuatorChar() and is NumberChar() can be improved i guess, need to work if got time
+
     while (!this->isEOF() && !isWhitespace(this->buffer[this->cursor])
-            && (!isPunctuatorChar(this->buffer[this->cursor]) || isNumberChar(this->buffer[this->cursor]))){
+            && (!isPunctuatorChar(this->buffer[this->cursor])
+            || isNumberChar(this->buffer[this->cursor]))){
         this->numDFA.transition(this->buffer[this->cursor]);
         this->consumeChar();
     }
