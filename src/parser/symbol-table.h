@@ -62,10 +62,11 @@ struct DataType{
 
 namespace DataTypes{
     inline DataType Char  = {.tag = DataType::TYPE_PRIMARY, .type = {TOKEN_CHAR, {"char", sizeof("char") - 1}, 0, 0}, .indirectionLevel = 0};
-    inline DataType Short  = {.tag = DataType::TYPE_PRIMARY, .type = {TOKEN_SHORT, {"short", sizeof("short") - 1}, 0, 0}, .indirectionLevel = 0};
     inline DataType Int  = {.tag = DataType::TYPE_PRIMARY, .type = {TOKEN_INT, {"int", sizeof("int") - 1}, 0, 0}, .indirectionLevel = 0};
+    inline DataType Short  = {.tag = DataType::TYPE_PRIMARY, .type = {TOKEN_INT, {"int", sizeof("int") - 1}, 0, 0}, .indirectionLevel = 0, .specifierFlags = DataType::Specifiers::SHORT};
+    inline DataType Long  = {.tag = DataType::TYPE_PRIMARY, .type = {TOKEN_INT, {"int", sizeof("int") - 1}, 0, 0}, .indirectionLevel = 0, .specifierFlags = DataType::Specifiers::LONG};
+    inline DataType Long_Long  = {.tag = DataType::TYPE_PRIMARY, .type = {TOKEN_INT, {"int", sizeof("int") - 1}, 0, 0}, .indirectionLevel = 0, .specifierFlags = DataType::Specifiers::LONG_LONG};
     inline DataType Float  = {.tag = DataType::TYPE_PRIMARY, .type = {TOKEN_FLOAT, {"float", sizeof("float") - 1}, 0, 0}, .indirectionLevel = 0};
-    inline DataType Long  = {.tag = DataType::TYPE_PRIMARY, .type = {TOKEN_LONG, {"long", sizeof("long") - 1}, 0, 0}, .indirectionLevel = 0};
     inline DataType Double = {.tag = DataType::TYPE_PRIMARY, .type = {TOKEN_DOUBLE, {"double", sizeof("double") - 1}, 0, 0}, .indirectionLevel = 0};
     inline DataType String = {.tag = DataType::TYPE_PRIMARY, .type = {TOKEN_STRING_LITERAL, {"char", sizeof("char") - 1}, 0, 0}, .indirectionLevel = 1};
     inline DataType Void = {.tag = DataType::TYPE_VOID, .type = {TOKEN_VOID, {"void", sizeof("void") - 1}, 0, 0}, .indirectionLevel = 0};

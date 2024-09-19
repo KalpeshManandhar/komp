@@ -5,5 +5,6 @@ int main(){
     if (a != 1.){
         return 0;
     }
+    int d = 0x112; // invalid hex constant
     return 1;
 }

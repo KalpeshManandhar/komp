@@ -34,6 +34,7 @@ TODO:
 
 
 
+
 /*
 The grammar *currently* used in the parser. 
 NOTE: 
@@ -41,29 +42,22 @@ NOTE:
     - (x)? denotes 0 or 1 occurence of x
     - (x|y) denotes either x or y
     - (x)* denotes 0 or more occurences of x
+    - (x)+ denotes 1 or more occurences of x
 
 
 program: 
-        declaration
-        | function_definition
+        (declaration
+        | function_definition)+
         
 
 
 statement: 
-        assignment ";" 
+        subexpr ";" 
         | declaration ";" 
         | WHILE 
         | IF 
         | FOR
 
-assignment : 
-        lvalue "=" rvalue
-
-lvalue : 
-        identifier
-
-rvalue : 
-        subexpr
 
 subexpr : 
         primary binary_op subexpr 
@@ -83,7 +77,8 @@ unary_op :
         "-" | "+" | "*" | "!" | "~" | "++" | "--" | "&"
 
 binary_op : 
-        "+" | "-" | "/" | "*" | "%" | "&" | "|" | "<<" 
+        "+" | "-" | "/" | "*" | "%" | "&" | "|" | "<<" | "=" | "+=" 
+        | "-=" | "*=" | "/=" | "%=" | "<<=" | ">>=" | "^=" | "!=" 
         | ">>" | "&&" | "||" | "==" | "!=" | ">" | "<" | ">=" | "<="
 
 declaration: 
@@ -108,7 +103,11 @@ function_definition:
         data_type identifier "("data_type identifier ( "," data_type identifier )* ) statement_block
 
 data_type:
-        ("int" | "float" | "double" | "short" | "long" | "char" | "struct") ("*")* 
+        type_modifiers ("int" | "float" | "double" | "char" | "struct") ("*")* 
+
+
+type_modifiers:
+        ("long" | "short" | "signed" | "unsigned")*
 
 
 */

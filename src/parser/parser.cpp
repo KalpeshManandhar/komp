@@ -8,8 +8,7 @@
 
 #define ARRAY_COUNT(x) sizeof((x))/sizeof(*(x))
 
-static TokenType PRIMARY_TOKEN_TYPES[] = {
-    TOKEN_IDENTIFIER, 
+static TokenType LITERAL_TOKEN_TYPES[] = {
     TOKEN_CHARACTER_LITERAL, 
     TOKEN_STRING_LITERAL, 
     TOKEN_NUMERIC_BIN, 
@@ -58,7 +57,7 @@ static TokenType BINARY_OP_TOKENS[] = {
     TOKEN_DOT,
 };
 
-static TokenType LVAL_CHECK_OP[] = {
+static TokenType ASSIGNMENT_OP[] = {
     // require checks for left operands
     TOKEN_ASSIGNMENT,
     TOKEN_PLUS_ASSIGN,
@@ -70,7 +69,6 @@ static TokenType LVAL_CHECK_OP[] = {
     TOKEN_BITWISE_AND_ASSIGN,
     TOKEN_BITWISE_OR_ASSIGN,
     TOKEN_BITWISE_XOR_ASSIGN,
-    TOKEN_SQUARE_OPEN,
 };
 
 static TokenType LVAL_RVAL_CHECK_OP[] = {
@@ -419,13 +417,7 @@ Subexpr Parser::parseIdentifier(StatementBlock *scope){
 
 
 bool Parser::isValidLvalue(Subexpr *expr){
-    // single variable identifier
-    if (expr->subtag == Subexpr::SUBEXPR_LEAF && expr->leaf.type == TOKEN_IDENTIFIER){
-        return true;
-    }
-    else if (expr->subtag == Subexpr::SUBEXPR_BINARY_OP && expr->op.type == TOKEN_SQUARE_OPEN){
-        return true;
-    }
+    
     
 
     return false;
@@ -436,269 +428,352 @@ bool Parser::isValidLvalue(Subexpr *expr){
 // reference from https://en.cppreference.com/w/c/language/conversion
 DataType Parser::getDataType(Subexpr *expr, StatementBlock *scope){
 
-    switch (expr->subtag)
-    {
-        case Subexpr::SUBEXPR_BINARY_OP:{
-            
-            DataType leftType = getDataType(expr->left, scope);
-            DataType rightType = getDataType(expr->right, scope);
-            
-            if (leftType.tag == DataType::TYPE_ERROR || rightType.tag == DataType::TYPE_ERROR){
-                return DataTypes::Error;
-            }
-            if ((leftType.tag == DataType::TYPE_VOID && leftType.indirectionLevel == 0)
-                || rightType.tag == DataType::TYPE_VOID && rightType.indirectionLevel == 0){
-                logErrorMessage(expr->op, "Cannot perform operation \"%.*s\" with void type.", 
-                                    splicePrintf(expr->op.string));
+    switch (expr->subtag){
+    case Subexpr::SUBEXPR_BINARY_OP:{
+        
+        DataType left = getDataType(expr->left, scope);
+        DataType right = getDataType(expr->right, scope);
+        
+        if (left.tag == DataType::TYPE_ERROR || right.tag == DataType::TYPE_ERROR){
+            return DataTypes::Error;
+        }
+        if ((left.tag == DataType::TYPE_VOID && left.indirectionLevel == 0)
+            || right.tag == DataType::TYPE_VOID && right.indirectionLevel == 0){
+            logErrorMessage(expr->op, "Cannot perform operation \"%.*s\" with void type.", 
+                                splicePrintf(expr->op.string));
+            errors++;
+            return DataTypes::Error;
+        }
+
+        // indexing only works with integers
+        if (match(expr->op, TOKEN_SQUARE_OPEN)){
+            if (!match(right.type,TOKEN_INT)){
+                logErrorMessage(expr->op, "Indexing only works with integer type.");
                 errors++;
                 return DataTypes::Error;
             }
-
-            // indexing only works with integers
-            if (expr->op.type == TOKEN_SQUARE_OPEN){
-                if (rightType.type.type != TOKEN_INT){
-                    logErrorMessage(expr->op, "Indexing only works with integer type.");
-                    errors++;
-                    return DataTypes::Error;
-                }
-                
-                DataType memberType = leftType;
-                memberType.indirectionLevel--;
-
-                return memberType;
-            }
             
-            auto getIntegerConversionRank = [&](DataType d) -> int{
-                if (d.isSet(DataType::Specifiers::LONG_LONG)){
-                    return 4;
+            DataType memberType = left;
+            memberType.indirectionLevel--;
+
+            return memberType;
+        }
+
+        // check for lvalue validity
+        else if (matchv(expr->op, ASSIGNMENT_OP, ARRAY_COUNT(ASSIGNMENT_OP))){
+            auto isValidLvalue = [&](DataType leftOperandType, Subexpr *leftOperand) -> bool{
+                // const type
+                if (left.isSet(DataType::Specifiers::CONST)){
+                    return false;
                 }
-                if (d.isSet(DataType::Specifiers::LONG)){
-                    return 3;
+                // single variable identifier
+                if (leftOperand->subtag == Subexpr::SUBEXPR_LEAF 
+                    && matchv(leftOperand->leaf, LITERAL_TOKEN_TYPES, ARRAY_COUNT(LITERAL_TOKEN_TYPES))){
+                    return false;
                 }
-                if (!d.isSet(DataType::Specifiers::LONG) && !d.isSet(DataType::Specifiers::SHORT)){
-                    if (match(d.type, TOKEN_INT)){
-                        return 2;
-                    }
-                    if (match(d.type, TOKEN_CHAR)){
-                        return 0;
-                    }
-                    
-                }
-                if (d.isSet(DataType::Specifiers::SHORT)){
-                    return 1;
-                }
-                return -1;
+                return true;
+
             };
 
+            if (!isValidLvalue(left, expr->left)){
+                logErrorMessage(expr->op, "Not a valid lvalue.");
+                errors++;
+            }
+            
+        }
 
-            auto getResultantType = [&](DataType left, DataType right) -> DataType{
-                bool didError = false;
+        // bitwise and modulo operations dont work with floating point types
+        if (match(left.type, TOKEN_FLOAT) || match(left.type, TOKEN_DOUBLE) ||
+            match(right.type, TOKEN_FLOAT) || match(right.type, TOKEN_DOUBLE)){
+            
+            TokenType invalidOpForFloatingTypes[] = {
+                TOKEN_MODULO,
+                TOKEN_AMPERSAND,
+                TOKEN_BITWISE_AND_ASSIGN,
+                TOKEN_BITWISE_OR_ASSIGN,
+                TOKEN_BITWISE_OR,
+                TOKEN_BITWISE_XOR_ASSIGN,
+                TOKEN_BITWISE_XOR,
+                TOKEN_BITWISE_NOT,
+            };
+
+            if (matchv(expr->op, invalidOpForFloatingTypes, ARRAY_COUNT(invalidOpForFloatingTypes))){
+                logErrorMessage(expr->op, "The operation \"%.*s\" cannot be used with floating point types.", splicePrintf(expr->op.string));
+                errors++;
+                return DataTypes::Error;
+            }
+        }
+
+        
+        auto getIntegerConversionRank = [&](DataType d) -> int{
+            if (d.isSet(DataType::Specifiers::LONG_LONG)){
+                return 4;
+            }
+            if (d.isSet(DataType::Specifiers::LONG)){
+                return 3;
+            }
+            if (!d.isSet(DataType::Specifiers::LONG) && !d.isSet(DataType::Specifiers::SHORT)){
+                if (match(d.type, TOKEN_INT)){
+                    return 2;
+                }
+                if (match(d.type, TOKEN_CHAR)){
+                    return 0;
+                }
                 
-                // diff level of pointers
-                if (left.indirectionLevel != right.indirectionLevel){
-                    // pointer arithmetic: (ptr + int)/(ptr - int)/(ptr += int)/(ptr -= int)
-                    if (left.indirectionLevel > 0 && (match(right.type, TOKEN_INT) || match(right.type, TOKEN_CHAR)) 
-                        && (match(expr->op, TOKEN_PLUS) || match(expr->op, TOKEN_MINUS) 
-                        || match(expr->op, TOKEN_PLUS_ASSIGN) || match(expr->op, TOKEN_MINUS_ASSIGN) )){
+            }
+            if (d.isSet(DataType::Specifiers::SHORT)){
+                return 1;
+            }
+            return -1;
+        };
+
+
+        auto getResultantType = [&](DataType left, DataType right) -> DataType{
+            bool didError = false;
+            
+            // diff level of indirection
+            if (left.indirectionLevel != right.indirectionLevel){
+                // pointer arithmetic 
+                // (ptr + int)/(ptr - int)/(ptr += int)/(ptr -= int)
+                if (left.indirectionLevel > 0 && (match(right.type, TOKEN_INT) || match(right.type, TOKEN_CHAR))){ 
+                    if (match(expr->op, TOKEN_PLUS) || match(expr->op, TOKEN_MINUS) 
+                    || match(expr->op, TOKEN_PLUS_ASSIGN) || match(expr->op, TOKEN_MINUS_ASSIGN) ){
                         return left;
                     }
-                    else if (right.indirectionLevel > 0 && (match(left.type, TOKEN_INT) || match(left.type, TOKEN_CHAR)) 
-                        && match(expr->op, TOKEN_PLUS)){
+                    else if (match(expr->op, TOKEN_ASSIGNMENT)){
+                        logWarningMessage(expr->op, "Incompatible conversion from integer to pointer.");
+                        return left;
+                    }
+                }
+                // (int + ptr) 
+                else if (right.indirectionLevel > 0 && (match(left.type, TOKEN_INT) || match(left.type, TOKEN_CHAR))){
+                    if (match(expr->op, TOKEN_PLUS)){
                         return right;
+                    }
+                    if (match(expr->op, TOKEN_ASSIGNMENT)){
+                        logWarningMessage(expr->op, "Incompatible conversion from pointer to integer.");
+                        return right;
+                    }
+                }
+
+                didError = true;
+            }
+            // same level of indirection
+            else{
+                // both are pointers
+                if (left.indirectionLevel > 0){
+                    if (match(expr->op, TOKEN_ASSIGNMENT)){
+                        // if not same type
+                        if (!(left.type.type == right.type.type && left.specifierFlags == right.specifierFlags)){
+                            logWarningMessage(expr->op, "Assignment of pointer type \"%s\" to type \"%s\".",
+                                            dataTypePrintf(right), dataTypePrintf(left));
+                        }
+                        return left;
+                    }
+
+                    if (left.type.type == right.type.type && left.specifierFlags == right.specifierFlags){
+                        // ptr difference: (ptr - ptr)
+                        if (match(expr->op, TOKEN_MINUS)){
+                            return DataTypes::Long_Long;
+                        }
                     }
 
                     didError = true;
                 }
-                // same level of indirection
-                else{
-                    if (left.indirectionLevel > 0){
-                        // ptr difference: (ptr - ptr)
-                        if (match(expr->op, TOKEN_MINUS))
-                            return DataTypes::Int;
-                        
-                        else if (match(expr->op, TOKEN_ASSIGNMENT)){
-                            return left;
-                        }
-
-                        
-                        didError = true;
+                // same type but not pointers
+                else if (left.type.type == right.type.type && left.specifierFlags == right.specifierFlags){
+                    // assignment is defined for all operands of the same type  
+                    if (match(expr->op, TOKEN_ASSIGNMENT)){
+                        return left;
                     }
-                    // no pointers
-                    // if both are the same type
-                    else if (left.type.type == right.type.type && left.specifierFlags == right.specifierFlags){
-                        if (left.tag == DataType::TYPE_PRIMARY){
-                            return left;
-                        }
-                        else if (match(expr->op, TOKEN_ASSIGNMENT)){
-                            return left;
-                        }
-                        // TODO: implement when you implement structs
-
+                    
+                    // all other primary operands work with all other operators 
+                    // (floating point exceptions have been handled at the start)
+                    if (left.tag == DataType::TYPE_PRIMARY){
+                        return left;
                     }
-                    // implicit type conversions
-                    else if (left.tag == DataType::TYPE_PRIMARY && right.tag == DataType::TYPE_PRIMARY){
-                        if (match(left.type, TOKEN_DOUBLE) || match(right.type, TOKEN_DOUBLE)){
-                            return DataTypes::Double;
-                        }   
-                        else if (match(left.type, TOKEN_FLOAT) || match(right.type, TOKEN_FLOAT)){
-                            return DataTypes::Float;
-                        }   
-                        // same signedness, conversion to greater conversion rank
-                        else if ((left.isSet(DataType::Specifiers::SIGNED) && right.isSet(DataType::Specifiers::SIGNED))
-                                || (left.isSet(DataType::Specifiers::UNSIGNED) && right.isSet(DataType::Specifiers::UNSIGNED))){
-                            
-                            if (getIntegerConversionRank(left) > getIntegerConversionRank(right)){
-                                return left;
+
+
+                    // TODO: implement when you implement structs
+                    didError = true;
+
+                }
+                
+                // different types of primary types
+                else if (left.tag == DataType::TYPE_PRIMARY && right.tag == DataType::TYPE_PRIMARY){
+                    
+                    // for valid assignment operations, the resultant type is the type of the left operand
+                    if (matchv(expr->op, ASSIGNMENT_OP, ARRAY_COUNT(ASSIGNMENT_OP))){
+                        return left;
+                    }
+
+                    // if any is double or float, convert to that
+                    if (match(left.type, TOKEN_DOUBLE) || match(right.type, TOKEN_DOUBLE)){
+                        return DataTypes::Double;
+                    }   
+                    else if (match(left.type, TOKEN_FLOAT) || match(right.type, TOKEN_FLOAT)){
+                        return DataTypes::Float;
+                    }   
+
+                    // same signedness, conversion to greater conversion rank
+                    else if ((left.isSet(DataType::Specifiers::SIGNED) && right.isSet(DataType::Specifiers::SIGNED))
+                            || (left.isSet(DataType::Specifiers::UNSIGNED) && right.isSet(DataType::Specifiers::UNSIGNED))){
+                        
+                        if (getIntegerConversionRank(left) > getIntegerConversionRank(right)){
+                            return left;
+                        }
+                        
+                        return right;
+                        
+                    }   
+                    
+                    // different signedness
+                    else {
+                        // if unsigned has higher or equal rank, then unsigned
+                        // else, if signed can accomodate full range of unsigned then convert to signed, 
+                        // else convert to unsigned counterpart of the signed types
+                        
+                        auto signedUnsignedConversion = [&](DataType unsignedType, DataType signedType){
+                            if (getIntegerConversionRank(unsignedType) >= getIntegerConversionRank(signedType)){
+                                return unsignedType;
                             }
-                            
-                            return right;
-                            
-                        }   
-                        // different signedness
-                        else {
-                            // if unsigned has higher or equal rank, then unsigned
-                            // else, if signed can accomodate full range of unsigned then convert to signed, 
-                            // else convert to unsigned counterpart of the signed types
-                            
-                            auto signedUnsignedConversion = [&](DataType unsignedType, DataType signedType){
-                                if (getIntegerConversionRank(unsignedType) >= getIntegerConversionRank(signedType)){
-                                    return unsignedType;
-                                }
-                                else if (signedType.isSet(DataType::Specifiers::LONG_LONG)){
+                            else if (signedType.isSet(DataType::Specifiers::LONG_LONG)){
+                                return signedType;
+                            }
+                            else if (signedType.isSet(DataType::Specifiers::LONG)){
+                                // signed long cannot accomodate unsigned int
+                                if (!unsignedType.isSet(DataType::Specifiers::LONG)){
                                     return signedType;
                                 }
-                                else if (signedType.isSet(DataType::Specifiers::LONG)){
-                                    // signed long cannot accomodate unsigned int
-                                    if (!unsignedType.isSet(DataType::Specifiers::LONG)){
-                                        return signedType;
-                                    }
-                                }
-                                else if (!signedType.isSet(DataType::Specifiers::SHORT)){
-                                    // signed int can accomodate unsigned short and char
-                                    if (unsignedType.isSet(DataType::Specifiers::SHORT) || match(unsignedType.type, TOKEN_CHAR)){
-                                        return signedType;
-                                    }
-                                }
-                                else if (signedType.isSet(DataType::Specifiers::SHORT)){
-                                    // signed short can accomodate unsigneds char
-                                    if (match(unsignedType.type, TOKEN_CHAR)){
-                                        return signedType;
-                                    }
-                                }
-                                
-                                signedType.specifierFlags |= DataType::Specifiers::UNSIGNED;
-                                signedType.specifierFlags ^= DataType::Specifiers::SIGNED;
-                                return signedType;
-                            };
-                            
-                            
-                            if (left.isSet(DataType::Specifiers::UNSIGNED)){
-                                return signedUnsignedConversion(left, right);
                             }
-                            else {
-                                return signedUnsignedConversion(right, left);
+                            else if (!signedType.isSet(DataType::Specifiers::SHORT)){
+                                // signed int can accomodate unsigned short and char
+                                if (unsignedType.isSet(DataType::Specifiers::SHORT) || match(unsignedType.type, TOKEN_CHAR)){
+                                    return signedType;
+                                }
                             }
-                        }
+                            else if (signedType.isSet(DataType::Specifiers::SHORT)){
+                                // signed short can accomodate unsigneds char
+                                if (match(unsignedType.type, TOKEN_CHAR)){
+                                    return signedType;
+                                }
+                            }
+                            // unsigned counterpart of the signed types
+                            signedType.specifierFlags |= DataType::Specifiers::UNSIGNED;
+                            signedType.specifierFlags ^= DataType::Specifiers::SIGNED;
+                            return signedType;
+                        };
                         
-                    
+                        
+                        if (left.isSet(DataType::Specifiers::UNSIGNED)){
+                            return signedUnsignedConversion(left, right);
+                        }
+                        else {
+                            return signedUnsignedConversion(right, left);
+                        }
                     }
-
                     
-
-                    
-                }
-
-                if (didError){
-                    logErrorMessage(expr->op, "No \"%.*s\" operator defined for type \"%s\" and \"%s\".", 
-                                    splicePrintf(expr->op.string),
-                                    dataTypePrintf(leftType), dataTypePrintf(rightType));
-                    errors++;
-                    return DataTypes::Error;
-                }
-
-
-                // TODO: implicit type conversion 
-                // truncate for assignments
-                // expand for other operations                
-                return DataTypes::Int;
-            };
-
-            return getResultantType(leftType, rightType);
-            break;
-        }
-            
-        case Subexpr::SUBEXPR_UNARY:{
-
-            DataType operand = getDataType(expr->unarySubexpr, scope);
-            if (match(expr->unaryOp, TOKEN_STAR)){
-                if (operand.indirectionLevel > 0){
-                    operand.indirectionLevel--;
-                    return operand;
-                }
-                else{
-                    logErrorMessage(expr->unaryOp, "Cannot be dereferenced. Not a valid pointer.");
-                    errors++;
-                    return DataTypes::Error;
-                }
-            }
-            else if (match(expr->unaryOp, TOKEN_AMPERSAND)){
-                if (expr->unarySubexpr->subtag == Subexpr::SUBEXPR_LEAF && 
-                    !match(expr->unarySubexpr->leaf, TOKEN_IDENTIFIER) &&
-                    matchv(expr->unarySubexpr->leaf, PRIMARY_TOKEN_TYPES, ARRAY_COUNT(PRIMARY_TOKEN_TYPES))){
-                    
-                    logErrorMessage(expr->unaryOp, "\"%.*s\" is not a valid identifier. Cannot get the address of a literal.",
-                                    splicePrintf(expr->unarySubexpr->leaf.string));
-                    errors++;
-                    return DataTypes::Error;
-                }
-                else{
-                    operand.indirectionLevel++;
-                    return operand;
-                }
-            }
-            return operand;
-            break;
-        }
-
-        case Subexpr::SUBEXPR_LEAF:{
-
-            if (match(expr->leaf, TOKEN_IDENTIFIER)){
-                assert(scope->symbols.existKey(expr->leaf.string));
                 
-                DataType type = scope->symbols.getInfo(expr->leaf.string).info;
-                return type;
-            }
-            
-            switch (expr->leaf.type){
-                case TOKEN_CHARACTER_LITERAL:
-                    return DataTypes::Char;
-                case TOKEN_NUMERIC_FLOAT:
-                    return DataTypes::Float;
-                case TOKEN_NUMERIC_DOUBLE:
-                    return DataTypes::Double;
-                case TOKEN_NUMERIC_DEC:
-                case TOKEN_NUMERIC_BIN:
-                case TOKEN_NUMERIC_HEX:
-                case TOKEN_NUMERIC_OCT:
-                    return DataTypes::Int;
-                case TOKEN_STRING_LITERAL:
-                    return DataTypes::String;
-                default:
-                    return DataTypes::Error;
+                }
+
+                
+
+                
             }
 
-            break;
+            if (didError){
+                logErrorMessage(expr->op, "No \"%.*s\" operator defined for type \"%s\" and \"%s\".", 
+                                splicePrintf(expr->op.string),
+                                dataTypePrintf(left), dataTypePrintf(right));
+                errors++;
+                return DataTypes::Error;
+            }
+
+
+            // TODO: implicit type conversion 
+            // truncate for assignments
+            // expand for other operations                
+            return DataTypes::Int;
+        };
+
+        return getResultantType(left, right);
+        break;
+    }
+        
+    case Subexpr::SUBEXPR_UNARY:{
+
+        DataType operand = getDataType(expr->unarySubexpr, scope);
+        if (match(expr->unaryOp, TOKEN_STAR)){
+            if (operand.indirectionLevel > 0){
+                operand.indirectionLevel--;
+                return operand;
+            }
+            else{
+                logErrorMessage(expr->unaryOp, "Cannot be dereferenced. Not a valid pointer.");
+                errors++;
+                return DataTypes::Error;
+            }
+        }
+        else if (match(expr->unaryOp, TOKEN_AMPERSAND)){
+            if (expr->unarySubexpr->subtag == Subexpr::SUBEXPR_LEAF && 
+                matchv(expr->unarySubexpr->leaf, LITERAL_TOKEN_TYPES, ARRAY_COUNT(LITERAL_TOKEN_TYPES))){
+                
+                logErrorMessage(expr->unaryOp, "\"%.*s\" is not a valid identifier. Cannot get the address of a literal.",
+                                splicePrintf(expr->unarySubexpr->leaf.string));
+                errors++;
+                return DataTypes::Error;
+            }
+            else{
+                operand.indirectionLevel++;
+                operand.specifierFlags |= DataType::Specifiers::CONST;
+                return operand;
+            }
+        }
+        return operand;
+        break;
+    }
+
+    case Subexpr::SUBEXPR_LEAF:{
+
+        if (match(expr->leaf, TOKEN_IDENTIFIER)){
+            if (!scope->symbols.existKey(expr->leaf.string)){
+                return DataTypes::Error;
+            }
+
+            DataType type = scope->symbols.getInfo(expr->leaf.string).info;
+            return type;
+        }
+        
+        switch (expr->leaf.type){
+            case TOKEN_CHARACTER_LITERAL:
+                return DataTypes::Char;
+            case TOKEN_NUMERIC_FLOAT:
+                return DataTypes::Float;
+            case TOKEN_NUMERIC_DOUBLE:
+                return DataTypes::Double;
+            case TOKEN_NUMERIC_DEC:
+            case TOKEN_NUMERIC_BIN:
+            case TOKEN_NUMERIC_HEX:
+            case TOKEN_NUMERIC_OCT:
+                return DataTypes::Int;
+            case TOKEN_STRING_LITERAL:
+                return DataTypes::String;
+            default:
+                return DataTypes::Error;
         }
 
+        break;
+    }
 
-        case Subexpr::SUBEXPR_FUNCTION_CALL:
-            return functions.getInfo(expr->functionCall->funcName.string).info.returnType;
-        
-        case Subexpr::SUBEXPR_RECURSE_PARENTHESIS:
-            return getDataType(expr->inside, scope);
-        
-        default:
-            return DataTypes::Void;
+
+    case Subexpr::SUBEXPR_FUNCTION_CALL:
+        return functions.getInfo(expr->functionCall->funcName.string).info.returnType;
+    
+    case Subexpr::SUBEXPR_RECURSE_PARENTHESIS:
+        return getDataType(expr->inside, scope);
+    
+    default:
+        return DataTypes::Void;
     }
 
 }
@@ -713,13 +788,13 @@ Subexpr* Parser::parseSubexpr(int precedence, StatementBlock *scope){
     
     // while next token is an operator and its precedence is higher (value is lower) than current one, add to the tree 
     while (matchv(BINARY_OP_TOKENS, ARRAY_COUNT(BINARY_OP_TOKENS))){
-        bool lval_check = matchv(LVAL_CHECK_OP, ARRAY_COUNT(LVAL_CHECK_OP));
+        bool isAssignment = matchv(ASSIGNMENT_OP, ARRAY_COUNT(ASSIGNMENT_OP));
         
         
         // for left to right associativity, break out when next op has a lower or equal precedence than current one
         if (getPrecedence(peekToken()) >= precedence){
             // right to left associativity for assignment operators, ie dont break out for same precedence
-            if (lval_check){
+            if (isAssignment){
                 if (getPrecedence(peekToken()) > precedence)
                     break;
             }
@@ -743,15 +818,6 @@ Subexpr* Parser::parseSubexpr(int precedence, StatementBlock *scope){
         if (match(s->op,TOKEN_SQUARE_OPEN)){
             expect(TOKEN_SQUARE_CLOSE);
         }
-
-        // check if left operand is valid lvalue
-        if (lval_check){
-            if (!isValidLvalue(s->left)){
-                logErrorMessage(s->op, "Not a valid lvalue.");
-                errors++;
-            }
-        }
-
         
         left = s;
     }     
@@ -836,8 +902,8 @@ Subexpr* Parser::parsePrimary(StatementBlock *scope){
         }
 
     }
-    // terminal
-    else if (matchv(PRIMARY_TOKEN_TYPES, ARRAY_COUNT(PRIMARY_TOKEN_TYPES))){
+    // literal
+    else if (matchv(LITERAL_TOKEN_TYPES, ARRAY_COUNT(LITERAL_TOKEN_TYPES))){
         s->leaf = consumeToken();
         s->subtag = Subexpr::SUBEXPR_LEAF;   
     }

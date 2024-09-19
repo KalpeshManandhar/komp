@@ -201,6 +201,8 @@ Token Tokenizer::getNumberToken(){
     size_t tokenStart = this->cursor;
     
     this->numDFA.restart();
+    // isPunctuatorChar is used to consume chars even if it is error
+    // eg: 0x123s is a whole error token instead of 0x123 and s as two separate tokens
     while (!this->isEOF() && !isWhitespace(this->buffer[this->cursor])
             && (!isPunctuatorChar(this->buffer[this->cursor]) || isNumberChar(this->buffer[this->cursor]))){
         this->numDFA.transition(this->buffer[this->cursor]);
