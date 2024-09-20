@@ -24,6 +24,12 @@ static bool compare(Splice s, const char* str){
     return strncmp(s.data, str, s.len) == 0;
 }
 
+static bool compare(Splice a, Splice b){
+    if (a.len != b.len) 
+        return false; 
+    return strncmp(a.data, b.data, a.len) == 0;
+}
+
 static std::ostream & operator <<(std::ostream &out, Splice s){
     if (s.len > 0){
         out.write(s.data, s.len);

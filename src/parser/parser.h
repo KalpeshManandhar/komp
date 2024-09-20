@@ -27,7 +27,8 @@ struct Parser{
 
     bool isValidLvalue(Subexpr *expr);
     DataType getDataType(Subexpr *operation, StatementBlock *scope);
-    DataType parseDataType();
+    DataType parseDataType(StatementBlock *scope);
+    Token parseStructDeclaration(StatementBlock *scope);
 
     Subexpr parseFunctionCall(StatementBlock *scope);
     Subexpr parseIdentifier(StatementBlock *scope);

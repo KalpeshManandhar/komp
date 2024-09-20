@@ -17,7 +17,7 @@
 //         DATATYPE_DOUBLE,
 //         DATATYPE_FLOAT,
 //         DATATYPE_POINTER,
-//         DATATYPE_STRUCT,
+//         DATATAG_STRUCT,
 //     }type;
 // };
 
@@ -30,13 +30,18 @@ struct DataType{
     // Pointer types have the ptrTo member set to their corresponding data types
     // example: an "int*" datatype would have its ptrTo pointing to an "int" datatype
     enum {
-        TYPE_PRIMARY,
-        TYPE_STRUCT,
-        TYPE_PTR,
-        TYPE_VOID,
-        TYPE_ERROR,
+        TAG_PRIMARY,
+        TAG_STRUCT,
+        TAG_PTR,
+        TAG_VOID,
+        TAG_ERROR,
     }tag;
-    Token type;
+
+    
+    union{
+        Token type;
+        Token structName;
+    };
     int indirectionLevel;
     
     enum Specifiers{
@@ -61,16 +66,17 @@ struct DataType{
 };
 
 namespace DataTypes{
-    inline DataType Char  = {.tag = DataType::TYPE_PRIMARY, .type = {TOKEN_CHAR, {"char", sizeof("char") - 1}, 0, 0}, .indirectionLevel = 0};
-    inline DataType Int  = {.tag = DataType::TYPE_PRIMARY, .type = {TOKEN_INT, {"int", sizeof("int") - 1}, 0, 0}, .indirectionLevel = 0};
-    inline DataType Short  = {.tag = DataType::TYPE_PRIMARY, .type = {TOKEN_INT, {"int", sizeof("int") - 1}, 0, 0}, .indirectionLevel = 0, .specifierFlags = DataType::Specifiers::SHORT};
-    inline DataType Long  = {.tag = DataType::TYPE_PRIMARY, .type = {TOKEN_INT, {"int", sizeof("int") - 1}, 0, 0}, .indirectionLevel = 0, .specifierFlags = DataType::Specifiers::LONG};
-    inline DataType Long_Long  = {.tag = DataType::TYPE_PRIMARY, .type = {TOKEN_INT, {"int", sizeof("int") - 1}, 0, 0}, .indirectionLevel = 0, .specifierFlags = DataType::Specifiers::LONG_LONG};
-    inline DataType Float  = {.tag = DataType::TYPE_PRIMARY, .type = {TOKEN_FLOAT, {"float", sizeof("float") - 1}, 0, 0}, .indirectionLevel = 0};
-    inline DataType Double = {.tag = DataType::TYPE_PRIMARY, .type = {TOKEN_DOUBLE, {"double", sizeof("double") - 1}, 0, 0}, .indirectionLevel = 0};
-    inline DataType String = {.tag = DataType::TYPE_PRIMARY, .type = {TOKEN_STRING_LITERAL, {"char", sizeof("char") - 1}, 0, 0}, .indirectionLevel = 1};
-    inline DataType Void = {.tag = DataType::TYPE_VOID, .type = {TOKEN_VOID, {"void", sizeof("void") - 1}, 0, 0}, .indirectionLevel = 0};
-    inline DataType Error = {.tag = DataType::TYPE_ERROR, .type = {TOKEN_ERROR, {"error", sizeof("error") - 1}, 0, 0}, .indirectionLevel = 0};
+    inline DataType Char  = {.tag = DataType::TAG_PRIMARY, .type = {TOKEN_CHAR, {"char", sizeof("char") - 1}, 0, 0}, .indirectionLevel = 0};
+    inline DataType Int  = {.tag = DataType::TAG_PRIMARY, .type = {TOKEN_INT, {"int", sizeof("int") - 1}, 0, 0}, .indirectionLevel = 0};
+    inline DataType Short  = {.tag = DataType::TAG_PRIMARY, .type = {TOKEN_INT, {"int", sizeof("int") - 1}, 0, 0}, .indirectionLevel = 0, .specifierFlags = DataType::Specifiers::SHORT};
+    inline DataType Long  = {.tag = DataType::TAG_PRIMARY, .type = {TOKEN_INT, {"int", sizeof("int") - 1}, 0, 0}, .indirectionLevel = 0, .specifierFlags = DataType::Specifiers::LONG};
+    inline DataType Long_Long  = {.tag = DataType::TAG_PRIMARY, .type = {TOKEN_INT, {"int", sizeof("int") - 1}, 0, 0}, .indirectionLevel = 0, .specifierFlags = DataType::Specifiers::LONG_LONG};
+    inline DataType Float  = {.tag = DataType::TAG_PRIMARY, .type = {TOKEN_FLOAT, {"float", sizeof("float") - 1}, 0, 0}, .indirectionLevel = 0};
+    inline DataType Double = {.tag = DataType::TAG_PRIMARY, .type = {TOKEN_DOUBLE, {"double", sizeof("double") - 1}, 0, 0}, .indirectionLevel = 0};
+    inline DataType String = {.tag = DataType::TAG_PRIMARY, .type = {TOKEN_STRING_LITERAL, {"char", sizeof("char") - 1}, 0, 0}, .indirectionLevel = 1};
+    inline DataType Void = {.tag = DataType::TAG_VOID, .type = {TOKEN_VOID, {"void", sizeof("void") - 1}, 0, 0}, .indirectionLevel = 0};
+    inline DataType Error = {.tag = DataType::TAG_ERROR, .type = {TOKEN_ERROR, {"error", sizeof("error") - 1}, 0, 0}, .indirectionLevel = 0};
+    inline DataType Struct = {.tag = DataType::TAG_STRUCT, .indirectionLevel = 0};
 };
 
 static const char* dataTypePrintf(DataType d){
@@ -113,6 +119,10 @@ static const char* dataTypePrintf(DataType d){
 }
 
 
+static bool operator==(DataType a, DataType b){
+    return (a.tag == b.tag) && (a.indirectionLevel == b.indirectionLevel) 
+            && (a.specifierFlags == b.specifierFlags) && compare(a.type.string, b.type.string);
+}
 
 
 // yoinked with courtesy from https://en.wikipedia.org/wiki/Adler-32
@@ -152,9 +162,17 @@ struct SymbolTable{
         return entries.contains(hash);
 
     }
-    SymbolTableEntry getInfo(Splice name){
+    SymbolTableEntry &getInfo(Splice name){
         uint32_t hash = adler32((unsigned char *)name.data, name.len);
         return entries[hash];
+    }
+    size_t count(){
+        return entries.size();
+    }
+    void update(Splice name, T info){
+        uint32_t hash = adler32((unsigned char *)name.data, name.len);
+
+        entries[hash] = {name, info};
     }
 
 };

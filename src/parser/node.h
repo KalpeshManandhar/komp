@@ -199,10 +199,22 @@ struct Declaration: public Node{
     std::vector<DeclInfo> decln;
 };
 
+struct Struct: public Node{
+    Token structName;
+    
+    struct MemberInfo{
+        DataType type;
+        Token memberName;
+    };
+
+    SymbolTable<MemberInfo> members;
+};
+
 
 struct StatementBlock: public Node{
     std::vector<Node *> statements;
     SymbolTable<DataType> symbols;
+    SymbolTable<Struct> structs;
     StatementBlock *parent;
 };
 

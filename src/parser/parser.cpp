@@ -260,10 +260,50 @@ void Parser::rewindTo(Token checkpoint){
 }
 
 
+Token Parser::parseStructDeclaration(StatementBlock *scope){
+    assert(expect(TOKEN_STRUCT));
+
+    Struct s;
+    
+    assert(match(TOKEN_IDENTIFIER));
+    if (match(TOKEN_IDENTIFIER)){
+        s.structName = consumeToken();
+    }
+
+    if (match(TOKEN_CURLY_OPEN)){
+        expect(TOKEN_CURLY_OPEN);
+        
+        while (matchv(DATA_TYPE_TOKENS, ARRAY_COUNT(DATA_TYPE_TOKENS))){
+            Struct::MemberInfo member;
+            member.type = parseDataType(scope);
+
+            expect(TOKEN_IDENTIFIER);
+            member.memberName = consumeToken();
+            
+            s.members.add(member.memberName.string, member);   
+        }
+
+        expect(TOKEN_CURLY_CLOSE);
+
+        if (s.members.count() == 0){
+            logErrorMessage(s.structName, "Expected struct members.");
+            errors++;
+        }
+    }
+    
+    if (scope->structs.existKey(s.structName.string)){
+        logErrorMessage(s.structName, "Redefinition of struct \"%.*s\".", splicePrintf(s.structName.string));
+        errors++; 
+    }
+    else{
+        scope->structs.add(s.structName.string, s);
+    }
+
+    return s.structName;
+}
 
 
-
-DataType Parser::parseDataType(){
+DataType Parser::parseDataType(StatementBlock *scope){
     assert(matchv(DATA_TYPE_TOKENS, ARRAY_COUNT(DATA_TYPE_TOKENS)) 
             || matchv(TYPE_MODIFIER_TOKENS, ARRAY_COUNT(TYPE_MODIFIER_TOKENS)));
 
@@ -327,12 +367,33 @@ DataType Parser::parseDataType(){
     if (!matchv(DATA_TYPE_TOKENS, ARRAY_COUNT(DATA_TYPE_TOKENS))){
         d.type = DataTypes::Int.type;
     }
+    else if (match(TOKEN_STRUCT)){
+        Token structToken = consumeToken();
+        
+        if (!match(TOKEN_IDENTIFIER)){
+            logErrorMessage(structToken, "Missing struct identifier.");
+            errors++;
+        }
+        else{
+            Token structName = consumeToken();
+
+            d.structName = structName;
+            
+            if (match(TOKEN_CURLY_OPEN)){
+                rewindTo(structToken);
+
+                d.structName = parseStructDeclaration(scope);
+            }
+        }
+
+        
+    }
     else{
         d.type = consumeToken();
     }
 
     d.indirectionLevel = 0;
-    d.tag = DataType::TYPE_PRIMARY;
+    d.tag = DataType::TAG_PRIMARY;
 
     // if a pointer
     while (match(TOKEN_STAR)){
@@ -344,7 +405,8 @@ DataType Parser::parseDataType(){
     if ((d.isSet(DataType::Specifiers::LONG_LONG) || d.isSet(DataType::Specifiers::LONG)
         || d.isSet(DataType::Specifiers::SHORT) || d.isSet(DataType::Specifiers::SIGNED)
         || d.isSet(DataType::Specifiers::UNSIGNED))  
-        && (match(d.type, TOKEN_FLOAT) || match(d.type, TOKEN_DOUBLE) || match(d.type, TOKEN_VOID))){
+        && (match(d.type, TOKEN_FLOAT) || match(d.type, TOKEN_DOUBLE) 
+            || match(d.type, TOKEN_VOID) || match(d.type, TOKEN_STRUCT))){
         
         logErrorMessage(d.type, "Invalid use of modifiers with type \"%.*s\".", splicePrintf(d.type.string));
         return DataTypes::Error;
@@ -371,7 +433,7 @@ DataType Parser::parseDataType(){
     }
 
     if (match(d.type, TOKEN_VOID)){
-        d.tag = DataType::TYPE_VOID;
+        d.tag = DataType::TAG_VOID;
     }
 
     return d;
@@ -434,11 +496,11 @@ DataType Parser::getDataType(Subexpr *expr, StatementBlock *scope){
         DataType left = getDataType(expr->left, scope);
         DataType right = getDataType(expr->right, scope);
         
-        if (left.tag == DataType::TYPE_ERROR || right.tag == DataType::TYPE_ERROR){
+        if (left.tag == DataType::TAG_ERROR || right.tag == DataType::TAG_ERROR){
             return DataTypes::Error;
         }
-        if ((left.tag == DataType::TYPE_VOID && left.indirectionLevel == 0)
-            || right.tag == DataType::TYPE_VOID && right.indirectionLevel == 0){
+        if ((left.tag == DataType::TAG_VOID && left.indirectionLevel == 0)
+            || right.tag == DataType::TAG_VOID && right.indirectionLevel == 0){
             logErrorMessage(expr->op, "Cannot perform operation \"%.*s\" with void type.", 
                                 splicePrintf(expr->op.string));
             errors++;
@@ -589,7 +651,7 @@ DataType Parser::getDataType(Subexpr *expr, StatementBlock *scope){
                     
                     // all other primary operands work with all other operators 
                     // (floating point exceptions have been handled at the start)
-                    if (left.tag == DataType::TYPE_PRIMARY){
+                    if (left.tag == DataType::TAG_PRIMARY){
                         return left;
                     }
 
@@ -600,7 +662,7 @@ DataType Parser::getDataType(Subexpr *expr, StatementBlock *scope){
                 }
                 
                 // different types of primary types
-                else if (left.tag == DataType::TYPE_PRIMARY && right.tag == DataType::TYPE_PRIMARY){
+                else if (left.tag == DataType::TAG_PRIMARY && right.tag == DataType::TAG_PRIMARY){
                     
                     // for valid assignment operations, the resultant type is the type of the left operand
                     if (matchv(expr->op, ASSIGNMENT_OP, ARRAY_COUNT(ASSIGNMENT_OP))){
@@ -928,9 +990,17 @@ Subexpr Parser::parseFunctionCall(StatementBlock *scope){
 
 
 
-
+// parse variable declaration, function definition and struct definition
 Node* Parser::parseDeclaration(StatementBlock *scope){
-    DataType type = parseDataType();
+    DataType type = parseDataType(scope);
+    
+
+    // only struct declaration w/o variable declaration
+    if (type.tag == DataType::TAG_STRUCT 
+        && match(TOKEN_SEMI_COLON)){
+        return NULL;
+    }
+
 
     assert(match(TOKEN_IDENTIFIER));
     Token identifier = consumeToken();
@@ -942,19 +1012,18 @@ Node* Parser::parseDeclaration(StatementBlock *scope){
         Function foo;
         foo.returnType = type;
         foo.funcName = identifier;
-        foo.block = new StatementBlock;
+        foo.block = NULL;
         
         // parse parameters
         while (matchv(DATA_TYPE_TOKENS, ARRAY_COUNT(DATA_TYPE_TOKENS))){
             Function::Parameter p;
-            p.type = parseDataType();
+            p.type = parseDataType(scope);
             
             assert(match(TOKEN_IDENTIFIER));
             p.identifier = consumeToken();
 
             foo.parameters.push_back(p);
-            // add to symbol table
-            foo.block->symbols.add(p.identifier.string, p.type);
+            
             
             if (!match(TOKEN_COMMA)){
                 break;
@@ -966,33 +1035,103 @@ Node* Parser::parseDeclaration(StatementBlock *scope){
 
         expect(TOKEN_PARENTHESIS_CLOSE);
         
-        // parse function block
-        /* NOTE: i wouldve liked to use parseStatementBlock() but that function is pretty much a standalone function that parses an independent block 
-           for function definition, the parameters need to be preadded to the symbol table before calling parseStatementBlock(), 
-           which would require modifying the function somehow, hence the repetition
-           
-           maybe keeping the symboltable as a reference instead of a member in a statement block might work, 
-           by ensuring that the table is allocated by the calling function
-        */
-        foo.block->tag = Node::NODE_STMT_BLOCK;
-        foo.block->parent = &global;
         
-        expect(TOKEN_CURLY_OPEN);
-        while (!match(TOKEN_CURLY_CLOSE)){
-            Node *stmt = parseStatement(foo.block);
-            if (stmt){
-                foo.block->statements.push_back(stmt);
+        // if definition exists
+        if (match(TOKEN_CURLY_OPEN)){
+            
+            // parse function body
+            /* NOTE: i wouldve liked to use parseStatementBlock() but that function is pretty much a standalone function that parses an independent block 
+            for function definition, the parameters need to be preadded to the symbol table before calling parseStatementBlock(), 
+            which would require modifying the function somehow, hence the repetition
+            
+            maybe keeping the symboltable as a reference instead of a member in a statement block might work, 
+            by ensuring that the table is allocated by the calling function
+            */
+            foo.block = new StatementBlock;
+            foo.block->tag = Node::NODE_STMT_BLOCK;
+            foo.block->parent = &global;
+
+            // add parameters to symbol table
+            for (auto &p : foo.parameters){
+                foo.block->symbols.add(p.identifier.string, p.type);
             }
+
+            
+            expect(TOKEN_CURLY_OPEN);
+            while (!match(TOKEN_CURLY_CLOSE)){
+                Node *stmt = parseStatement(foo.block);
+                if (stmt){
+                    foo.block->statements.push_back(stmt);
+                }
+            }
+            expect(TOKEN_CURLY_CLOSE);
         }
-        expect(TOKEN_CURLY_CLOSE);
+        // declaration only
+        else{
+            expect(TOKEN_SEMI_COLON);
+        }
     
         // function definitions are valid only in global scope
         if (scope == &global){
-            functions.add(foo.funcName.string, foo);
+            if (!functions.existKey(foo.funcName.string)){
+                functions.add(foo.funcName.string, foo);
+            }
+            // if a function entry already exists
+            else{
+                Function f = functions.getInfo(foo.funcName.string).info;
+                // if func definition already exists, then it is redefinition
+                if (f.block){
+                    logErrorMessage(foo.funcName, "Redefinition of function \"%.*s\".", splicePrintf(foo.funcName.string));
+                    errors++;
+                }
+                else{
+                    // check definition params with declaration params and check return value
+                    auto checkMatch = [&](Function prevFoo, Function newFoo) -> bool{
+                        // check num of parameters 
+                        if (prevFoo.parameters.size() != newFoo.parameters.size()){
+                            logErrorMessage(foo.funcName, "Number of arguments %llu doesn't match with that in declaration %llu of function \"%.*s\".", 
+                                            newFoo.parameters.size(), prevFoo.parameters.size(), splicePrintf(foo.funcName.string));
+                            errors++;
+                            return false;
+                        }
+                        
+                        // check types of parameters 
+                        for (int i=0; i< prevFoo.parameters.size(); i++){
+                            if (prevFoo.parameters[i].type != newFoo.parameters[i].type){
+                                logErrorMessage(foo.funcName, "Conflicting types of parameter \"%.*s\": \"%s\" and \"%s\".", 
+                                                splicePrintf(foo.parameters[i].identifier.string), 
+                                                dataTypePrintf(prevFoo.parameters[i].type), dataTypePrintf(newFoo.parameters[i].type));
+                                errors++;
+                                return false;
+                            }
+                        }
+                        
+                        // check return type 
+                        if (prevFoo.returnType != newFoo.returnType){
+                            logErrorMessage(foo.funcName, "Conflicting return type of function \"%.*s\".: \"%s\" and \"%s\"", 
+                                            splicePrintf(foo.funcName.string),
+                                            dataTypePrintf(prevFoo.returnType), dataTypePrintf(newFoo.returnType));
+                            errors++;
+                            return false;
+                        }
+
+
+                        return true;
+                    };
+
+                    if(checkMatch(f, foo)){
+                        functions.update(foo.funcName.string, foo);
+                    }
+                }
+
+                        
+                
+            }
+
         }
         else{
             logErrorMessage(foo.funcName, "Invalid function declaration \"%.*s\". Function declarations are valid only in global scope.",
-                            (int)foo.funcName.string.len, foo.funcName.string.data);
+                            splicePrintf(foo.funcName.string));
             errors++;
         }
 
@@ -1030,7 +1169,7 @@ Node* Parser::parseDeclaration(StatementBlock *scope){
         expect(TOKEN_SEMI_COLON);
 
         // void type not allowed
-        if (type.tag == DataType::TYPE_VOID && type.indirectionLevel == 0){
+        if (type.tag == DataType::TAG_VOID && type.indirectionLevel == 0){
             errors++;
             logErrorMessage(type.type, "void type is not allowed.");
         }
