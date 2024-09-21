@@ -260,40 +260,76 @@ void Parser::rewindTo(Token checkpoint){
 }
 
 
-Token Parser::parseStructDeclaration(StatementBlock *scope){
+Token Parser::parseStructDefinition(StatementBlock *scope){
     assert(expect(TOKEN_STRUCT));
 
     Struct s;
+    s.defined = false;
     
+
     assert(match(TOKEN_IDENTIFIER));
     if (match(TOKEN_IDENTIFIER)){
         s.structName = consumeToken();
     }
+    else {
+        logErrorMessage(peekToken(), "Missing struct identifier.");
+        errors++;
+    }
+    
 
     if (match(TOKEN_CURLY_OPEN)){
         expect(TOKEN_CURLY_OPEN);
         
+
+        // TODO: maybe change this to a declaration?
         while (matchv(DATA_TYPE_TOKENS, ARRAY_COUNT(DATA_TYPE_TOKENS))){
             Struct::MemberInfo member;
             member.type = parseDataType(scope);
 
-            expect(TOKEN_IDENTIFIER);
-            member.memberName = consumeToken();
+            // struct declarations can also occur without identifiers
+            if (member.type.tag == DataType::TAG_STRUCT){
+                if (match(TOKEN_SEMI_COLON)){
+                    consumeToken();
+                    continue;
+                }
+            }
+
+
+            do{
+                if (match(TOKEN_IDENTIFIER)){
+                    member.memberName = consumeToken();
+                    s.members.add(member.memberName.string, member);   
+                }
+                else{
+                    logErrorMessage(peekToken(), "Expected an identifier for member name.");
+                    errors++;
+                }
+                
+                if (!match(TOKEN_COMMA)){
+                    break;
+                }
+
+            }while (match(TOKEN_IDENTIFIER));
             
-            s.members.add(member.memberName.string, member);   
-        }
+            expect(TOKEN_SEMI_COLON);
 
+        }
+    
         expect(TOKEN_CURLY_CLOSE);
-
-        if (s.members.count() == 0){
-            logErrorMessage(s.structName, "Expected struct members.");
-            errors++;
-        }
+        
+        s.defined = true;
     }
     
     if (scope->structs.existKey(s.structName.string)){
-        logErrorMessage(s.structName, "Redefinition of struct \"%.*s\".", splicePrintf(s.structName.string));
-        errors++; 
+        if (s.defined){
+            if (scope->structs.getInfo(s.structName.string).info.defined){
+                logErrorMessage(s.structName, "Redefinition of struct \"%.*s\".", splicePrintf(s.structName.string));
+                errors++; 
+            }
+            else{
+                scope->structs.update(s.structName.string, s);
+            }
+        }
     }
     else{
         scope->structs.add(s.structName.string, s);
@@ -312,6 +348,7 @@ DataType Parser::parseDataType(StatementBlock *scope){
     DataType d;
     d.specifierFlags = DataType::Specifiers::NONE;
     
+    // type modifiers: signed unsigned long and short
     while (matchv(TYPE_MODIFIER_TOKENS, ARRAY_COUNT(TYPE_MODIFIER_TOKENS))){
         if (match(TOKEN_UNSIGNED)){
             if (d.specifierFlags & DataType::Specifiers::UNSIGNED){
@@ -367,33 +404,18 @@ DataType Parser::parseDataType(StatementBlock *scope){
     if (!matchv(DATA_TYPE_TOKENS, ARRAY_COUNT(DATA_TYPE_TOKENS))){
         d.type = DataTypes::Int.type;
     }
+    // if struct then parse the struct type or struct definition as well
     else if (match(TOKEN_STRUCT)){
-        Token structToken = consumeToken();
-        
-        if (!match(TOKEN_IDENTIFIER)){
-            logErrorMessage(structToken, "Missing struct identifier.");
-            errors++;
-        }
-        else{
-            Token structName = consumeToken();
-
-            d.structName = structName;
-            
-            if (match(TOKEN_CURLY_OPEN)){
-                rewindTo(structToken);
-
-                d.structName = parseStructDeclaration(scope);
-            }
-        }
-
-        
+        d.structName = parseStructDefinition(scope);
+        d.tag = DataType::TAG_STRUCT;
     }
+    // else other primary data type
     else{
         d.type = consumeToken();
+        d.tag = DataType::TAG_PRIMARY;
     }
 
     d.indirectionLevel = 0;
-    d.tag = DataType::TAG_PRIMARY;
 
     // if a pointer
     while (match(TOKEN_STAR)){
@@ -989,6 +1011,21 @@ Subexpr Parser::parseFunctionCall(StatementBlock *scope){
 }
 
 
+bool Parser::isStructDefined(Token structName, StatementBlock *scope){
+    StatementBlock *currentScope = scope;
+    while (currentScope){
+        if (currentScope->structs.existKey(structName.string)){
+            if (currentScope->structs.getInfo(structName.string).info.defined){
+                return true;
+            }
+        }
+
+        currentScope = currentScope->parent;
+    }
+    return false;
+}
+
+
 
 // parse variable declaration, function definition and struct definition
 Node* Parser::parseDeclaration(StatementBlock *scope){
@@ -998,14 +1035,24 @@ Node* Parser::parseDeclaration(StatementBlock *scope){
     // only struct declaration w/o variable declaration
     if (type.tag == DataType::TAG_STRUCT 
         && match(TOKEN_SEMI_COLON)){
+        consumeToken();
         return NULL;
+    }
+
+    // check if struct has been defined: only defined structs can be used for declaration
+    if (type.tag == DataType::TAG_STRUCT){
+        
+        if (!isStructDefined(type.structName, scope)){
+            logErrorMessage(type.structName, "Struct \"%.*s\" incomplete.", splicePrintf(type.structName.string));
+            errors++;
+        }
     }
 
 
     assert(match(TOKEN_IDENTIFIER));
     Token identifier = consumeToken();
 
-    // if ( is present, then it is func declaration
+    // if ( is present, then it is func declaration/definition
     if (match(TOKEN_PARENTHESIS_OPEN)){
         expect(TOKEN_PARENTHESIS_OPEN);
         
@@ -1108,7 +1155,7 @@ Node* Parser::parseDeclaration(StatementBlock *scope){
                         
                         // check return type 
                         if (prevFoo.returnType != newFoo.returnType){
-                            logErrorMessage(foo.funcName, "Conflicting return type of function \"%.*s\".: \"%s\" and \"%s\"", 
+                            logErrorMessage(foo.funcName, "Conflicting return type of function \"%.*s\": \"%s\" and \"%s\".", 
                                             splicePrintf(foo.funcName.string),
                                             dataTypePrintf(prevFoo.returnType), dataTypePrintf(newFoo.returnType));
                             errors++;
@@ -1160,9 +1207,18 @@ Node* Parser::parseDeclaration(StatementBlock *scope){
                 getDataType(var.initValue, scope);
 
             }
-            d->decln.push_back(var);
 
-            scope->symbols.add(var.identifier.string, d->type);
+
+            if (!scope->symbols.existKey(var.identifier.string)){
+                d->decln.push_back(var);
+                scope->symbols.add(var.identifier.string, d->type);
+            }
+            else{
+                logErrorMessage(var.identifier, "Redeclaration of \"%.*s\" with type \"%s\", previously defined with type \"%s\".",
+                                splicePrintf(var.identifier.string), 
+                                dataTypePrintf(type), dataTypePrintf(scope->symbols.getInfo(var.identifier.string).info));
+            }
+
                 
             
         }while (match(TOKEN_COMMA) && expect(TOKEN_COMMA));
@@ -1365,6 +1421,12 @@ bool Parser::parseProgram(){
 
 
 
+void printStruct(Struct s){
+    
+}
+
+
+
 void printParseTree(Node *const current, int depth){
     if (!current){
         return;
@@ -1473,6 +1535,21 @@ void printParseTree(Node *const current, int depth){
                 std::cout<<"*";
             }
             std::cout<<type->type.string<<"\n";
+        }
+        
+        std::cout<<"Struct table:\n";
+        for (auto &pair : b->structs.entries){
+            Struct strct = pair.second.info;
+            printTabs(depth + 2);
+            std::cout<<"\tStruct " << strct.structName.string<< "{\n";
+
+            for (auto &m: strct.members.entries){
+                printTabs(depth + 3);
+                std::cout<<m.second.info.memberName.string <<": " << dataTypePrintf(m.second.info.type)<<"\n"; 
+            }
+            printTabs(depth + 2);
+            std::cout<<"}\n"; 
+
         }
         break;
     }

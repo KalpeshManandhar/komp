@@ -201,7 +201,8 @@ struct Declaration: public Node{
 
 struct Struct: public Node{
     Token structName;
-    
+    bool defined;
+
     struct MemberInfo{
         DataType type;
         Token memberName;
