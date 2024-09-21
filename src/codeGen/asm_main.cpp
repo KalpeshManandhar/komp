@@ -12,15 +12,23 @@ int main(int argc, char **argv)
     ir.t.loadFileToBuffer(argv[1]);
 
     ir.p.init(&ir.t);
-
     ir.p.parse();
+    std::stringstream buffer;
 
 
     for (auto &pair: ir.p.functions.entries)
     {
-        ir.funcAssembly(pair.second.identifier,&pair.second.info);
+        ir.funcAssembly(pair.second.identifier,&pair.second.info,buffer);
 
         Function *foo = &pair.second.info;
+
+        // Appending the function assembly to outputBuffer
+        ir.outputBuffer << buffer.str();
+        buffer.str("");
+        buffer.clear();
         
     }
+    ir.writeAssemblyToFile();
+    ir.printAssemblyCode();
+        
 }
