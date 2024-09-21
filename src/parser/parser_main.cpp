@@ -30,6 +30,7 @@ int main(int argc, char **argv){
             printParseTree(stmt);
         }
 
+        std::cout<<"Symbol table:\n";
         for (auto &pair : p.global.symbols.entries){
             std::cout<<pair.second.identifier <<": ";
             std::cout<<dataTypePrintf(pair.second.info)<<"\n";

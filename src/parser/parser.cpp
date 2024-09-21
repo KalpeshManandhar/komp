@@ -71,7 +71,7 @@ static TokenType ASSIGNMENT_OP[] = {
     TOKEN_BITWISE_XOR_ASSIGN,
 };
 
-static TokenType LVAL_RVAL_CHECK_OP[] = {
+static TokenType STRUCT_ACCESS_OP[] = {
     // require checks for both left and right operands
     TOKEN_ARROW,
     TOKEN_DOT,
@@ -267,13 +267,15 @@ Token Parser::parseStructDefinition(StatementBlock *scope){
     s.defined = false;
     
 
-    assert(match(TOKEN_IDENTIFIER));
     if (match(TOKEN_IDENTIFIER)){
         s.structName = consumeToken();
     }
     else {
         logErrorMessage(peekToken(), "Missing struct identifier.");
         errors++;
+        s.structName = peekToken();
+        s.structName.string.data = "unnamed-type";
+        s.structName.string.len = strlen("unnamed-type");
     }
     
 
@@ -286,11 +288,17 @@ Token Parser::parseStructDefinition(StatementBlock *scope){
             Struct::MemberInfo member;
             member.type = parseDataType(scope);
 
-            // struct declarations can also occur without identifiers
             if (member.type.tag == DataType::TAG_STRUCT){
+                // struct declarations can also occur without identifiers
                 if (match(TOKEN_SEMI_COLON)){
                     consumeToken();
                     continue;
+                }
+                
+                // if the struct type is incomplete
+                if (member.type.indirectionLevel == 0 && !isStructDefined(member.type.structName, scope)){
+                    logErrorMessage(member.type.structName, "Struct \"%.*s\" incomplete.", splicePrintf(member.type.structName.string));
+                    errors++;
                 }
             }
 
@@ -320,6 +328,7 @@ Token Parser::parseStructDefinition(StatementBlock *scope){
         s.defined = true;
     }
     
+    // if struct exists and is already defined
     if (scope->structs.existKey(s.structName.string)){
         if (s.defined){
             if (scope->structs.getInfo(s.structName.string).info.defined){
@@ -332,7 +341,9 @@ Token Parser::parseStructDefinition(StatementBlock *scope){
         }
     }
     else{
-        scope->structs.add(s.structName.string, s);
+        // unnamed structs aren't supported
+        if (!compare(s.structName.string, "unnamed-struct"))
+            scope->structs.add(s.structName.string, s);
     }
 
     return s.structName;
@@ -463,51 +474,6 @@ DataType Parser::parseDataType(StatementBlock *scope){
 
 
 
-
-
-/* TODO: fix this? it returns a subexpr instead of a node* as the parsePrimary also allocates memory 
-which could lead to a memory leak
-*/
-Subexpr Parser::parseIdentifier(StatementBlock *scope){
-    assert(match(TOKEN_IDENTIFIER));
-
-
-    Subexpr identifier;
-    identifier.tag = Node::NODE_SUBEXPR;
-
-    // check if identifier has been declared
-    auto checkDeclaration = [&](Splice name) -> bool{
-        StatementBlock *currentScope = scope;
-        while(currentScope){
-            if (currentScope->symbols.existKey(name)){
-                return true;
-            }
-            currentScope = currentScope->parent;
-        }
-        return false;
-    };
-
-    identifier.leaf = consumeToken();
-    identifier.subtag = Subexpr::SUBEXPR_LEAF;
-
-    if (!checkDeclaration(identifier.leaf.string)){
-        logErrorMessage(identifier.leaf, "Undeclared identifier \"%.*s\"", (int)identifier.leaf.string.len, identifier.leaf.string.data);
-        errors++;
-    }
-
-    return identifier;
-
-}
-
-
-bool Parser::isValidLvalue(Subexpr *expr){
-    
-    
-
-    return false;
-}
-
-
 // get the expected type of a subexpr while checking for errors
 // reference from https://en.cppreference.com/w/c/language/conversion
 DataType Parser::getDataType(Subexpr *expr, StatementBlock *scope){
@@ -516,11 +482,73 @@ DataType Parser::getDataType(Subexpr *expr, StatementBlock *scope){
     case Subexpr::SUBEXPR_BINARY_OP:{
         
         DataType left = getDataType(expr->left, scope);
+
+        // okay this is a pain in the ass cause the right operand (member name) will not have a type from the identifier itself
+        // that member name should not be checked for declaration by itself. 
+        // so a valid memberName right operand will require to not be checked and hence, only left operand is checked at first for struct accesses 
+        
+        // struct accesses: struct.member and struct_ptr->member
+        if (matchv(expr->op, STRUCT_ACCESS_OP, ARRAY_COUNT(STRUCT_ACCESS_OP))){
+            if (left.tag == DataType::TAG_ERROR){
+                return DataTypes::Error;
+            }
+            
+            // left must be of type struct
+            if (left.tag != DataType::TAG_STRUCT){
+                logErrorMessage(expr->op, "Not a valid struct.");
+                errors++;
+                return DataTypes::Error;
+            }
+            
+            // left must be struct * if ->
+            if (match(expr->op, TOKEN_ARROW)){
+                if (left.indirectionLevel != 1){
+                    logErrorMessage(expr->op, "Not a valid struct pointer.");
+                    errors++;
+                    return DataTypes::Error;
+                }
+            }
+
+            if (!scope->structs.existKey(left.structName.string)){
+                logErrorMessage(expr->op, "Not a valid struct.");
+                errors++;
+                return DataTypes::Error;
+            }
+            
+            // the right operand must be valid member name, ie, identifier
+            if (!(expr->right->subtag == Subexpr::SUBEXPR_LEAF && expr->right->leaf.type == TOKEN_IDENTIFIER)){
+                logErrorMessage(expr->op, "Not a valid member identifier.");
+                errors++;
+                return DataTypes::Error;
+            }
+            
+            Splice memberName = expr->right->leaf.string;
+            Struct st = scope->structs.getInfo(left.structName.string).info;
+            
+            // the right identifier must be a valid member name in the struct
+            if (!st.members.existKey(memberName)){
+                logErrorMessage(expr->right->leaf, "No \"%.*s\" member exists in struct \"%.*s\".",
+                                splicePrintf(memberName), splicePrintf(st.structName.string));
+                errors++;
+                return DataTypes::Error;
+            }
+
+            DataType memberType = st.members.getInfo(memberName).info.type;
+
+            return memberType;
+            
+        }
+
+
+
         DataType right = getDataType(expr->right, scope);
         
+        
+        // if error, just return; dont log any errors
         if (left.tag == DataType::TAG_ERROR || right.tag == DataType::TAG_ERROR){
             return DataTypes::Error;
         }
+        // void types cannot be used in operations
         if ((left.tag == DataType::TAG_VOID && left.indirectionLevel == 0)
             || right.tag == DataType::TAG_VOID && right.indirectionLevel == 0){
             logErrorMessage(expr->op, "Cannot perform operation \"%.*s\" with void type.", 
@@ -528,6 +556,7 @@ DataType Parser::getDataType(Subexpr *expr, StatementBlock *scope){
             errors++;
             return DataTypes::Error;
         }
+
 
         // indexing only works with integers
         if (match(expr->op, TOKEN_SQUARE_OPEN)){
@@ -542,6 +571,7 @@ DataType Parser::getDataType(Subexpr *expr, StatementBlock *scope){
 
             return memberType;
         }
+
 
         // check for lvalue validity
         else if (matchv(expr->op, ASSIGNMENT_OP, ARRAY_COUNT(ASSIGNMENT_OP))){
@@ -566,6 +596,9 @@ DataType Parser::getDataType(Subexpr *expr, StatementBlock *scope){
             
         }
 
+        
+
+
         // bitwise and modulo operations dont work with floating point types
         if (match(left.type, TOKEN_FLOAT) || match(left.type, TOKEN_DOUBLE) ||
             match(right.type, TOKEN_FLOAT) || match(right.type, TOKEN_DOUBLE)){
@@ -587,6 +620,8 @@ DataType Parser::getDataType(Subexpr *expr, StatementBlock *scope){
                 return DataTypes::Error;
             }
         }
+
+    
 
         
         auto getIntegerConversionRank = [&](DataType d) -> int{
@@ -639,6 +674,15 @@ DataType Parser::getDataType(Subexpr *expr, StatementBlock *scope){
                         return right;
                     }
                 }
+                // both pointers of different level of indirection
+                // can only assign but log a warning
+                else if (left.indirectionLevel > 0 && right.indirectionLevel > 0){
+                    if (match(expr->op, TOKEN_ASSIGNMENT)){
+                        logWarningMessage(expr->op, "Assignment of pointer type \"%s\" to type \"%s\".",
+                                            dataTypePrintf(right), dataTypePrintf(left));
+                        return left;
+                    }
+                }
 
                 didError = true;
             }
@@ -646,8 +690,8 @@ DataType Parser::getDataType(Subexpr *expr, StatementBlock *scope){
             else{
                 // both are pointers
                 if (left.indirectionLevel > 0){
+                    // can assign, but log error if of different types
                     if (match(expr->op, TOKEN_ASSIGNMENT)){
-                        // if not same type
                         if (!(left.type.type == right.type.type && left.specifierFlags == right.specifierFlags)){
                             logWarningMessage(expr->op, "Assignment of pointer type \"%s\" to type \"%s\".",
                                             dataTypePrintf(right), dataTypePrintf(left));
@@ -677,8 +721,12 @@ DataType Parser::getDataType(Subexpr *expr, StatementBlock *scope){
                         return left;
                     }
 
-
-                    // TODO: implement when you implement structs
+                    // if struct, only assignment between same structs is allowed 
+                    if (match(left.type, TOKEN_STRUCT)){
+                        if (match(TOKEN_ASSIGNMENT) && compare(left.structName.string, right.structName.string)){
+                            return left;
+                        }
+                    }
                     didError = true;
 
                 }
@@ -760,9 +808,10 @@ DataType Parser::getDataType(Subexpr *expr, StatementBlock *scope){
                 
                 }
 
-                
-
-                
+                // different types that are not primary: no operators are defined
+                else{
+                    didError = true;
+                }
             }
 
             if (didError){
@@ -774,9 +823,6 @@ DataType Parser::getDataType(Subexpr *expr, StatementBlock *scope){
             }
 
 
-            // TODO: implicit type conversion 
-            // truncate for assignments
-            // expand for other operations                
             return DataTypes::Int;
         };
 
@@ -787,6 +833,7 @@ DataType Parser::getDataType(Subexpr *expr, StatementBlock *scope){
     case Subexpr::SUBEXPR_UNARY:{
 
         DataType operand = getDataType(expr->unarySubexpr, scope);
+        // *ptr
         if (match(expr->unaryOp, TOKEN_STAR)){
             if (operand.indirectionLevel > 0){
                 operand.indirectionLevel--;
@@ -798,6 +845,7 @@ DataType Parser::getDataType(Subexpr *expr, StatementBlock *scope){
                 return DataTypes::Error;
             }
         }
+        // &var
         else if (match(expr->unaryOp, TOKEN_AMPERSAND)){
             if (expr->unarySubexpr->subtag == Subexpr::SUBEXPR_LEAF && 
                 matchv(expr->unarySubexpr->leaf, LITERAL_TOKEN_TYPES, ARRAY_COUNT(LITERAL_TOKEN_TYPES))){
@@ -813,14 +861,33 @@ DataType Parser::getDataType(Subexpr *expr, StatementBlock *scope){
                 return operand;
             }
         }
+        // if struct then, no other unary operator other than & are defined
+        else if (operand.tag == DataType::TAG_STRUCT){
+            return DataTypes::Error;
+        }
+
         return operand;
         break;
     }
 
     case Subexpr::SUBEXPR_LEAF:{
+        // check if identifier has been declared
+        auto isVarDeclared = [&](Splice name) -> bool{
+            StatementBlock *currentScope = scope;
+            while(currentScope){
+                if (currentScope->symbols.existKey(name)){
+                    return true;
+                }
+                currentScope = currentScope->parent;
+            }
+            return false;
+        };
 
         if (match(expr->leaf, TOKEN_IDENTIFIER)){
-            if (!scope->symbols.existKey(expr->leaf.string)){
+            if (!isVarDeclared(expr->leaf.string)){
+                logErrorMessage(expr->leaf, "Undeclared identifier \"%.*s\"", splicePrintf(expr->leaf.string));
+                errors++;
+
                 return DataTypes::Error;
             }
 
@@ -981,8 +1048,9 @@ Subexpr* Parser::parsePrimary(StatementBlock *scope){
         }
         // parse identifier
         else{
-            rewindTo(identifier);
-            *s = parseIdentifier(scope);
+            s->subtag = Subexpr::SUBEXPR_LEAF;
+            s->leaf = identifier;
+            
         }
 
     }

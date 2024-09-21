@@ -3,6 +3,7 @@ struct A; // only declared
 struct A { // struct definition
     int a;
     int b;
+    float c;
 };
 
 struct B { // struct member of struct
@@ -22,3 +23,34 @@ struct C {
         int e;
     }e; 
 };
+
+struct A afoo;
+afoo.a = 1;
+afoo.b = 2;
+
+
+// ERRORS
+afoo.c = "abc"; // error: float = char*
+afoo.d = 1; // no .d member
+afoo.1 = 2; // invalid member
+afoo1.a = 3; // only check left operand for declaration
+
+
+struct { // unnamed struct not supported
+    int a;
+};
+
+struct A{ // struct redefinition
+    int b;
+};
+
+struct F;
+
+struct G{
+    struct F f; // struct F not defined till this point
+    struct F *f; // struct F not defined till this point
+};
+
+
+
+

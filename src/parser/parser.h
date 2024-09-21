@@ -14,7 +14,7 @@ struct Parser{
     StatementBlock global;
     SymbolTable<Function> functions;
 
-
+    // token/state management
     bool expect(TokenType type);
     bool match(TokenType type);
     bool matchv(TokenType type[], int n);
@@ -24,14 +24,19 @@ struct Parser{
     Token peekToken();
     Token consumeToken(); 
     void rewindTo(Token checkpoint);  
+    
 
+    // checks
     bool isValidLvalue(Subexpr *expr);
+    bool isStructDefined(Token structName, StatementBlock *scope);
+    
+    // type checking
     DataType getDataType(Subexpr *operation, StatementBlock *scope);
+
+
+    // parsing
     DataType parseDataType(StatementBlock *scope);
     Token parseStructDefinition(StatementBlock *scope);
-
-    bool isStructDefined(Token structName, StatementBlock *scope);
-
     Subexpr parseFunctionCall(StatementBlock *scope);
     Subexpr parseIdentifier(StatementBlock *scope);
     Subexpr* parsePrimary(StatementBlock *scope);

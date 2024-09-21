@@ -15,9 +15,9 @@ TODO:
     break/continue/return - return somewhat supported
     arrays - indexing works, declarations remain, initialization remain
     type checking - somewhat done
+    structs - declaration done
     
     character literal tokenization
-    structs
     
 
     Specific refactors:
