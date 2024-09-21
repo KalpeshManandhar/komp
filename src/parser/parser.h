@@ -6,13 +6,17 @@
 
 
 struct Parser{
-    std::vector<Node *> statements;
-
-    Tokenizer * tokenizer;
+    Tokenizer *tokenizer;
     Token currentToken;
+    
+
+    // to check if any parsing went into error: set to true whenever the parser tries to recover from an error
+    bool didError;
+
 
     StatementBlock global;
     SymbolTable<Function> functions;
+    std::vector<Node *> statements;
 
     // token/state management
     bool expect(TokenType type);
@@ -20,34 +24,34 @@ struct Parser{
     bool matchv(TokenType type[], int n);
     bool match(Token token, TokenType type);
     bool matchv(Token token, TokenType type[], int n);
-    bool tryRecover();
+    bool tryRecover(TokenType extraDelimiter = TOKEN_EOF);
     Token peekToken();
     Token consumeToken(); 
     void rewindTo(Token checkpoint);  
     
 
     // checks
+    Token getSubexprToken(Subexpr *expr);
     bool isValidLvalue(Subexpr *expr);
     bool isStructDefined(Token structName, StatementBlock *scope);
     
     // type checking
-    DataType getDataType(Subexpr *operation, StatementBlock *scope);
+    bool canBeConverted(Subexpr *from, DataType fromType, DataType toType, StatementBlock *scope);
+    DataType checkContextAndType(Subexpr *operation, StatementBlock *scope);
 
 
     // parsing
-    DataType parseDataType(StatementBlock *scope);
-    Token parseStructDefinition(StatementBlock *scope);
-    Subexpr parseFunctionCall(StatementBlock *scope);
-    Subexpr parseIdentifier(StatementBlock *scope);
-    Subexpr* parsePrimary(StatementBlock *scope);
-    Subexpr* parseSubexpr(int precedence, StatementBlock *scope); 
-    ReturnNode* parseReturn(StatementBlock *scope);
     Node* parseDeclaration(StatementBlock *scope);
     Node* parseStatement(StatementBlock *scope);
-    StatementBlock* parseStatementBlock(StatementBlock *scope);
     Node* parseIf(StatementBlock *scope);
     Node* parseWhile(StatementBlock *scope);
     Node* parseFor(StatementBlock *scope);
+    DataType parseDataType(StatementBlock *scope);
+    Token parseStructDefinition(StatementBlock *scope);
+    Subexpr* parsePrimary(StatementBlock *scope);
+    Subexpr* parseSubexpr(int precedence, StatementBlock *scope); 
+    ReturnNode* parseReturn(StatementBlock *scope);
+    StatementBlock* parseStatementBlock(StatementBlock *scope);
 
 
 public:

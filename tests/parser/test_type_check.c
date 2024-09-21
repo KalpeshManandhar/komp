@@ -37,3 +37,10 @@ void returnVoid(){
 
 c = a + returnInt();
 c = a + returnVoid(); // error: void return type
+
+
+void takesPtr(int *a){
+    *a = 1;
+}
+
+takesPtr(1.0f);

@@ -266,6 +266,8 @@ Token Tokenizer::nextToken(){
     if (this->isEOF()){
         return Token{
             .type = TOKEN_EOF,
+            .charNo = this->charNo,
+            .lineNo = this->lineNo,
         };
     }
 

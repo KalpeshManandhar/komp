@@ -24,12 +24,14 @@ struct C {
     }e; 
 };
 
-struct A afoo;
+struct A afoo, bfoo;
 afoo.a = 1;
 afoo.b = 2;
 
+bfoo = afoo;
 
 // ERRORS
+bfoo = 1; // error: A = int
 afoo.c = "abc"; // error: float = char*
 afoo.d = 1; // no .d member
 afoo.1 = 2; // invalid member

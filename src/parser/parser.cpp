@@ -164,19 +164,19 @@ int getPrecedence(Token opToken){
 
 
 // error recovery: skip until the next semi colon, end of scope or until EOF
-bool Parser::tryRecover(){
+bool Parser::tryRecover(TokenType extraDelimiter){
     TokenType recoveryDelimiters[] = {
         TOKEN_SEMI_COLON, 
-        TOKEN_COMMA, 
-        TOKEN_PARENTHESIS_CLOSE,
         TOKEN_CURLY_CLOSE,
-        TOKEN_SQUARE_CLOSE,
         TOKEN_EOF,
     };
 
-    while (!matchv(recoveryDelimiters, ARRAY_COUNT(recoveryDelimiters))){
+    while (!matchv(recoveryDelimiters, ARRAY_COUNT(recoveryDelimiters)) && !match(extraDelimiter)){
         consumeToken();
     }
+
+    didError = true;
+
     return true;
 }
 
@@ -184,13 +184,16 @@ bool Parser::tryRecover(){
 
 // consumes expected token
 bool Parser::expect(TokenType type){
-
     // unexpected token
     if (!match(type)) {
+        if (didError){
+            return false;
+        }
+
         logErrorMessage(peekToken(), "Expected token %s but found \"%.*s\"", TOKEN_TYPE_STRING[type], (int)currentToken.string.len, currentToken.string.data);
         errors++;
         
-        tryRecover();
+        tryRecover(type);
         
         if (match(type)){
             consumeToken();
@@ -202,10 +205,13 @@ bool Parser::expect(TokenType type){
     return true;
 }
 
+
 // checks if current token matches given type
 bool Parser::match(TokenType type){
     return currentToken.type == type;
 }
+
+
 
 bool Parser::matchv(TokenType type[], int n){
     for (int i=0; i<n; i++){
@@ -217,7 +223,6 @@ bool Parser::matchv(TokenType type[], int n){
 }
 
 
-// checks if current token matches given type
 bool Parser::match(Token token, TokenType type){
     return token.type == type;
 }
@@ -230,6 +235,8 @@ bool Parser::matchv(Token token, TokenType type[], int n){
     }
     return false;
 }
+
+
 
 Token Parser::peekToken(){
     return currentToken;
@@ -473,15 +480,110 @@ DataType Parser::parseDataType(StatementBlock *scope){
 }
 
 
+Token Parser::getSubexprToken(Subexpr *expr) {
+    switch (expr->subtag){
+        case Subexpr::SUBEXPR_LEAF:
+            return expr->leaf; 
+        
+        case Subexpr::SUBEXPR_BINARY_OP:
+            return expr->op;
+
+        case Subexpr::SUBEXPR_UNARY:
+            return expr->unaryOp;
+
+        case Subexpr::SUBEXPR_FUNCTION_CALL:
+            return expr->functionCall->funcName;
+
+        case Subexpr::SUBEXPR_RECURSE_PARENTHESIS:
+            return getSubexprToken(expr->inside);
+
+        default:
+            return expr->leaf;
+    }
+};
+
+
+
+bool Parser::canBeConverted(Subexpr *from, DataType fromType, DataType toType, StatementBlock *scope){
+    
+    if (fromType.tag == DataType::TAG_ERROR || toType.tag == DataType::TAG_ERROR){
+        return false;
+    }
+
+    // void cannot be converted to or from anything
+    if ((fromType.tag == DataType::TAG_VOID && fromType.indirectionLevel == 0) 
+        || (toType.tag == DataType::TAG_VOID && toType.indirectionLevel == 0)){
+        return false;
+    }
+
+
+    Token fromToken = getSubexprToken(from);
+
+    // pointers can be converted to other pointers and to integers
+    if (fromType.indirectionLevel > 0){
+        if (toType.indirectionLevel > 0){
+            // dont log an error with void pointers?
+            if (fromType.tag == DataType::TAG_VOID || toType.tag == DataType::TAG_VOID){
+                return true;
+            }
+            else if (fromType.indirectionLevel != toType.indirectionLevel || fromType.tag != toType.tag){
+                logWarningMessage(fromToken, "Conversion from pointer of type \"%s\" to \"%s\"",
+                                dataTypePrintf(fromType), dataTypePrintf(toType));
+            }
+            return true;
+        }
+
+        if (toType.tag == DataType::TAG_PRIMARY){
+            if (match(toType.type, TOKEN_INT) || match(toType.type, TOKEN_CHAR)){
+                logWarningMessage(fromToken, "Conversion from pointer of type \"%s\" to integer type \"%s\"",
+                                dataTypePrintf(fromType), dataTypePrintf(toType));
+                return true;
+            }
+        }
+        
+        return false;
+    }
+
+    // structs can only be converted to the same struct
+    if (fromType.tag == DataType::TAG_STRUCT){
+        if (toType.tag == DataType::TAG_STRUCT && compare(fromType.structName.string, toType.structName.string)){
+            return true;
+        }
+        return false;
+    }
+ 
+    if (fromType.tag == DataType::TAG_PRIMARY){
+        // floating point numbers cannot be converted to pointers
+        if ((match(fromType.type, TOKEN_FLOAT) || match(fromType.type, TOKEN_DOUBLE))
+            && toType.indirectionLevel > 0){
+            return false;
+        }
+        // primary data types can be converted between each other
+        if (fromType.tag == DataType::TAG_PRIMARY && toType.tag == DataType::TAG_PRIMARY){
+            return true;
+        }
+        // primary cannot be converted to structs
+        return false;
+    }
+
+    return false;
+
+
+}
+
+
+
+
+
 
 // get the expected type of a subexpr while checking for errors
 // reference from https://en.cppreference.com/w/c/language/conversion
-DataType Parser::getDataType(Subexpr *expr, StatementBlock *scope){
+DataType Parser::checkContextAndType(Subexpr *expr, StatementBlock *scope){
 
     switch (expr->subtag){
     case Subexpr::SUBEXPR_BINARY_OP:{
         
-        DataType left = getDataType(expr->left, scope);
+        DataType left = checkContextAndType(expr->left, scope);
 
         // okay this is a pain in the ass cause the right operand (member name) will not have a type from the identifier itself
         // that member name should not be checked for declaration by itself. 
@@ -541,7 +643,7 @@ DataType Parser::getDataType(Subexpr *expr, StatementBlock *scope){
 
 
 
-        DataType right = getDataType(expr->right, scope);
+        DataType right = checkContextAndType(expr->right, scope);
         
         
         // if error, just return; dont log any errors
@@ -832,7 +934,7 @@ DataType Parser::getDataType(Subexpr *expr, StatementBlock *scope){
         
     case Subexpr::SUBEXPR_UNARY:{
 
-        DataType operand = getDataType(expr->unarySubexpr, scope);
+        DataType operand = checkContextAndType(expr->unarySubexpr, scope);
         // *ptr
         if (match(expr->unaryOp, TOKEN_STAR)){
             if (operand.indirectionLevel > 0){
@@ -917,14 +1019,53 @@ DataType Parser::getDataType(Subexpr *expr, StatementBlock *scope){
     }
 
 
-    case Subexpr::SUBEXPR_FUNCTION_CALL:
-        return functions.getInfo(expr->functionCall->funcName.string).info.returnType;
+    case Subexpr::SUBEXPR_FUNCTION_CALL:{
+
+        FunctionCall *fooCall = expr->functionCall;
+
+
+        // check if function has been declared
+        if (!functions.existKey(fooCall->funcName.string)){
+            logErrorMessage(fooCall->funcName, "Invalid implicit declaration of function \"%.*s\"", 
+                            splicePrintf(fooCall->funcName.string));
+            errors++;
+            return DataTypes::Error;
+        }
+
+        Function foo = functions.getInfo(fooCall->funcName.string).info;
+        // check for number of arguments
+        if (foo.parameters.size() != fooCall->arguments.size()){
+            logErrorMessage(fooCall->funcName, "In function \"%.*s\", required %llu but found %llu arguments.", 
+                        splicePrintf(fooCall->funcName.string), foo.parameters.size(), fooCall->arguments.size());
+            errors++;
+        }
+        else{
+            // check if arguments are of correct type/can be implicitly converted to the correct type
+            auto matchArgType = [&](Function *foo, FunctionCall *fooCall){
+                for (int i=0; i<foo->parameters.size(); i++){
+                    DataType fromType = checkContextAndType(fooCall->arguments[i], scope);
+                    
+                    if (!canBeConverted(fooCall->arguments[i], fromType, foo->parameters[i].type, scope)){
+                        logErrorMessage(getSubexprToken(fooCall->arguments[i]), "Cannot convert argument of type \"%s\" to \"%s\"",
+                                        dataTypePrintf(fromType), dataTypePrintf(foo->parameters[i].type));
+                        errors++;
+                    }
+                }
+            };
+
+            matchArgType(&foo, fooCall);
+
+        }
+
+
+        return foo.returnType;
+    }
     
     case Subexpr::SUBEXPR_RECURSE_PARENTHESIS:
-        return getDataType(expr->inside, scope);
+        return checkContextAndType(expr->inside, scope);
     
     default:
-        return DataTypes::Void;
+        return DataTypes::Error;
     }
 
 }
@@ -963,11 +1104,16 @@ Subexpr* Parser::parseSubexpr(int precedence, StatementBlock *scope){
         
 
         Subexpr *next = (Subexpr*)parseSubexpr(getPrecedence(s->op), scope);
+
         s->right  = next;
         s->subtag = Subexpr::SUBEXPR_BINARY_OP;
         
         if (match(s->op,TOKEN_SQUARE_OPEN)){
             expect(TOKEN_SQUARE_CLOSE);
+        }
+        
+        if (next->tag == Node::NODE_ERROR){
+            s->tag = Node::NODE_ERROR;
         }
         
         left = s;
@@ -976,6 +1122,7 @@ Subexpr* Parser::parseSubexpr(int precedence, StatementBlock *scope){
     
     return s;
 }
+
 
 Subexpr* Parser::parsePrimary(StatementBlock *scope){
     Subexpr *s = new Subexpr;
@@ -1028,22 +1175,6 @@ Subexpr* Parser::parsePrimary(StatementBlock *scope){
             s->functionCall = fooCall;
             s->subtag = Subexpr::SUBEXPR_FUNCTION_CALL;
             
-            if (!functions.existKey(identifier.string)){
-                errors++;
-                logErrorMessage(identifier, "Invalid implicit declaration of function \"%.*s\"", 
-                                (int)identifier.string.len, identifier.string.data);
-            }
-            else{
-                Function foo = functions.getInfo(identifier.string).info;
-
-                if (foo.parameters.size() != nArgs){
-                    errors++;
-                    logErrorMessage(identifier, "In function \"%.*s\", required %llu but found %llu arguments.", 
-                                (int)fooCall->funcName.string.len, fooCall->funcName.string.data,
-                                foo.parameters.size(), nArgs);
-                }
-            }
-            
             
         }
         // parse identifier
@@ -1070,13 +1201,6 @@ Subexpr* Parser::parsePrimary(StatementBlock *scope){
 }
 
 
-
-Subexpr Parser::parseFunctionCall(StatementBlock *scope){
-    int a = 0, b = 1, c = 2;
-    a = b = c;
-    
-    return Subexpr{0};
-}
 
 
 bool Parser::isStructDefined(Token structName, StatementBlock *scope){
@@ -1272,7 +1396,7 @@ Node* Parser::parseDeclaration(StatementBlock *scope){
             if (match(TOKEN_ASSIGNMENT)){
                 consumeToken();
                 var.initValue = (Subexpr *)parseSubexpr(INT32_MAX, scope);
-                getDataType(var.initValue, scope);
+                checkContextAndType(var.initValue, scope);
 
             }
 
@@ -1324,15 +1448,20 @@ Node* Parser::parseStatement(StatementBlock *scope){
     else if (match(TOKEN_CURLY_OPEN)){
         statement = parseStatementBlock(scope);
     }
-    else if (match(TOKEN_IDENTIFIER)){
-        statement = parseSubexpr(INT32_MAX, scope);
-        getDataType((Subexpr *)statement, scope);
-
-        expect(TOKEN_SEMI_COLON);
-    }
     else if (match(TOKEN_SEMI_COLON)){
         statement = NULL;
         consumeToken();
+    }
+    else if (match(TOKEN_IDENTIFIER) || matchv(UNARY_OP_TOKENS, ARRAY_COUNT(UNARY_OP_TOKENS))
+            || matchv(LITERAL_TOKEN_TYPES, ARRAY_COUNT(LITERAL_TOKEN_TYPES))){
+        didError = false;
+        statement = parseSubexpr(INT32_MAX, scope);
+
+        if (!didError){
+            checkContextAndType((Subexpr *)statement, scope);
+        }
+        
+        expect(TOKEN_SEMI_COLON);
     }
     else {
         errors++;
