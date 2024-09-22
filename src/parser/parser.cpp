@@ -974,26 +974,28 @@ DataType Parser::checkContextAndType(Subexpr *expr, StatementBlock *scope){
 
     case Subexpr::SUBEXPR_LEAF:{
         // check if identifier has been declared
-        auto isVarDeclared = [&](Splice name) -> bool{
+        auto findVarDeclaration = [&](Splice name) -> StatementBlock *{
             StatementBlock *currentScope = scope;
             while(currentScope){
                 if (currentScope->symbols.existKey(name)){
-                    return true;
+                    return currentScope;
                 }
                 currentScope = currentScope->parent;
             }
-            return false;
+            return NULL;
         };
 
         if (match(expr->leaf, TOKEN_IDENTIFIER)){
-            if (!isVarDeclared(expr->leaf.string)){
+            StatementBlock *varDeclScope = findVarDeclaration(expr->leaf.string);
+            
+            if (!varDeclScope){
                 logErrorMessage(expr->leaf, "Undeclared identifier \"%.*s\"", splicePrintf(expr->leaf.string));
                 errors++;
 
                 return DataTypes::Error;
             }
 
-            DataType type = scope->symbols.getInfo(expr->leaf.string).info;
+            DataType type = varDeclScope->symbols.getInfo(expr->leaf.string).info;
             return type;
         }
         
@@ -1297,6 +1299,8 @@ Node* Parser::parseDeclaration(StatementBlock *scope){
 
             
             expect(TOKEN_CURLY_OPEN);
+            
+
             while (!match(TOKEN_CURLY_CLOSE)){
                 Node *stmt = parseStatement(foo.block);
                 if (stmt){
@@ -1428,6 +1432,8 @@ Node* Parser::parseDeclaration(StatementBlock *scope){
 
 
 Node* Parser::parseStatement(StatementBlock *scope){
+    didError = false;
+
     Node *statement;
     if (matchv(DATA_TYPE_TOKENS, ARRAY_COUNT(DATA_TYPE_TOKENS))
         || matchv(TYPE_MODIFIER_TOKENS, ARRAY_COUNT(TYPE_MODIFIER_TOKENS))){
@@ -1454,7 +1460,6 @@ Node* Parser::parseStatement(StatementBlock *scope){
     }
     else if (match(TOKEN_IDENTIFIER) || matchv(UNARY_OP_TOKENS, ARRAY_COUNT(UNARY_OP_TOKENS))
             || matchv(LITERAL_TOKEN_TYPES, ARRAY_COUNT(LITERAL_TOKEN_TYPES))){
-        didError = false;
         statement = parseSubexpr(INT32_MAX, scope);
 
         if (!didError){
