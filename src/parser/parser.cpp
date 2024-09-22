@@ -303,7 +303,7 @@ Token Parser::parseStructDefinition(StatementBlock *scope){
                 }
                 
                 // if the struct type is incomplete
-                if (member.type.indirectionLevel == 0 && !isStructDefined(member.type.structName, scope)){
+                if (member.type.indirectionLevel == 0 && !findStructDeclaration(member.type.structName, scope)){
                     logErrorMessage(member.type.structName, "Struct \"%.*s\" incomplete.", splicePrintf(member.type.structName.string));
                     errors++;
                 }
@@ -610,8 +610,10 @@ DataType Parser::checkContextAndType(Subexpr *expr, StatementBlock *scope){
                     return DataTypes::Error;
                 }
             }
+            
+            StatementBlock *structDeclScope = findStructDeclaration(left.structName, scope);
 
-            if (!scope->structs.existKey(left.structName.string)){
+            if (!structDeclScope){
                 logErrorMessage(expr->op, "Not a valid struct.");
                 errors++;
                 return DataTypes::Error;
@@ -625,7 +627,7 @@ DataType Parser::checkContextAndType(Subexpr *expr, StatementBlock *scope){
             }
             
             Splice memberName = expr->right->leaf.string;
-            Struct st = scope->structs.getInfo(left.structName.string).info;
+            Struct st = structDeclScope->structs.getInfo(left.structName.string).info;
             
             // the right identifier must be a valid member name in the struct
             if (!st.members.existKey(memberName)){
@@ -1205,18 +1207,18 @@ Subexpr* Parser::parsePrimary(StatementBlock *scope){
 
 
 
-bool Parser::isStructDefined(Token structName, StatementBlock *scope){
+StatementBlock* Parser::findStructDeclaration(Token structName, StatementBlock *scope){
     StatementBlock *currentScope = scope;
     while (currentScope){
         if (currentScope->structs.existKey(structName.string)){
             if (currentScope->structs.getInfo(structName.string).info.defined){
-                return true;
+                return currentScope;
             }
         }
 
         currentScope = currentScope->parent;
     }
-    return false;
+    return NULL;
 }
 
 
@@ -1236,7 +1238,7 @@ Node* Parser::parseDeclaration(StatementBlock *scope){
     // check if struct has been defined: only defined structs can be used for declaration
     if (type.tag == DataType::TAG_STRUCT){
         
-        if (!isStructDefined(type.structName, scope)){
+        if (!findStructDeclaration(type.structName, scope)){
             logErrorMessage(type.structName, "Struct \"%.*s\" incomplete.", splicePrintf(type.structName.string));
             errors++;
         }
@@ -1739,6 +1741,7 @@ void printParseTree(Node *const current, int depth){
             std::cout<<type->type.string<<"\n";
         }
         
+        printTabs(depth+1);
         std::cout<<"Struct table:\n";
         for (auto &pair : b->structs.entries){
             Struct strct = pair.second.info;
@@ -1750,7 +1753,7 @@ void printParseTree(Node *const current, int depth){
                 std::cout<<m.second.info.memberName.string <<": " << dataTypePrintf(m.second.info.type)<<"\n"; 
             }
             printTabs(depth + 2);
-            std::cout<<"}\n"; 
+            std::cout<<"\t}\n"; 
 
         }
         break;
