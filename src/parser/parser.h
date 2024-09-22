@@ -33,7 +33,7 @@ struct Parser{
     // checks
     Token getSubexprToken(Subexpr *expr);
     bool isValidLvalue(Subexpr *expr);
-    bool isStructDefined(Token structName, StatementBlock *scope);
+    StatementBlock* findStructDeclaration(Token structName, StatementBlock *scope);
     
     // type checking
     bool canBeConverted(Subexpr *from, DataType fromType, DataType toType, StatementBlock *scope);

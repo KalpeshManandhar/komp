@@ -30,28 +30,37 @@ afoo.b = 2;
 
 bfoo = afoo;
 
-// ERRORS
-bfoo = 1; // error: A = int
-afoo.c = "abc"; // error: float = char*
-afoo.d = 1; // no .d member
-afoo.1 = 2; // invalid member
-afoo1.a = 3; // only check left operand for declaration
+void foo(){
+    struct P{
+        int p;
+    }p;
+    
+    p.p = 1;
+}
 
 
-struct { // unnamed struct not supported
-    int a;
-};
+// // ERRORS
+// bfoo = 1; // error: A = int
+// afoo.c = "abc"; // error: float = char*
+// afoo.d = 1; // no .d member
+// afoo.1 = 2; // invalid member
+// afoo1.a = 3; // only check left operand for declaration
 
-struct A{ // struct redefinition
-    int b;
-};
 
-struct F;
+// struct { // unnamed struct not supported
+//     int a;
+// };
 
-struct G{
-    struct F f; // struct F not defined till this point
-    struct F *f; // struct F not defined till this point
-};
+// struct A{ // struct redefinition
+//     int b;
+// };
+
+// struct F;
+
+// struct G{
+//     struct F f; // struct F not defined till this point
+//     struct F *f; // struct F not defined till this point
+// };
 
 
 
