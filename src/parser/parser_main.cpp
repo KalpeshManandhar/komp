@@ -30,11 +30,6 @@ int main(int argc, char **argv){
             printParseTree(stmt);
         }
 
-        std::cout<<"Symbol table:\n";
-        for (auto &pair : p.global.symbols.entries){
-            std::cout<<pair.second.identifier <<": ";
-            std::cout<<dataTypePrintf(pair.second.info)<<"\n";
-        }
 
         for (auto &pair: p.functions.entries){
             std::cout<<"Function: " <<pair.second.identifier <<"{\n";
@@ -50,18 +45,9 @@ int main(int argc, char **argv){
             std::cout<<"}\n";
             
         }
-
-        std::cout<<"Struct table:\n";
-        for (auto &pair : p.global.structs.entries){
-            Struct strct = pair.second.info;
-            std::cout<<"\tStruct " << strct.structName.string<< "{\n";
-
-            for (auto &m: strct.members.entries){
-                std::cout<<"\t\t"<<m.second.info.memberName.string <<": " << dataTypePrintf(m.second.info.type)<<"\n"; 
-            }
-            std::cout<<"\t}\n"; 
-
-        }
+        
+        printParseTree(&p.global, 0);
+        
     }
 
     

@@ -18,15 +18,14 @@ int foo(int a, int b){
     return 0;
 }
 
-
-
-
 int main(){
     int a = foo(1,2);
-    a = foo(foo(1,2),2);
-    foo(1,2, 3); // mismatch in number of arguments
 
-    fooUndeclared(); // implicit declaration of function
+    // mismatch in number of arguments
+    foo(1,2, 3); 
+    
+    // implicit declaration of function
+    fooUndeclared(); 
 
     return 0;
 }

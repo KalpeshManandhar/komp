@@ -19,7 +19,7 @@ d = d - b; // warning: ptr = int
 d = d + b; // error: ptr + ptr
 
 c = &1; // error: address of a literal
-c = a + "abc"; // error: int and const char *
+c = a + "abc"; // warning: int = const char * 
 c = *(a + "abc"); // works: int = char (implicit typecast to int)
 
 

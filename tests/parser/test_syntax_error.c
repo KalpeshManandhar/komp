@@ -1,20 +1,21 @@
 int a, b, c;
 
-a = (12 + 6; // missing end parenthesis
+// missing end parenthesis
+a = (12 + 6; 
 
 // missing terminal
 a = 12 +; 
 
 // missing terminal inside parenthesis
 a = (12 * +
-a = (12 * +);
+a = (12 * +); // <- skip here
 a = (12 * )
-a = (12 * (+12 /));
+a = (12 * (+12 /)); // <- skip here
 
 
 // missing semi colon
 b = 12 + 5 
-c = 3 / ; // <- doesnt find the missing terminal here as it skips to the semicolon
+c = 3 / ; // <- skips to semicolon
 
-// unexpected token
+// missing semicolon
 + 1

@@ -1729,32 +1729,36 @@ void printParseTree(Node *const current, int depth){
             printParseTree(stmt, depth + 1);
         }
         
-        printTabs(depth+1);
-        std::cout<<"Symbol table:\n";
-        for (auto &pair : b->symbols.entries){
-            printTabs(depth + 2);
-            std::cout<<pair.second.identifier <<": ";
-            DataType *type = &pair.second.info;
-            for (int level = 0; level < type->indirectionLevel; level++){
-                std::cout<<"*";
+        if (b->symbols.count() > 0){
+            printTabs(depth+1);
+            std::cout<<"Symbol table:\n";
+            for (auto &pair : b->symbols.entries){
+                printTabs(depth + 2);
+                std::cout<<pair.second.identifier <<": ";
+                DataType *type = &pair.second.info;
+                for (int level = 0; level < type->indirectionLevel; level++){
+                    std::cout<<"*";
+                }
+                std::cout<<type->type.string<<"\n";
             }
-            std::cout<<type->type.string<<"\n";
         }
         
-        printTabs(depth+1);
-        std::cout<<"Struct table:\n";
-        for (auto &pair : b->structs.entries){
-            Struct strct = pair.second.info;
-            printTabs(depth + 2);
-            std::cout<<"\tStruct " << strct.structName.string<< "{\n";
+        if (b->structs.count() > 0){
+            printTabs(depth+1);
+            std::cout<<"Struct table:\n";
+            for (auto &pair : b->structs.entries){
+                Struct strct = pair.second.info;
+                printTabs(depth + 2);
+                std::cout<<"\tStruct " << strct.structName.string<< "{\n";
 
-            for (auto &m: strct.members.entries){
-                printTabs(depth + 3);
-                std::cout<<m.second.info.memberName.string <<": " << dataTypePrintf(m.second.info.type)<<"\n"; 
+                for (auto &m: strct.members.entries){
+                    printTabs(depth + 3);
+                    std::cout<<m.second.info.memberName.string <<": " << dataTypePrintf(m.second.info.type)<<"\n"; 
+                }
+                printTabs(depth + 2);
+                std::cout<<"\t}\n"; 
+
             }
-            printTabs(depth + 2);
-            std::cout<<"\t}\n"; 
-
         }
         break;
     }
