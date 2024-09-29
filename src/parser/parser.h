@@ -16,7 +16,6 @@ struct Parser{
 
     StatementBlock global;
     SymbolTable<Function> functions;
-    std::vector<Node *> statements;
 
     // token/state management
     bool expect(TokenType type);
@@ -33,12 +32,13 @@ struct Parser{
     // checks
     Token getSubexprToken(Subexpr *expr);
     bool isValidLvalue(Subexpr *expr);
+    bool isExprStart();
     StatementBlock* findStructDeclaration(Token structName, StatementBlock *scope);
     
     // type checking
-    bool canBeConverted(Subexpr *from, DataType fromType, DataType toType, StatementBlock *scope);
-    DataType checkContextAndType(Subexpr *operation, StatementBlock *scope);
-
+    bool canBeConverted(Subexpr *from, DataType fromType, DataType toType);
+    DataType checkSubexprType(Subexpr *operation, StatementBlock *scope);
+    bool checkContext(Node *n, StatementBlock *scope);
 
     // parsing
     Node* parseDeclaration(StatementBlock *scope);
@@ -66,16 +66,23 @@ public:
         this->currentToken = t->nextToken();
         this->errors = 0;
         this->global.parent = 0;
-
+        this->global.tag = Node::NODE_STMT_BLOCK;
+        this->global.subtag = StatementBlock::BLOCK_UNNAMED;
     }
     
     bool parse(){
         while (currentToken.type != TOKEN_EOF){
             Node *stmt = this->parseStatement(&global);
             if (stmt){
-                this->statements.push_back(stmt);
+                this->global.statements.push_back(stmt);
+                checkContext(stmt, &global);
             }
         }
+        
+        for (auto &foo: functions.entries){
+            checkContext(foo.second.info.block, &global);
+        }
+
         
         fprintf(stdout, "[Parser] %llu errors generated.\n", errors);
         return errors == 0;

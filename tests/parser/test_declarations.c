@@ -1,22 +1,23 @@
-int a; // simple declaration
-float b = 12; // with initializer
-char c = 12 + 32; // initializer with operation
-double d, e; // multiple var declaration 
-int f = 0x23, g = 0b1011; // w/initializer
+{
+    int a; // simple declaration
+    float b = 12; // with initializer
+    char c = 12 + 32; // initializer with operation
+    double d, e; // multiple var declaration 
+    int f = 0x23, g = 0b1011; // w/initializer
 
-// type specifiers
-unsigned h;
-unsigned long int i;
-unsigned short int j;
-unsigned int k;
-unsigned long long int l;
-signed m;
-signed int n;
-signed short o;
-signed long p;
-signed long long q;
-long int r;
-
+    // type specifiers
+    unsigned h;
+    unsigned long int i;
+    unsigned short int j;
+    unsigned int k;
+    unsigned long long int l;
+    signed m;
+    signed int n;
+    signed short o;
+    signed long p;
+    signed long long q;
+    long int r;
+}
 // error
 // {
     signed unsigned int a; // signed unsigned conflict

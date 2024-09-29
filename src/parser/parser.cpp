@@ -167,6 +167,7 @@ int getPrecedence(Token opToken){
 bool Parser::tryRecover(TokenType extraDelimiter){
     TokenType recoveryDelimiters[] = {
         TOKEN_SEMI_COLON, 
+        TOKEN_CURLY_OPEN,
         TOKEN_CURLY_CLOSE,
         TOKEN_EOF,
     };
@@ -264,6 +265,12 @@ void Parser::rewindTo(Token checkpoint){
     tokenizerCheckpoint.lineNo = checkpoint.lineNo;
     tokenizerCheckpoint.string.data = checkpoint.string.data + checkpoint.string.len;
     tokenizer->rewindTo(tokenizerCheckpoint);
+}
+
+
+bool Parser::isExprStart(){
+    return match(TOKEN_IDENTIFIER) || matchv(UNARY_OP_TOKENS, ARRAY_COUNT(UNARY_OP_TOKENS))
+            || matchv(LITERAL_TOKEN_TYPES, ARRAY_COUNT(LITERAL_TOKEN_TYPES));
 }
 
 
@@ -504,8 +511,11 @@ Token Parser::getSubexprToken(Subexpr *expr) {
 
 
 
-bool Parser::canBeConverted(Subexpr *from, DataType fromType, DataType toType, StatementBlock *scope){
-    
+bool Parser::canBeConverted(Subexpr *from, DataType fromType, DataType toType){
+    if (!from){
+        return false;
+    }
+
     if (fromType.tag == DataType::TAG_ERROR || toType.tag == DataType::TAG_ERROR){
         return false;
     }
@@ -515,9 +525,8 @@ bool Parser::canBeConverted(Subexpr *from, DataType fromType, DataType toType, S
         || (toType.tag == DataType::TAG_VOID && toType.indirectionLevel == 0)){
         return false;
     }
-
-
-    Token fromToken = getSubexprToken(from);
+    
+    Token subexprToken = getSubexprToken(from);
 
     // pointers can be converted to other pointers and to integers
     if (fromType.indirectionLevel > 0){
@@ -527,7 +536,7 @@ bool Parser::canBeConverted(Subexpr *from, DataType fromType, DataType toType, S
                 return true;
             }
             else if (fromType.indirectionLevel != toType.indirectionLevel || fromType.tag != toType.tag){
-                logWarningMessage(fromToken, "Conversion from pointer of type \"%s\" to \"%s\"",
+                logWarningMessage(subexprToken, "Conversion from pointer of type \"%s\" to \"%s\".",
                                 dataTypePrintf(fromType), dataTypePrintf(toType));
             }
             return true;
@@ -535,7 +544,7 @@ bool Parser::canBeConverted(Subexpr *from, DataType fromType, DataType toType, S
 
         if (toType.tag == DataType::TAG_PRIMARY){
             if (match(toType.type, TOKEN_INT) || match(toType.type, TOKEN_CHAR)){
-                logWarningMessage(fromToken, "Conversion from pointer of type \"%s\" to integer type \"%s\"",
+                logWarningMessage(subexprToken, "Conversion from pointer of type \"%s\" to integer type \"%s\".",
                                 dataTypePrintf(fromType), dataTypePrintf(toType));
                 return true;
             }
@@ -578,12 +587,16 @@ bool Parser::canBeConverted(Subexpr *from, DataType fromType, DataType toType, S
 
 // get the expected type of a subexpr while checking for errors
 // reference from https://en.cppreference.com/w/c/language/conversion
-DataType Parser::checkContextAndType(Subexpr *expr, StatementBlock *scope){
+DataType Parser::checkSubexprType(Subexpr *expr, StatementBlock *scope){
+    if (!expr){
+        return DataTypes::Void;
+    }
+
 
     switch (expr->subtag){
     case Subexpr::SUBEXPR_BINARY_OP:{
         
-        DataType left = checkContextAndType(expr->left, scope);
+        DataType left = checkSubexprType(expr->left, scope);
 
         // okay this is a pain in the ass cause the right operand (member name) will not have a type from the identifier itself
         // that member name should not be checked for declaration by itself. 
@@ -645,7 +658,7 @@ DataType Parser::checkContextAndType(Subexpr *expr, StatementBlock *scope){
 
 
 
-        DataType right = checkContextAndType(expr->right, scope);
+        DataType right = checkSubexprType(expr->right, scope);
         
         
         // if error, just return; dont log any errors
@@ -681,14 +694,26 @@ DataType Parser::checkContextAndType(Subexpr *expr, StatementBlock *scope){
         else if (matchv(expr->op, ASSIGNMENT_OP, ARRAY_COUNT(ASSIGNMENT_OP))){
             auto isValidLvalue = [&](DataType leftOperandType, Subexpr *leftOperand) -> bool{
                 // const type
-                if (left.isSet(DataType::Specifiers::CONST)){
+                if (leftOperandType.isSet(DataType::Specifiers::CONST)){
                     return false;
                 }
+                
+                TokenType lvalueOp[] = {
+                    TOKEN_ARROW,
+                    TOKEN_DOT,
+                    TOKEN_SQUARE_OPEN,
+                };
+
+                if (leftOperand->subtag == Subexpr::SUBEXPR_BINARY_OP){
+                    return matchv(leftOperand->op, lvalueOp, ARRAY_COUNT(lvalueOp));
+                }
+                
                 // single variable identifier
                 if (leftOperand->subtag == Subexpr::SUBEXPR_LEAF 
                     && matchv(leftOperand->leaf, LITERAL_TOKEN_TYPES, ARRAY_COUNT(LITERAL_TOKEN_TYPES))){
                     return false;
                 }
+
                 return true;
 
             };
@@ -936,7 +961,7 @@ DataType Parser::checkContextAndType(Subexpr *expr, StatementBlock *scope){
         
     case Subexpr::SUBEXPR_UNARY:{
 
-        DataType operand = checkContextAndType(expr->unarySubexpr, scope);
+        DataType operand = checkSubexprType(expr->unarySubexpr, scope);
         // *ptr
         if (match(expr->unaryOp, TOKEN_STAR)){
             if (operand.indirectionLevel > 0){
@@ -1047,9 +1072,9 @@ DataType Parser::checkContextAndType(Subexpr *expr, StatementBlock *scope){
             // check if arguments are of correct type/can be implicitly converted to the correct type
             auto matchArgType = [&](Function *foo, FunctionCall *fooCall){
                 for (int i=0; i<foo->parameters.size(); i++){
-                    DataType fromType = checkContextAndType(fooCall->arguments[i], scope);
+                    DataType fromType = checkSubexprType(fooCall->arguments[i], scope);
                     
-                    if (!canBeConverted(fooCall->arguments[i], fromType, foo->parameters[i].type, scope)){
+                    if (!canBeConverted(fooCall->arguments[i], fromType, foo->parameters[i].type)){
                         logErrorMessage(getSubexprToken(fooCall->arguments[i]), "Cannot convert argument of type \"%s\" to \"%s\"",
                                         dataTypePrintf(fromType), dataTypePrintf(foo->parameters[i].type));
                         errors++;
@@ -1066,7 +1091,7 @@ DataType Parser::checkContextAndType(Subexpr *expr, StatementBlock *scope){
     }
     
     case Subexpr::SUBEXPR_RECURSE_PARENTHESIS:
-        return checkContextAndType(expr->inside, scope);
+        return checkSubexprType(expr->inside, scope);
     
     default:
         return DataTypes::Error;
@@ -1084,13 +1109,14 @@ Subexpr* Parser::parseSubexpr(int precedence, StatementBlock *scope){
     
     // while next token is an operator and its precedence is higher (value is lower) than current one, add to the tree 
     while (matchv(BINARY_OP_TOKENS, ARRAY_COUNT(BINARY_OP_TOKENS))){
-        bool isAssignment = matchv(ASSIGNMENT_OP, ARRAY_COUNT(ASSIGNMENT_OP));
+        bool isRtoLAssociative = matchv(ASSIGNMENT_OP, ARRAY_COUNT(ASSIGNMENT_OP));
+        isRtoLAssociative = isRtoLAssociative || match(TOKEN_SQUARE_OPEN);
         
         
         // for left to right associativity, break out when next op has a lower or equal precedence than current one
         if (getPrecedence(peekToken()) >= precedence){
             // right to left associativity for assignment operators, ie dont break out for same precedence
-            if (isAssignment){
+            if (isRtoLAssociative){
                 if (getPrecedence(peekToken()) > precedence)
                     break;
             }
@@ -1293,6 +1319,8 @@ Node* Parser::parseDeclaration(StatementBlock *scope){
             foo.block = new StatementBlock;
             foo.block->tag = Node::NODE_STMT_BLOCK;
             foo.block->parent = &global;
+            foo.block->subtag = StatementBlock::BLOCK_FUNCTION_BODY;
+            foo.block->funcName = foo.funcName;
 
             // add parameters to symbol table
             for (auto &p : foo.parameters){
@@ -1402,7 +1430,7 @@ Node* Parser::parseDeclaration(StatementBlock *scope){
             if (match(TOKEN_ASSIGNMENT)){
                 consumeToken();
                 var.initValue = (Subexpr *)parseSubexpr(INT32_MAX, scope);
-                checkContextAndType(var.initValue, scope);
+                checkSubexprType(var.initValue, scope);
 
             }
 
@@ -1460,13 +1488,12 @@ Node* Parser::parseStatement(StatementBlock *scope){
         statement = NULL;
         consumeToken();
     }
-    else if (match(TOKEN_IDENTIFIER) || matchv(UNARY_OP_TOKENS, ARRAY_COUNT(UNARY_OP_TOKENS))
-            || matchv(LITERAL_TOKEN_TYPES, ARRAY_COUNT(LITERAL_TOKEN_TYPES))){
+    else if (isExprStart()){
         statement = parseSubexpr(INT32_MAX, scope);
 
-        if (!didError){
-            checkContextAndType((Subexpr *)statement, scope);
-        }
+        // if (!didError){
+        //     checkSubexprType((Subexpr *)statement, scope);
+        // }
         
         expect(TOKEN_SEMI_COLON);
     }
@@ -1486,11 +1513,10 @@ Node* Parser::parseStatement(StatementBlock *scope){
 
 // TODO: add function return value checks
 ReturnNode* Parser::parseReturn(StatementBlock *scope){
-    expect(TOKEN_RETURN);
-    
     ReturnNode* r = new ReturnNode;
+    r->returnToken = consumeToken();
+    r->returnVal = NULL;
     r->tag = Node::NODE_RETURN;
-
     
     if (!match(TOKEN_SEMI_COLON)){
         r->returnVal = parseSubexpr(INT32_MAX, scope);
@@ -1508,6 +1534,7 @@ StatementBlock* Parser::parseStatementBlock(StatementBlock *scope){
     StatementBlock *block = new StatementBlock;
     block->tag = Node::NODE_STMT_BLOCK;
     block->parent = scope;
+    block->subtag = StatementBlock::BLOCK_UNNAMED;
     
     expect(TOKEN_CURLY_OPEN);
     while (!match(TOKEN_CURLY_CLOSE)){
@@ -1535,7 +1562,16 @@ Node* Parser::parseIf(StatementBlock *scope){
 
         // parse condition
         expect(TOKEN_PARENTHESIS_OPEN);
-        ifNode->condition = (Subexpr *)parseSubexpr(INT32_MAX, scope);
+        
+        if (isExprStart()){
+            ifNode->condition = (Subexpr *)parseSubexpr(INT32_MAX, scope);
+        }
+        else{
+            ifNode->condition = NULL;
+            logErrorMessage(peekToken(), "Missing expression for if condition.");
+            errors++;
+        }
+
         expect(TOKEN_PARENTHESIS_CLOSE);
     
         ifNode->subtag = IfNode::IfNodeType::IF_NODE;
@@ -1546,6 +1582,9 @@ Node* Parser::parseIf(StatementBlock *scope){
     }
 
     ifNode->block = (StatementBlock *)parseStatementBlock(scope);
+    ifNode->block->subtag = StatementBlock::BLOCK_IF;
+    ifNode->block->scope  = ifNode;
+
 
 
     // if there is an 'else' or 'else if', then consumes the 'else' token and recursively parse new 'if' or statement block
@@ -1566,10 +1605,22 @@ Node* Parser::parseWhile(StatementBlock *scope){
     expect(TOKEN_WHILE);
     // parse condition
     expect(TOKEN_PARENTHESIS_OPEN);
-    whileNode->condition = (Subexpr *)parseSubexpr(INT32_MAX, scope);
+
+    if (isExprStart()){
+        whileNode->condition = (Subexpr *)parseSubexpr(INT32_MAX, scope);
+    }
+    else{
+        whileNode->condition = NULL;
+        logErrorMessage(peekToken(), "Missing expression for while condition.");
+        errors++;
+    }
+
     expect(TOKEN_PARENTHESIS_CLOSE);
     
     whileNode->block = (StatementBlock *)parseStatementBlock(scope);
+    whileNode->block->subtag = StatementBlock::BLOCK_WHILE;
+    whileNode->block->scope  = whileNode;
+    
 
     return whileNode;
 }
@@ -1579,20 +1630,32 @@ Node* Parser::parseFor(StatementBlock *scope){
     ForNode *forNode = new ForNode;
 
     forNode->tag = Node::NODE_FOR; 
+    forNode->init = NULL; 
+    forNode->exitCondition = NULL; 
+    forNode->update = NULL; 
 
     expect(TOKEN_FOR);
     // parse condition
     expect(TOKEN_PARENTHESIS_OPEN);
-    forNode->init = (Subexpr *)parseSubexpr(INT32_MAX, scope);
+    if (isExprStart()){
+        forNode->init = (Subexpr *)parseSubexpr(INT32_MAX, scope);
+    }
     expect(TOKEN_SEMI_COLON);
     
-    forNode->exitCondition = (Subexpr *)parseSubexpr(INT32_MAX, scope);
+    if (isExprStart()){
+        forNode->exitCondition = (Subexpr *)parseSubexpr(INT32_MAX, scope);
+    }
     expect(TOKEN_SEMI_COLON);
 
-    forNode->update = (Subexpr *)parseSubexpr(INT32_MAX, scope);
+    if (isExprStart()){
+        forNode->update = (Subexpr *)parseSubexpr(INT32_MAX, scope);
+    }
     expect(TOKEN_PARENTHESIS_CLOSE);
     
     forNode->block = (StatementBlock *)parseStatementBlock(scope);
+    forNode->block->subtag = StatementBlock::BLOCK_FOR;
+    forNode->block->scope  = forNode;
+    
 
     return forNode;
 }
@@ -1603,7 +1666,8 @@ bool Parser::parseProgram(){
         if (matchv(DATA_TYPE_TOKENS, ARRAY_COUNT(DATA_TYPE_TOKENS))){
             Node *stmt = this->parseDeclaration(&global);
             if (stmt){
-                this->statements.push_back(stmt);
+                this->global.statements.push_back(stmt);
+                checkContext(stmt, &global);
             }
         }
         else if (match(TOKEN_SEMI_COLON)){
@@ -1624,10 +1688,138 @@ bool Parser::parseProgram(){
 
 
 
+bool Parser::checkContext(Node *n, StatementBlock *scope){
+    if (!n){
+        return false;
+    }
 
-void printStruct(Struct s){
+
+    switch (n->tag){
+    case Node::NODE_ERROR:{
+        return false;
+    }
+    case Node::NODE_IF_BLOCK:{
+        IfNode *i = (IfNode *)n;
+        
+        // check if condition expression can be converted to a boolean/arithmetic value
+        DataType conditionType = checkSubexprType(i->condition, scope);
+
+        if (!canBeConverted(i->condition, conditionType, DataTypes::Int)){
+            Token subexprToken = getSubexprToken(i->condition);
+            
+            logErrorMessage(subexprToken, "Cannot convert from expression of type \"%s\" to an integer/arithmetic type",
+                            dataTypePrintf(conditionType));
+            errors++;
+        }
+
+        checkContext(i->block, scope);
+
+        break;
+    }
+    case Node::NODE_WHILE:{
+        WhileNode *w = (WhileNode *)n;
+        
+        // check if condition expression can be converted to a boolean/arithmetic value
+        DataType conditionType = checkSubexprType(w->condition, scope);
+
+        if (!canBeConverted(w->condition, conditionType, DataTypes::Int)){
+            Token subexprToken = getSubexprToken(w->condition);
+            
+            logErrorMessage(subexprToken, "Cannot convert from expression of type \"%s\" to an integer/arithmetic type.",
+                            dataTypePrintf(conditionType));
+            errors++;
+        }
+
+        checkContext(w->block, scope);
+
+        break;
+    }
+    case Node::NODE_FOR:{
+        ForNode *f = (ForNode *)n;
+        
+        checkSubexprType(f->init, scope);
+        checkSubexprType(f->update, scope);
+
+        DataType conditionType = checkSubexprType(f->exitCondition, scope);
+
+        // check if condition expression can be converted to a boolean/arithmetic value
+        if (!canBeConverted(f->exitCondition, conditionType, DataTypes::Int)){
+            Token subexprToken = getSubexprToken(f->exitCondition);
+            
+            logErrorMessage(subexprToken, "Cannot convert from expression of type \"%s\" to an integer/arithmetic type.",
+                            dataTypePrintf(conditionType));
+            errors++;
+        }
+
+        checkContext(f->block, scope);
+
+        break;
+    }
+    case Node::NODE_STMT_BLOCK:{
+        StatementBlock *s = (StatementBlock *)n;
+
+        for (auto &stmt: s->statements){
+            checkContext(stmt, s);
+        }
+
+        break;
+    }
     
+    case Node::NODE_RETURN:{
+        ReturnNode *r = (ReturnNode *)n;
+
+        auto getParentFunction = [&]() -> StatementBlock*{
+            StatementBlock *currentScope = scope;
+            while (currentScope){
+                if (currentScope->subtag == StatementBlock::BLOCK_FUNCTION_BODY){
+                    return currentScope;
+                }
+            }
+            return NULL;
+        };
+
+        StatementBlock *functionScope = getParentFunction();
+        
+        // check if return is inside function
+        if (!functionScope){
+            logErrorMessage(r->returnToken, "Return statement can only be used in a function body.");
+            errors++;
+            return false;
+        }
+
+        assert(functions.existKey(functionScope->funcName.string));
+        
+        // check if return expression can be converted to the expected return type
+        DataType expectedRetType = functions.getInfo(functionScope->funcName.string).info.returnType;
+        DataType retExprType = checkSubexprType(r->returnVal, scope);
+
+        if (!canBeConverted(r->returnVal, retExprType, expectedRetType)){
+            Token errorToken = (r->returnVal)? getSubexprToken(r->returnVal) : r->returnToken;
+            
+            logErrorMessage(errorToken, "Cannot convert subexpr of type \"%s\" to expected return type \"%s\".",
+                            dataTypePrintf(retExprType), dataTypePrintf(expectedRetType));
+            errors++;
+            return false;
+        }
+        
+    }
+
+    case Node::NODE_SUBEXPR:{
+        Subexpr *s = (Subexpr *)n;
+
+        checkSubexprType(s, scope);
+        break;
+    }
+
+    
+    default:
+        return false;
+    }
+
+    return true;
+
 }
+
 
 
 

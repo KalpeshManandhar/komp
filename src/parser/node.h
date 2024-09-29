@@ -146,6 +146,7 @@ static const char* NODE_TAG_STRINGS[] = {
 };
 
 struct FunctionCall;
+struct FunctionCall;
 
 
 struct Subexpr: public Node{
@@ -184,9 +185,7 @@ struct Subexpr: public Node{
 };
 
 
-struct ReturnNode: public Node{
-    Subexpr *returnVal;
-};
+
 
 
 struct Declaration: public Node{
@@ -213,6 +212,20 @@ struct Struct: public Node{
 
 
 struct StatementBlock: public Node{
+    enum BlockType{
+        BLOCK_FUNCTION_BODY,
+        BLOCK_WHILE,
+        BLOCK_IF,
+        BLOCK_FOR,
+        BLOCK_UNNAMED,
+    }subtag;
+
+    union {
+        Token funcName;
+        Node *scope;
+    };
+
+
     std::vector<Node *> statements;
     SymbolTable<DataType> symbols;
     SymbolTable<Struct> structs;
@@ -237,6 +250,13 @@ struct FunctionCall{
     Token funcName; 
     std::vector<Subexpr*> arguments; 
 };
+
+
+struct ReturnNode: public Node{
+    Token returnToken;
+    Subexpr *returnVal;
+};
+
 
 
 struct IfNode: public Node{

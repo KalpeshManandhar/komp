@@ -26,7 +26,7 @@ int main(int argc, char **argv){
     if (success){
         fprintf(stdout, "Parse succeeded :)\n");
         
-        for (auto &stmt : p.statements){
+        for (auto &stmt : p.global.statements){
             printParseTree(stmt);
         }
 
@@ -46,7 +46,26 @@ int main(int argc, char **argv){
             
         }
         
-        printParseTree(&p.global, 0);
+        if (p.global.symbols.count() > 0){
+            std::cout<<"Symbol table:\n";
+            for (auto &pair : p.global.symbols.entries){
+                std::cout<<"\t"<<pair.second.identifier <<": " << dataTypePrintf(pair.second.info)<<"\n";
+            }
+        }
+        
+        if (p.global.structs.count() > 0){
+            std::cout<<"Struct table:\n";
+            for (auto &pair : p.global.structs.entries){
+                Struct strct = pair.second.info;
+                std::cout<<"\tStruct " << strct.structName.string<< "{\n";
+
+                for (auto &m: strct.members.entries){
+                    std::cout<<"\t\t"<<m.second.info.memberName.string <<": " << dataTypePrintf(m.second.info.type)<<"\n"; 
+                }
+                std::cout<<"\t}\n"; 
+
+            }
+        }
         
     }
 
