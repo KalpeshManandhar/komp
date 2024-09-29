@@ -1481,6 +1481,12 @@ Node* Parser::parseStatement(StatementBlock *scope){
     else if (match(TOKEN_RETURN)){
         statement = parseReturn(scope);
     }
+    else if (match(TOKEN_BREAK)){
+        statement = parseBreak(scope);
+    }
+    else if (match(TOKEN_CONTINUE)){
+        statement = parseContinue(scope);
+    }
     else if (match(TOKEN_CURLY_OPEN)){
         statement = parseStatementBlock(scope);
     }
@@ -1511,7 +1517,6 @@ Node* Parser::parseStatement(StatementBlock *scope){
 }
 
 
-// TODO: add function return value checks
 ReturnNode* Parser::parseReturn(StatementBlock *scope){
     ReturnNode* r = new ReturnNode;
     r->returnToken = consumeToken();
@@ -1525,6 +1530,27 @@ ReturnNode* Parser::parseReturn(StatementBlock *scope){
     expect(TOKEN_SEMI_COLON);
 
     return r;
+}
+
+
+BreakNode* Parser::parseBreak(StatementBlock *scope){
+    BreakNode* b = new BreakNode;
+    b->breakToken = consumeToken();
+    b->tag = Node::NODE_BREAK;
+    
+    expect(TOKEN_SEMI_COLON);
+
+    return b;
+}
+
+ContinueNode* Parser::parseContinue(StatementBlock *scope){
+    ContinueNode* c = new ContinueNode;
+    c->continueToken = consumeToken();
+    c->tag = Node::NODE_CONTINUE;
+    
+    expect(TOKEN_SEMI_COLON);
+
+    return c;
 }
 
 
@@ -1774,6 +1800,7 @@ bool Parser::checkContext(Node *n, StatementBlock *scope){
                 if (currentScope->subtag == StatementBlock::BLOCK_FUNCTION_BODY){
                     return currentScope;
                 }
+                currentScope = currentScope->parent;
             }
             return NULL;
         };
@@ -1802,6 +1829,58 @@ bool Parser::checkContext(Node *n, StatementBlock *scope){
             return false;
         }
         
+    }
+    
+    case Node::NODE_BREAK:{
+        BreakNode *b = (BreakNode *)n;
+
+        auto isValidBreak = [&]() -> bool{
+            StatementBlock *currentScope = scope;
+            while (currentScope){
+                if (currentScope->subtag == StatementBlock::BLOCK_FOR
+                    || currentScope->subtag == StatementBlock::BLOCK_WHILE){
+                    return true;
+                }
+                currentScope = currentScope->parent;
+
+            }
+            return false;
+        };
+
+        // check if return is inside function
+        if (!isValidBreak()){
+            logErrorMessage(b->breakToken, "No control statement to break out of.");
+            errors++;
+            return false;
+        }
+
+        break;
+    }
+    
+    case Node::NODE_CONTINUE:{
+        BreakNode *c = (BreakNode *)n;
+
+        auto isValidContinue = [&]() -> bool{
+            StatementBlock *currentScope = scope;
+            while (currentScope){
+                if (currentScope->subtag == StatementBlock::BLOCK_FOR
+                    || currentScope->subtag == StatementBlock::BLOCK_WHILE){
+                    return true;
+                }
+                currentScope = currentScope->parent;
+
+            }
+            return false;
+        };
+
+        // check if return is inside function
+        if (!isValidContinue()){
+            logErrorMessage(c->breakToken, "\"continue\" can only be used inside a loop body.");
+            errors++;
+            return false;
+        }
+
+        break;
     }
 
     case Node::NODE_SUBEXPR:{

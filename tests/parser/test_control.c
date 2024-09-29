@@ -6,6 +6,12 @@ int a, b, ishwor, veryGood, god, gyani;
 // update:      one assignment 
 for (a = 0; a <= 12; a = a + 1){
     int hello = 0;
+
+    break;
+
+    if (hello == 0){
+        continue;
+    }
 }
 
 
@@ -14,6 +20,7 @@ for (a = 0; a <= 12; a = a + 1){
 // if blocks
 if (ishwor == god){
     int isIshworGod = 1;
+    break;
 }
 else if (ishwor == veryGood){
     int willIshworDoParser = 1;

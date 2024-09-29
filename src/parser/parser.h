@@ -51,6 +51,8 @@ struct Parser{
     Subexpr* parsePrimary(StatementBlock *scope);
     Subexpr* parseSubexpr(int precedence, StatementBlock *scope); 
     ReturnNode* parseReturn(StatementBlock *scope);
+    ContinueNode* parseContinue(StatementBlock *scope);
+    BreakNode* parseBreak(StatementBlock *scope);
     StatementBlock* parseStatementBlock(StatementBlock *scope);
 
 

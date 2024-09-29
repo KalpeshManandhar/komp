@@ -116,15 +116,14 @@ type_modifiers:
 struct Node{
     enum Tag{
         NODE_SUBEXPR,
-        NODE_LVALUE,
-        NODE_RVALUE,
-        NODE_ASSIGNMENT,
         NODE_DECLARATION,
         NODE_IF_BLOCK,
         NODE_WHILE,
         NODE_FOR,
         NODE_STMT_BLOCK,
         NODE_RETURN,
+        NODE_BREAK,
+        NODE_CONTINUE,
         NODE_ERROR,
     };
     int tag;
@@ -132,20 +131,18 @@ struct Node{
 
 static const char* NODE_TAG_STRINGS[] = {
     "SUBEXPR",
-    "LVALUE",
-    "RVALUE",
-    "ASSIGNMENT",
     "DECLARATION",
     "IF_BLOCK",
     "WHILE",
     "FOR",
     "STMT_BLOCK",
     "RETURN",
+    "BREAK",
+    "CONTINUE",
     "ERROR",
 
 };
 
-struct FunctionCall;
 struct FunctionCall;
 
 
@@ -156,7 +153,6 @@ struct Subexpr: public Node{
         SUBEXPR_LEAF,
         SUBEXPR_UNARY,
         SUBEXPR_FUNCTION_CALL,
-        SUBEXPR_ARRAY_INDEX,
     }subtag;
     
     union{
@@ -255,6 +251,14 @@ struct FunctionCall{
 struct ReturnNode: public Node{
     Token returnToken;
     Subexpr *returnVal;
+};
+
+struct BreakNode: public Node{
+    Token breakToken;
+};
+
+struct ContinueNode: public Node{
+    Token continueToken;
 };
 
 
