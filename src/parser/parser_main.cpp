@@ -15,23 +15,23 @@ int main(int argc, char **argv){
     Parser p;
     p.init(&t);
 
-    bool success = false;
+    IR *ir = NULL;
     if (argc == 3 && strcmp(argv[2], "p") == 0){
-        success = p.parseProgram();
+        ir = p.parseProgram();
     }
     else{
-        success = p.parse();
+        ir = p.parse();
     }
 
-    if (success){
+    if (ir){
         fprintf(stdout, "Parse succeeded :)\n");
         
-        for (auto &stmt : p.global.statements){
+        for (auto &stmt : ir->global.statements){
             printParseTree(stmt);
         }
 
 
-        for (auto &pair: p.functions.entries){
+        for (auto &pair: ir->functions.entries){
             std::cout<<"Function: " <<pair.second.identifier <<"{\n";
             Function *foo = &pair.second.info;
             std::cout<<"\tReturn type: " <<dataTypePrintf(foo->returnType)<<"\n";
@@ -46,16 +46,16 @@ int main(int argc, char **argv){
             
         }
         
-        if (p.global.symbols.count() > 0){
+        if (ir->global.symbols.count() > 0){
             std::cout<<"Symbol table:\n";
-            for (auto &pair : p.global.symbols.entries){
+            for (auto &pair : ir->global.symbols.entries){
                 std::cout<<"\t"<<pair.second.identifier <<": " << dataTypePrintf(pair.second.info)<<"\n";
             }
         }
         
-        if (p.global.structs.count() > 0){
+        if (ir->global.structs.count() > 0){
             std::cout<<"Struct table:\n";
-            for (auto &pair : p.global.structs.entries){
+            for (auto &pair : ir->global.structs.entries){
                 Struct strct = pair.second.info;
                 std::cout<<"\tStruct " << strct.structName.string<< "{\n";
 

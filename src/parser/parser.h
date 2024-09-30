@@ -1,8 +1,7 @@
 #pragma once
 
-#include "node.h"
+#include <IR/ir.h>
 #include <tokenizer/tokenizer.h>
-#include <vector>
 
 
 struct Parser{
@@ -13,9 +12,8 @@ struct Parser{
     // to check if any parsing went into error: set to true whenever the parser tries to recover from an error
     bool didError;
 
-
-    StatementBlock global;
-    SymbolTable<Function> functions;
+    IR *ir;
+    
 
     // token/state management
     bool expect(TokenType type);
@@ -60,34 +58,37 @@ public:
         
     size_t errors;
 
-    bool parseProgram();
+    IR * parseProgram();
     
 
     void init(Tokenizer *t){
         this->tokenizer = t;
         this->currentToken = t->nextToken();
         this->errors = 0;
-        this->global.parent = 0;
-        this->global.tag = Node::NODE_STMT_BLOCK;
-        this->global.subtag = StatementBlock::BLOCK_UNNAMED;
+
+        this->ir = new IR;
+
+        this->ir->global.parent = 0;
+        this->ir->global.tag = Node::NODE_STMT_BLOCK;
+        this->ir->global.subtag = StatementBlock::BLOCK_UNNAMED;
     }
     
-    bool parse(){
+    IR *parse(){
         while (currentToken.type != TOKEN_EOF){
-            Node *stmt = this->parseStatement(&global);
+            Node *stmt = this->parseStatement(&ir->global);
             if (stmt){
-                this->global.statements.push_back(stmt);
-                checkContext(stmt, &global);
+                this->ir->global.statements.push_back(stmt);
+                checkContext(stmt, &ir->global);
             }
         }
         
-        for (auto &foo: functions.entries){
-            checkContext(foo.second.info.block, &global);
+        for (auto &foo: ir->functions.entries){
+            checkContext(foo.second.info.block, &ir->global);
         }
 
         
         fprintf(stdout, "[Parser] %llu errors generated.\n", errors);
-        return errors == 0;
+        return (errors == 0)? ir : NULL;
     }
 };
 

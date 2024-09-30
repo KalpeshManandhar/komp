@@ -1054,14 +1054,14 @@ DataType Parser::checkSubexprType(Subexpr *expr, StatementBlock *scope){
 
 
         // check if function has been declared
-        if (!functions.existKey(fooCall->funcName.string)){
+        if (!ir->functions.existKey(fooCall->funcName.string)){
             logErrorMessage(fooCall->funcName, "Invalid implicit declaration of function \"%.*s\"", 
                             splicePrintf(fooCall->funcName.string));
             errors++;
             return DataTypes::Error;
         }
 
-        Function foo = functions.getInfo(fooCall->funcName.string).info;
+        Function foo = ir->functions.getInfo(fooCall->funcName.string).info;
         // check for number of arguments
         if (foo.parameters.size() != fooCall->arguments.size()){
             logErrorMessage(fooCall->funcName, "In function \"%.*s\", required %llu but found %llu arguments.", 
@@ -1318,7 +1318,7 @@ Node* Parser::parseDeclaration(StatementBlock *scope){
             */
             foo.block = new StatementBlock;
             foo.block->tag = Node::NODE_STMT_BLOCK;
-            foo.block->parent = &global;
+            foo.block->parent = &ir->global;
             foo.block->subtag = StatementBlock::BLOCK_FUNCTION_BODY;
             foo.block->funcName = foo.funcName;
 
@@ -1345,13 +1345,13 @@ Node* Parser::parseDeclaration(StatementBlock *scope){
         }
     
         // function definitions are valid only in global scope
-        if (scope == &global){
-            if (!functions.existKey(foo.funcName.string)){
-                functions.add(foo.funcName.string, foo);
+        if (scope == &ir->global){
+            if (!ir->functions.existKey(foo.funcName.string)){
+                ir->functions.add(foo.funcName.string, foo);
             }
             // if a function entry already exists
             else{
-                Function f = functions.getInfo(foo.funcName.string).info;
+                Function f = ir->functions.getInfo(foo.funcName.string).info;
                 // if func definition already exists, then it is redefinition
                 if (f.block){
                     logErrorMessage(foo.funcName, "Redefinition of function \"%.*s\".", splicePrintf(foo.funcName.string));
@@ -1393,7 +1393,7 @@ Node* Parser::parseDeclaration(StatementBlock *scope){
                     };
 
                     if(checkMatch(f, foo)){
-                        functions.update(foo.funcName.string, foo);
+                        ir->functions.update(foo.funcName.string, foo);
                     }
                 }
 
@@ -1687,13 +1687,13 @@ Node* Parser::parseFor(StatementBlock *scope){
 }
 
 
-bool Parser::parseProgram(){
+IR *Parser::parseProgram(){
     while (peekToken().type != TOKEN_EOF){
         if (matchv(DATA_TYPE_TOKENS, ARRAY_COUNT(DATA_TYPE_TOKENS))){
-            Node *stmt = this->parseDeclaration(&global);
+            Node *stmt = this->parseDeclaration(&ir->global);
             if (stmt){
-                this->global.statements.push_back(stmt);
-                checkContext(stmt, &global);
+                ir->global.statements.push_back(stmt);
+                checkContext(stmt, &ir->global);
             }
         }
         else if (match(TOKEN_SEMI_COLON)){
@@ -1709,7 +1709,8 @@ bool Parser::parseProgram(){
     }
     
     fprintf(stdout, "[Parser] %llu errors generated.\n", errors);
-    return errors == 0;
+    return (errors == 0)? ir : NULL;
+
 }
 
 
@@ -1814,10 +1815,10 @@ bool Parser::checkContext(Node *n, StatementBlock *scope){
             return false;
         }
 
-        assert(functions.existKey(functionScope->funcName.string));
+        assert(ir->functions.existKey(functionScope->funcName.string));
         
         // check if return expression can be converted to the expected return type
-        DataType expectedRetType = functions.getInfo(functionScope->funcName.string).info.returnType;
+        DataType expectedRetType = ir->functions.getInfo(functionScope->funcName.string).info.returnType;
         DataType retExprType = checkSubexprType(r->returnVal, scope);
 
         if (!canBeConverted(r->returnVal, retExprType, expectedRetType)){
