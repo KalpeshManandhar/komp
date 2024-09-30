@@ -1,23 +1,18 @@
-#include "asm.h"
+#include "code-gen.h"
 
-#include <string>
 
-void IR::generateAssembly(Node *const current, std::stringstream &buffer)
-{
+void CodeGenerator::generateNode(Node *const current){
     // Yoinked from printParseTree()
-    if (!current)
-    {
+    if (!current){
         return;
     }
 
-    switch (current->tag)
-    {
-    case Node::NODE_DECLARATION:
-    {
+    switch (current->tag){
+    
+    case Node::NODE_DECLARATION:{
         Declaration *d = (Declaration *)current;
         buffer << ".data\n";
-        for (const auto &decl : d->decln)
-        {
+        for (const auto &decl : d->decln){
             // Initialize to 0
             buffer << decl.identifier.string << ": .word 0\n";
         }
@@ -25,18 +20,15 @@ void IR::generateAssembly(Node *const current, std::stringstream &buffer)
         break;
     }
 
-    case Node::NODE_STMT_BLOCK:
-    {
+    case Node::NODE_STMT_BLOCK:{
         StatementBlock *b = (StatementBlock *)current;
-        for (auto &stmt : b->statements)
-        {
-            generateAssembly(stmt, buffer);
+        for (auto &stmt : b->statements){
+            generateNode(stmt);
         }
         break;
     }
 
-    case Node::NODE_RETURN:
-    {
+    case Node::NODE_RETURN:{
         ReturnNode *r = (ReturnNode *)current;
         // Load immediate into a0 (return value register)
         buffer << "    li a0, ";
@@ -57,10 +49,9 @@ void IR::generateAssembly(Node *const current, std::stringstream &buffer)
     }
 }
 
-void IR::funcAssembly(Splice funcName, Function *foo, std::stringstream &buffer)
-{
-    buffer << ".globl " << funcName << "\n";
-    buffer << funcName << ":\n";
+void CodeGenerator::generateFunction(Function *foo){
+    buffer << ".globl " << foo->funcName.string << "\n";
+    buffer << foo->funcName.string << ":\n";
 
     buffer << "    addi sp, sp, -16\n"; // Allocate stack space
     buffer << "    sd ra, 8(sp)\n";     // Save return address
@@ -73,7 +64,7 @@ void IR::funcAssembly(Splice funcName, Function *foo, std::stringstream &buffer)
 
     // Function opeartions
     // Needs improvement
-    generateAssembly(foo->block, buffer);
+    generateNode(foo->block);
 
     buffer << "    ld ra, 8(sp)\n";    // Restore return address
     buffer << "    addi sp, sp, 16\n"; // Deallocate stack space
@@ -81,7 +72,7 @@ void IR::funcAssembly(Splice funcName, Function *foo, std::stringstream &buffer)
 }
 
 // Generated from AI to write to a .s file
-void IR::writeAssemblyToFile()
+void CodeGenerator::writeAssemblyToFile()
 {
     const std::string filename=assemblyFilePath;
     std::ofstream outFile(filename);
@@ -97,7 +88,21 @@ void IR::writeAssemblyToFile()
     }
 }
 
-void IR::printAssemblyCode()
-{
+void CodeGenerator::printAssembly(){
     std::cout << outputBuffer.str() << std::endl;
+}
+
+
+void CodeGenerator::generateAssembly(IR *ir){
+    for (auto &pair: ir->functions.entries){
+        generateFunction(&pair.second.info);
+
+        Function *foo = &pair.second.info;
+
+        // Appending the function assembly to outputBuffer
+        outputBuffer << buffer.str();
+        buffer.str("");
+        buffer.clear();
+        
+    }
 }
