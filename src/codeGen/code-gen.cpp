@@ -2,6 +2,50 @@
 #include <tokenizer/token.h>
 
 
+
+
+void CodeGenerator::generateSubexpr(const Subexpr *expr, StatementBlock *scope, const char *destReg, const char *tempReg){
+    if (!expr){
+        return;
+    }
+
+    switch (expr->subtag){
+    case Subexpr::SUBEXPR_LEAF: {
+        if (_matchv(expr->leaf, LITERAL_TOKEN_TYPES, ARRAY_COUNT(LITERAL_TOKEN_TYPES))){
+            buffer << "    li " << destReg << ", " << expr->leaf.string << "\n";
+            return;
+        }
+
+        break;
+    }
+    
+    // uses t1 as a temporary register for all operations
+    case Subexpr::SUBEXPR_BINARY_OP: {
+        generateSubexpr(expr->left, scope, destReg, "t1");
+        generateSubexpr(expr->right, scope, tempReg, "t1");
+        
+        switch (expr->op.type){
+        case TOKEN_PLUS:
+            buffer << "    add " << destReg << ", " << destReg << ", " << tempReg << "\n";
+            break;
+        case TOKEN_STAR:
+            buffer << "    mul " << destReg << ", " << destReg << ", " << tempReg << "\n";
+            break;
+        
+        default:
+            break;
+        }
+
+
+        break;
+    }
+    default:
+        break;
+    }
+}
+
+
+
 void CodeGenerator::generateNode(const Node *current, StatementBlock *scope){
     if (!current){
         return;
@@ -33,13 +77,7 @@ void CodeGenerator::generateNode(const Node *current, StatementBlock *scope){
         // Load immediate into a0 (return value register)
         Subexpr *s = (Subexpr *)r->returnVal;
 
-        if (s->subtag == Subexpr::SUBEXPR_LEAF){
-            buffer << "    li a0, ";
-
-            if (_matchv(s->leaf, LITERAL_TOKEN_TYPES, ARRAY_COUNT(LITERAL_TOKEN_TYPES))){
-                buffer << s->leaf.string << "\n";
-            }
-        }
+        generateSubexpr(r->returnVal, scope, "a0", "t0");
 
         StatementBlock *funcScope = scope->getParentFunction();
         // jump to function epilogue instead of ret
@@ -98,6 +136,7 @@ void CodeGenerator::printAssembly(){
 
 
 void CodeGenerator::generateAssembly(IR *ir){
+    
 
 
     outputBuffer << "    .text\n";
