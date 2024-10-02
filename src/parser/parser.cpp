@@ -6,112 +6,6 @@
 
 #include "parser.h"
 
-#define ARRAY_COUNT(x) sizeof((x))/sizeof(*(x))
-
-static TokenType LITERAL_TOKEN_TYPES[] = {
-    TOKEN_CHARACTER_LITERAL, 
-    TOKEN_STRING_LITERAL, 
-    TOKEN_NUMERIC_BIN, 
-    TOKEN_NUMERIC_DEC, 
-    TOKEN_NUMERIC_DOUBLE, 
-    TOKEN_NUMERIC_FLOAT, 
-    TOKEN_NUMERIC_HEX, 
-    TOKEN_NUMERIC_OCT
-};
-
-static TokenType BINARY_OP_TOKENS[] = {
-    TOKEN_PLUS, 
-    TOKEN_MINUS, 
-    TOKEN_STAR, 
-    TOKEN_SLASH, 
-    TOKEN_MODULO, 
-    TOKEN_AMPERSAND, 
-    TOKEN_BITWISE_OR, 
-    TOKEN_BITWISE_XOR, 
-    TOKEN_SHIFT_LEFT, 
-    TOKEN_SHIFT_RIGHT,
-    TOKEN_LOGICAL_AND,
-    TOKEN_LOGICAL_OR,
-    TOKEN_EQUALITY_CHECK,
-    TOKEN_NOT_EQUALS,
-    TOKEN_GREATER_EQUALS,
-    TOKEN_GREATER_THAN,
-    TOKEN_LESS_EQUALS,
-    TOKEN_LESS_THAN,
-    
-    // require checks for left operands: copied to another array
-    TOKEN_ASSIGNMENT,
-    TOKEN_PLUS_ASSIGN,
-    TOKEN_MINUS_ASSIGN,
-    TOKEN_MUL_ASSIGN,
-    TOKEN_DIV_ASSIGN,
-    TOKEN_SQUARE_OPEN,
-    TOKEN_LSHIFT_ASSIGN,
-    TOKEN_RSHIFT_ASSIGN,
-    TOKEN_BITWISE_AND_ASSIGN,
-    TOKEN_BITWISE_OR_ASSIGN,
-    TOKEN_BITWISE_XOR_ASSIGN,
-
-    // require checks for both left and right operands: copied to another array
-    TOKEN_ARROW,
-    TOKEN_DOT,
-};
-
-static TokenType ASSIGNMENT_OP[] = {
-    // require checks for left operands
-    TOKEN_ASSIGNMENT,
-    TOKEN_PLUS_ASSIGN,
-    TOKEN_MINUS_ASSIGN,
-    TOKEN_MUL_ASSIGN,
-    TOKEN_DIV_ASSIGN,
-    TOKEN_LSHIFT_ASSIGN,
-    TOKEN_RSHIFT_ASSIGN,
-    TOKEN_BITWISE_AND_ASSIGN,
-    TOKEN_BITWISE_OR_ASSIGN,
-    TOKEN_BITWISE_XOR_ASSIGN,
-};
-
-static TokenType STRUCT_ACCESS_OP[] = {
-    // require checks for both left and right operands
-    TOKEN_ARROW,
-    TOKEN_DOT,
-};
-
-
-static TokenType UNARY_OP_TOKENS[] = {
-    TOKEN_PLUS, 
-    TOKEN_MINUS, 
-    TOKEN_STAR, 
-    TOKEN_LOGICAL_NOT, 
-    TOKEN_BITWISE_NOT,
-    TOKEN_AMPERSAND,
-    TOKEN_PLUS_PLUS,
-    TOKEN_MINUS_MINUS,
-};
-
-static TokenType DATA_TYPE_TOKENS[] = {
-    TOKEN_INT,
-    TOKEN_FLOAT, 
-    TOKEN_CHAR,
-    TOKEN_DOUBLE,
-    TOKEN_STRUCT,
-    TOKEN_VOID,
-};
-
-static TokenType STORAGE_CLASS_SPECIFIER_TOKENS[] = {
-    TOKEN_VOLATILE,
-    TOKEN_CONST,
-    TOKEN_EXTERN,
-    TOKEN_STATIC,
-    TOKEN_INLINE,
-};
-
-static TokenType TYPE_MODIFIER_TOKENS[] = {
-    TOKEN_UNSIGNED,
-    TOKEN_SIGNED,
-    TOKEN_LONG,
-    TOKEN_SHORT,
-};
 
 
 // referenced from https://en.cppreference.com/w/c/language/operator_precedence
@@ -1795,18 +1689,9 @@ bool Parser::checkContext(Node *n, StatementBlock *scope){
     case Node::NODE_RETURN:{
         ReturnNode *r = (ReturnNode *)n;
 
-        auto getParentFunction = [&]() -> StatementBlock*{
-            StatementBlock *currentScope = scope;
-            while (currentScope){
-                if (currentScope->subtag == StatementBlock::BLOCK_FUNCTION_BODY){
-                    return currentScope;
-                }
-                currentScope = currentScope->parent;
-            }
-            return NULL;
-        };
+        
 
-        StatementBlock *functionScope = getParentFunction();
+        StatementBlock *functionScope = scope->getParentFunction();
         
         // check if return is inside function
         if (!functionScope){

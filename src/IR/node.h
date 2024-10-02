@@ -226,6 +226,18 @@ struct StatementBlock: public Node{
     SymbolTable<DataType> symbols;
     SymbolTable<Struct> structs;
     StatementBlock *parent;
+
+
+    StatementBlock* getParentFunction(){
+        StatementBlock *currentScope = this;
+        while (currentScope){
+            if (currentScope->subtag == StatementBlock::BLOCK_FUNCTION_BODY){
+                return currentScope;
+            }
+            currentScope = currentScope->parent;
+        }
+        return NULL;
+    };
 };
 
 struct Function: public Node{
