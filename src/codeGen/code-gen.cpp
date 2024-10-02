@@ -1,8 +1,8 @@
 #include "code-gen.h"
+#include <tokenizer/token.h>
 
 
-void CodeGenerator::generateNode(Node *const current){
-    // Yoinked from printParseTree()
+void CodeGenerator::generateNode(const Node *current, StatementBlock *scope){
     if (!current){
         return;
     }
@@ -23,7 +23,7 @@ void CodeGenerator::generateNode(Node *const current){
     case Node::NODE_STMT_BLOCK:{
         StatementBlock *b = (StatementBlock *)current;
         for (auto &stmt : b->statements){
-            generateNode(stmt);
+            generateNode(stmt, scope);
         }
         break;
     }
@@ -31,16 +31,19 @@ void CodeGenerator::generateNode(Node *const current){
     case Node::NODE_RETURN:{
         ReturnNode *r = (ReturnNode *)current;
         // Load immediate into a0 (return value register)
-        buffer << "    li a0, ";
-        if (r->returnVal->tag == Node::NODE_SUBEXPR)
-        {
-            Subexpr *s = (Subexpr *)r->returnVal;
-            if (s->subtag == Subexpr::SUBEXPR_LEAF)
-            {
+        Subexpr *s = (Subexpr *)r->returnVal;
+
+        if (s->subtag == Subexpr::SUBEXPR_LEAF){
+            buffer << "    li a0, ";
+
+            if (_matchv(s->leaf, LITERAL_TOKEN_TYPES, ARRAY_COUNT(LITERAL_TOKEN_TYPES))){
                 buffer << s->leaf.string << "\n";
             }
         }
-        buffer << "    ret\n";
+
+        StatementBlock *funcScope = scope->getParentFunction();
+        // jump to function epilogue instead of ret
+        buffer << "    j ."<< funcScope->funcName.string << "_ep\n";
         break;
     }
 
@@ -50,9 +53,9 @@ void CodeGenerator::generateNode(Node *const current){
 }
 
 void CodeGenerator::generateFunction(Function *foo){
-    buffer << ".globl " << foo->funcName.string << "\n";
+    buffer << "    .globl " << foo->funcName.string << "\n";
     buffer << foo->funcName.string << ":\n";
-
+    // Function prologue
     buffer << "    addi sp, sp, -16\n"; // Allocate stack space
     buffer << "    sd ra, 8(sp)\n";     // Save return address
 
@@ -64,17 +67,18 @@ void CodeGenerator::generateFunction(Function *foo){
 
     // Function opeartions
     // Needs improvement
-    generateNode(foo->block);
+    generateNode(foo->block, foo->block);
 
+    // Function epilogue
+    buffer << "."<<foo->funcName.string << "_ep:\n";
     buffer << "    ld ra, 8(sp)\n";    // Restore return address
     buffer << "    addi sp, sp, 16\n"; // Deallocate stack space
     buffer << "    ret\n";             // Return from function
 }
 
 // Generated from AI to write to a .s file
-void CodeGenerator::writeAssemblyToFile()
+void CodeGenerator::writeAssemblyToFile(const char *filename)
 {
-    const std::string filename=assemblyFilePath;
     std::ofstream outFile(filename);
     if (outFile.is_open())
     {
@@ -94,6 +98,10 @@ void CodeGenerator::printAssembly(){
 
 
 void CodeGenerator::generateAssembly(IR *ir){
+
+
+    outputBuffer << "    .text\n";
+
     for (auto &pair: ir->functions.entries){
         generateFunction(&pair.second.info);
 

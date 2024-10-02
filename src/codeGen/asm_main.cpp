@@ -20,6 +20,7 @@ int main(int argc, char **argv){
     if (ir){
         CodeGenerator gen;
         gen.generateAssembly(ir);
+        gen.printAssembly();
     }
     
 

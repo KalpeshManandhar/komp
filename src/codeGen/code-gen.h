@@ -11,9 +11,9 @@ struct CodeGenerator{
     const std::string assemblyFilePath="out.s" ;
     
 
-    void generateNode(Node *const current);
+    void generateNode(const Node *current, StatementBlock *scope);
     void generateFunction(Function *foo);
-    void writeAssemblyToFile();
+    void writeAssemblyToFile(const char *filename);
     void printAssembly();
 
 
