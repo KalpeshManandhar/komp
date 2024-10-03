@@ -339,7 +339,7 @@ DataType Parser::parseDataType(StatementBlock *scope){
     while (match(TOKEN_STAR)){
         DataType ptr; 
         ptr.tag = DataType::TAG_PTR;
-        ptr.ptrTo = new DataType;
+        ptr.ptrTo =  (DataType*) arena->alloc(sizeof(DataType));
         *ptr.ptrTo = d;
         
         d = ptr;
@@ -414,7 +414,7 @@ bool Parser::canBeConverted(Subexpr *from, DataType fromType, DataType toType){
     if (fromType.tag == DataType::TAG_ERROR || toType.tag == DataType::TAG_ERROR){
         return false;
     }
-    if (fromType.tag == DataType::TAG_VOID || toType.tag == DataType::TAG_VOID){
+    if (fromType.tag == DataType::TAG_VOID && toType.tag == DataType::TAG_VOID){
         return true;
     }
 
@@ -905,7 +905,7 @@ DataType Parser::checkSubexprType(Subexpr *expr, StatementBlock *scope){
             if (isValid){
                 DataType d;
                 d.tag = DataType::TAG_ADDRESS;
-                d.ptrTo = new DataType;
+                d.ptrTo =  (DataType*) arena->alloc(sizeof(DataType));
                 *(d.ptrTo) = operand;
 
                 return d;
@@ -1052,7 +1052,7 @@ Subexpr* Parser::parseSubexpr(int precedence, StatementBlock *scope){
 
         }
         
-        s = new Subexpr;
+        s = (Subexpr*) arena->alloc(sizeof(Subexpr));
         s->tag = Node::NODE_SUBEXPR;
         
         s->left = left;
@@ -1081,7 +1081,7 @@ Subexpr* Parser::parseSubexpr(int precedence, StatementBlock *scope){
 
 
 Subexpr* Parser::parsePrimary(StatementBlock *scope){
-    Subexpr *s = new Subexpr;
+    Subexpr *s = (Subexpr*) arena->alloc(sizeof(Subexpr));
     s->tag = Node::NODE_SUBEXPR;
     // (subexpr)
     if (match(TOKEN_PARENTHESIS_OPEN)){
@@ -1106,7 +1106,7 @@ Subexpr* Parser::parsePrimary(StatementBlock *scope){
         if (match(TOKEN_PARENTHESIS_OPEN)){
             expect(TOKEN_PARENTHESIS_OPEN);
 
-            FunctionCall *fooCall = new FunctionCall;
+            FunctionCall *fooCall = (FunctionCall*) arena->alloc(sizeof(FunctionCall));
             fooCall->funcName = identifier;
             size_t nArgs = 0;
 
@@ -1242,9 +1242,7 @@ Node* Parser::parseDeclaration(StatementBlock *scope){
             maybe keeping the symboltable as a reference instead of a member in a statement block might work, 
             by ensuring that the table is allocated by the calling function
             */
-            foo.block = new StatementBlock;
-            foo.block->tag = Node::NODE_STMT_BLOCK;
-            foo.block->parent = &ir->global;
+            foo.block = parseStatementBlock(scope);
             foo.block->subtag = StatementBlock::BLOCK_FUNCTION_BODY;
             foo.block->funcName = foo.funcName;
 
@@ -1254,16 +1252,16 @@ Node* Parser::parseDeclaration(StatementBlock *scope){
             }
 
             
-            expect(TOKEN_CURLY_OPEN);
+            // expect(TOKEN_CURLY_OPEN);
             
 
-            while (!match(TOKEN_CURLY_CLOSE)){
-                Node *stmt = parseStatement(foo.block);
-                if (stmt){
-                    foo.block->statements.push_back(stmt);
-                }
-            }
-            expect(TOKEN_CURLY_CLOSE);
+            // while (!match(TOKEN_CURLY_CLOSE)){
+            //     Node *stmt = parseStatement(foo.block);
+            //     if (stmt){
+            //         foo.block->statements.push_back(stmt);
+            //     }
+            // }
+            // expect(TOKEN_CURLY_CLOSE);
         }
         // declaration only
         else{
@@ -1339,7 +1337,7 @@ Node* Parser::parseDeclaration(StatementBlock *scope){
     }
     // else it is var declaration
     else{        
-        Declaration *d = new Declaration;
+        Declaration *d =  (Declaration*) arena->alloc(sizeof(Declaration));
         d->type = type;
         d->tag = Node::NODE_DECLARATION;
 
@@ -1366,9 +1364,12 @@ Node* Parser::parseDeclaration(StatementBlock *scope){
                 scope->symbols.add(var.identifier.string, d->type);
             }
             else{
-                logErrorMessage(var.identifier, "Redeclaration of \"%.*s\" with type \"%s\", previously defined with type \"%s\".",
-                                splicePrintf(var.identifier.string), 
-                                dataTypePrintf(type), dataTypePrintf(scope->symbols.getInfo(var.identifier.string).info));
+                DataType prevType = scope->symbols.getInfo(var.identifier.string).info;
+                if (prevType.tag != DataType::TAG_ERROR){
+                    logErrorMessage(var.identifier, "Redeclaration of \"%.*s\" with type \"%s\", previously defined with type \"%s\".",
+                                    splicePrintf(var.identifier.string), 
+                                    dataTypePrintf(type), dataTypePrintf(prevType));
+                }
             }
 
                 
@@ -1444,7 +1445,7 @@ Node* Parser::parseStatement(StatementBlock *scope){
 
 
 ReturnNode* Parser::parseReturn(StatementBlock *scope){
-    ReturnNode* r = new ReturnNode;
+    ReturnNode* r = (ReturnNode*) arena->alloc(sizeof(ReturnNode));
     r->returnToken = consumeToken();
     r->returnVal = NULL;
     r->tag = Node::NODE_RETURN;
@@ -1460,7 +1461,7 @@ ReturnNode* Parser::parseReturn(StatementBlock *scope){
 
 
 BreakNode* Parser::parseBreak(StatementBlock *scope){
-    BreakNode* b = new BreakNode;
+    BreakNode* b = (BreakNode*) arena->alloc(sizeof(BreakNode));
     b->breakToken = consumeToken();
     b->tag = Node::NODE_BREAK;
     
@@ -1470,7 +1471,7 @@ BreakNode* Parser::parseBreak(StatementBlock *scope){
 }
 
 ContinueNode* Parser::parseContinue(StatementBlock *scope){
-    ContinueNode* c = new ContinueNode;
+    ContinueNode* c = (ContinueNode*) arena->alloc(sizeof(ContinueNode));
     c->continueToken = consumeToken();
     c->tag = Node::NODE_CONTINUE;
     
@@ -1483,7 +1484,9 @@ ContinueNode* Parser::parseContinue(StatementBlock *scope){
 
 
 StatementBlock* Parser::parseStatementBlock(StatementBlock *scope){
-    StatementBlock *block = new StatementBlock;
+    void *mem = arena->alloc(sizeof(StatementBlock));
+    StatementBlock *block =  new (mem) StatementBlock;
+    
     block->tag = Node::NODE_STMT_BLOCK;
     block->parent = scope;
     block->subtag = StatementBlock::BLOCK_UNNAMED;
@@ -1502,7 +1505,7 @@ StatementBlock* Parser::parseStatementBlock(StatementBlock *scope){
 
 
 Node* Parser::parseIf(StatementBlock *scope){
-    IfNode *ifNode = new IfNode;
+    IfNode *ifNode = (IfNode*) arena->alloc(sizeof(IfNode));
 
     ifNode->nextIf = NULL;
     ifNode->tag = Node::NODE_IF_BLOCK; 
@@ -1550,7 +1553,7 @@ Node* Parser::parseIf(StatementBlock *scope){
 
 
 Node* Parser::parseWhile(StatementBlock *scope){
-    WhileNode *whileNode = new WhileNode;
+    WhileNode *whileNode = (WhileNode*) arena->alloc(sizeof(WhileNode));
 
     whileNode->tag = Node::NODE_WHILE; 
 
@@ -1579,7 +1582,7 @@ Node* Parser::parseWhile(StatementBlock *scope){
 
 
 Node* Parser::parseFor(StatementBlock *scope){
-    ForNode *forNode = new ForNode;
+    ForNode *forNode = (ForNode*) arena->alloc(sizeof(ForNode));
 
     forNode->tag = Node::NODE_FOR; 
     forNode->init = NULL; 
@@ -1720,8 +1723,6 @@ bool Parser::checkContext(Node *n, StatementBlock *scope){
     
     case Node::NODE_RETURN:{
         ReturnNode *r = (ReturnNode *)n;
-
-        
 
         StatementBlock *functionScope = scope->getParentFunction();
         
@@ -1893,11 +1894,7 @@ void printParseTree(Node *const current, int depth){
         Declaration *d = (Declaration*) current;
         printTabs(depth + 1);
 
-        std::cout<< "type: ";
-        for (int level = 0; level < d->type.indirectionLevel(); level++){
-            std::cout<<"*";
-        }
-        std::cout<<d->type.type.string<<"\n";
+        std::cout<< "type: " << dataTypePrintf(d->type)<< "\n";
 
 
         for (auto &decl: d->decln){
@@ -1925,12 +1922,7 @@ void printParseTree(Node *const current, int depth){
             std::cout<<"Symbol table:\n";
             for (auto &pair : b->symbols.entries){
                 printTabs(depth + 2);
-                std::cout<<pair.second.identifier <<": ";
-                DataType *type = &pair.second.info;
-                for (int level = 0; level < type->indirectionLevel(); level++){
-                    std::cout<<"*";
-                }
-                std::cout<<type->type.string<<"\n";
+                std::cout<<pair.second.identifier <<": " << dataTypePrintf(pair.second.info)<< "\n";
             }
         }
         

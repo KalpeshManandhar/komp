@@ -5,26 +5,6 @@
 #include <tokenizer/str.h>
 #include <tokenizer/token.h>
 
-// struct DataType{
-//     const char *name;
-//     size_t sizeInBytes;
-    
-//     enum Type{
-//         DATATYPE_CHAR,
-//         DATATYPE_SHORT,
-//         DATATYPE_INT,
-//         DATATYPE_LONG,
-//         DATATYPE_DOUBLE,
-//         DATATYPE_FLOAT,
-//         DATATYPE_POINTER,
-//         DATATAG_STRUCT,
-//     }type;
-// };
-
-
-
-
-
 
 struct DataType{
     // Pointer types have the ptrTo member set to their corresponding data types
@@ -232,8 +212,8 @@ struct SymbolTable{
     bool existKey(Splice name){
         uint32_t hash = adler32((unsigned char *)name.data, name.len);
         return entries.contains(hash);
-
     }
+
     SymbolTableEntry &getInfo(Splice name){
         uint32_t hash = adler32((unsigned char *)name.data, name.len);
         return entries[hash];

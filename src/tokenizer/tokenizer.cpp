@@ -82,13 +82,13 @@ static bool isStringLiteralChar(char c){
 
 
 void Tokenizer::skipNonWhitespaces(){
-    while (!isWhitespace(this->buffer[this->cursor])){
+    while (!this->isEOF() && !isWhitespace(this->buffer[this->cursor])){
         this->consumeChar();
     }
 }
 
 void Tokenizer::skipWhitespaces(){
-    while (isWhitespace(this->buffer[this->cursor])){
+    while (!this->isEOF() && isWhitespace(this->buffer[this->cursor])){
         this->consumeChar();
     }
 }

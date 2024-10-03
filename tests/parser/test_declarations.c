@@ -19,7 +19,7 @@
     long int r;
 }
 // error
-// {
+{
     signed unsigned int a; // signed unsigned conflict
     long short int b;  // long short conflict
     unsigned long short c; 
@@ -42,4 +42,4 @@
     a = 1;
     b = 2; 
 
-// }
+}

@@ -12,8 +12,12 @@ int main(int argc, char **argv){
     t.init();
     t.loadFileToBuffer(argv[1]);
     
+    Arena a;
+    a.init(PAGE_SIZE * 2);
+    a.createFrame();
+
     Parser p;
-    p.init(&t);
+    p.init(&t, &a);
 
     IR *ir = NULL;
     if (argc == 3 && strcmp(argv[2], "p") == 0){
@@ -69,6 +73,8 @@ int main(int argc, char **argv){
         
     }
 
+    a.destroyFrame();
+    a.destroy();
     
     return EXIT_SUCCESS;
 }

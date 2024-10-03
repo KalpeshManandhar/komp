@@ -2,12 +2,14 @@
 
 #include <IR/ir.h>
 #include <tokenizer/tokenizer.h>
+#include <arena/arena.h>
 
 
 struct Parser{
     Tokenizer *tokenizer;
     Token currentToken;
     
+    Arena *arena;
 
     // to check if any parsing went into error: set to true whenever the parser tries to recover from an error
     bool didError;
@@ -61,7 +63,7 @@ public:
     IR * parseProgram();
     
 
-    void init(Tokenizer *t){
+    void init(Tokenizer *t, Arena *arena){
         this->tokenizer = t;
         this->currentToken = t->nextToken();
         this->errors = 0;
@@ -71,19 +73,26 @@ public:
         this->ir->global.parent = 0;
         this->ir->global.tag = Node::NODE_STMT_BLOCK;
         this->ir->global.subtag = StatementBlock::BLOCK_UNNAMED;
+
+        this->arena = arena;
     }
     
     IR *parse(){
+
         while (currentToken.type != TOKEN_EOF){
             Node *stmt = this->parseStatement(&ir->global);
             if (stmt){
                 this->ir->global.statements.push_back(stmt);
+                arena->createFrame();
                 checkContext(stmt, &ir->global);
+                arena->destroyFrame();
             }
         }
         
         for (auto &foo: ir->functions.entries){
+            arena->createFrame();
             checkContext(foo.second.info.block, &ir->global);
+            arena->destroyFrame();
         }
 
         
