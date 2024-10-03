@@ -2,6 +2,7 @@ int a = 0;
 int *b = &a;
 int c = 0;
 int *d = &a;
+int **e;
 
 c = a + a; // work: int and int
 c = a + *b; // work : int and int
@@ -22,6 +23,7 @@ c = &1; // error: address of a literal
 c = a + "abc"; // warning: int = const char * 
 c = *(a + "abc"); // works: int = char (implicit typecast to int)
 
+e = & &a;
 
 
 void d = 1; // void type not allowed

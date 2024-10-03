@@ -204,7 +204,7 @@ Token Parser::parseStructDefinition(StatementBlock *scope){
                 }
                 
                 // if the struct type is incomplete
-                if (member.type.indirectionLevel == 0 && !findStructDeclaration(member.type.structName, scope)){
+                if (member.type.indirectionLevel() == 0 && !findStructDeclaration(member.type.structName, scope)){
                     logErrorMessage(member.type.structName, "Struct \"%.*s\" incomplete.", splicePrintf(member.type.structName.string));
                     errors++;
                 }
@@ -334,11 +334,16 @@ DataType Parser::parseDataType(StatementBlock *scope){
         d.tag = DataType::TAG_PRIMARY;
     }
 
-    d.indirectionLevel = 0;
 
     // if a pointer
     while (match(TOKEN_STAR)){
-        d.indirectionLevel++;
+        DataType ptr; 
+        ptr.tag = DataType::TAG_PTR;
+        ptr.ptrTo = new DataType;
+        *ptr.ptrTo = d;
+        
+        d = ptr;
+        
         consumeToken(); 
     }
     
@@ -406,30 +411,28 @@ Token Parser::getSubexprToken(Subexpr *expr) {
 
 
 bool Parser::canBeConverted(Subexpr *from, DataType fromType, DataType toType){
-    if (!from){
-        return false;
-    }
-
     if (fromType.tag == DataType::TAG_ERROR || toType.tag == DataType::TAG_ERROR){
         return false;
     }
+    if (fromType.tag == DataType::TAG_VOID || toType.tag == DataType::TAG_VOID){
+        return true;
+    }
 
     // void cannot be converted to or from anything
-    if ((fromType.tag == DataType::TAG_VOID && fromType.indirectionLevel == 0) 
-        || (toType.tag == DataType::TAG_VOID && toType.indirectionLevel == 0)){
+    if ((fromType.tag == DataType::TAG_VOID) || (toType.tag == DataType::TAG_VOID)){
         return false;
     }
     
     Token subexprToken = getSubexprToken(from);
 
     // pointers can be converted to other pointers and to integers
-    if (fromType.indirectionLevel > 0){
-        if (toType.indirectionLevel > 0){
+    if (fromType.indirectionLevel() > 0){
+        if (toType.indirectionLevel() > 0){
             // dont log an error with void pointers?
             if (fromType.tag == DataType::TAG_VOID || toType.tag == DataType::TAG_VOID){
                 return true;
             }
-            else if (fromType.indirectionLevel != toType.indirectionLevel || fromType.tag != toType.tag){
+            else if (fromType.indirectionLevel() != toType.indirectionLevel() || fromType.tag != toType.tag){
                 logWarningMessage(subexprToken, "Conversion from pointer of type \"%s\" to \"%s\".",
                                 dataTypePrintf(fromType), dataTypePrintf(toType));
             }
@@ -458,7 +461,7 @@ bool Parser::canBeConverted(Subexpr *from, DataType fromType, DataType toType){
     if (fromType.tag == DataType::TAG_PRIMARY){
         // floating point numbers cannot be converted to pointers
         if ((match(fromType.type, TOKEN_FLOAT) || match(fromType.type, TOKEN_DOUBLE))
-            && toType.indirectionLevel > 0){
+            && toType.indirectionLevel() > 0){
             return false;
         }
         // primary data types can be converted between each other
@@ -511,7 +514,7 @@ DataType Parser::checkSubexprType(Subexpr *expr, StatementBlock *scope){
             
             // left must be struct * if ->
             if (match(expr->op, TOKEN_ARROW)){
-                if (left.indirectionLevel != 1){
+                if (left.indirectionLevel() != 1){
                     logErrorMessage(expr->op, "Not a valid struct pointer.");
                     errors++;
                     return DataTypes::Error;
@@ -560,8 +563,8 @@ DataType Parser::checkSubexprType(Subexpr *expr, StatementBlock *scope){
             return DataTypes::Error;
         }
         // void types cannot be used in operations
-        if ((left.tag == DataType::TAG_VOID && left.indirectionLevel == 0)
-            || right.tag == DataType::TAG_VOID && right.indirectionLevel == 0){
+        if ((left.tag == DataType::TAG_VOID && left.indirectionLevel() == 0)
+            || right.tag == DataType::TAG_VOID && right.indirectionLevel() == 0){
             logErrorMessage(expr->op, "Cannot perform operation \"%.*s\" with void type.", 
                                 splicePrintf(expr->op.string));
             errors++;
@@ -577,10 +580,7 @@ DataType Parser::checkSubexprType(Subexpr *expr, StatementBlock *scope){
                 return DataTypes::Error;
             }
             
-            DataType memberType = left;
-            memberType.indirectionLevel--;
-
-            return memberType;
+            return *(left.ptrTo);
         }
 
 
@@ -674,10 +674,10 @@ DataType Parser::checkSubexprType(Subexpr *expr, StatementBlock *scope){
             bool didError = false;
             
             // diff level of indirection
-            if (left.indirectionLevel != right.indirectionLevel){
+            if (left.indirectionLevel() != right.indirectionLevel()){
                 // pointer arithmetic 
                 // (ptr + int)/(ptr - int)/(ptr += int)/(ptr -= int)
-                if (left.indirectionLevel > 0 && (match(right.type, TOKEN_INT) || match(right.type, TOKEN_CHAR))){ 
+                if (left.indirectionLevel() > 0 && (match(right.type, TOKEN_INT) || match(right.type, TOKEN_CHAR))){ 
                     if (match(expr->op, TOKEN_PLUS) || match(expr->op, TOKEN_MINUS) 
                     || match(expr->op, TOKEN_PLUS_ASSIGN) || match(expr->op, TOKEN_MINUS_ASSIGN) ){
                         return left;
@@ -688,7 +688,7 @@ DataType Parser::checkSubexprType(Subexpr *expr, StatementBlock *scope){
                     }
                 }
                 // (int + ptr) 
-                else if (right.indirectionLevel > 0 && (match(left.type, TOKEN_INT) || match(left.type, TOKEN_CHAR))){
+                else if (right.indirectionLevel() > 0 && (match(left.type, TOKEN_INT) || match(left.type, TOKEN_CHAR))){
                     if (match(expr->op, TOKEN_PLUS)){
                         return right;
                     }
@@ -699,7 +699,7 @@ DataType Parser::checkSubexprType(Subexpr *expr, StatementBlock *scope){
                 }
                 // both pointers of different level of indirection
                 // can only assign but log a warning
-                else if (left.indirectionLevel > 0 && right.indirectionLevel > 0){
+                else if (left.indirectionLevel() > 0 && right.indirectionLevel() > 0){
                     if (match(expr->op, TOKEN_ASSIGNMENT)){
                         logWarningMessage(expr->op, "Assignment of pointer type \"%s\" to type \"%s\".",
                                             dataTypePrintf(right), dataTypePrintf(left));
@@ -712,17 +712,17 @@ DataType Parser::checkSubexprType(Subexpr *expr, StatementBlock *scope){
             // same level of indirection
             else{
                 // both are pointers
-                if (left.indirectionLevel > 0){
+                if (left.indirectionLevel() > 0){
                     // can assign, but log error if of different types
                     if (match(expr->op, TOKEN_ASSIGNMENT)){
-                        if (!(left.type.type == right.type.type && left.specifierFlags == right.specifierFlags)){
+                        if (!(left == right)){
                             logWarningMessage(expr->op, "Assignment of pointer type \"%s\" to type \"%s\".",
                                             dataTypePrintf(right), dataTypePrintf(left));
                         }
                         return left;
                     }
 
-                    if (left.type.type == right.type.type && left.specifierFlags == right.specifierFlags){
+                    if (left == right){
                         // ptr difference: (ptr - ptr)
                         if (match(expr->op, TOKEN_MINUS)){
                             return DataTypes::Long_Long;
@@ -732,7 +732,7 @@ DataType Parser::checkSubexprType(Subexpr *expr, StatementBlock *scope){
                     didError = true;
                 }
                 // same type but not pointers
-                else if (left.type.type == right.type.type && left.specifierFlags == right.specifierFlags){
+                else if (left == right){
                     // assignment is defined for all operands of the same type  
                     if (match(expr->op, TOKEN_ASSIGNMENT)){
                         return left;
@@ -858,9 +858,8 @@ DataType Parser::checkSubexprType(Subexpr *expr, StatementBlock *scope){
         DataType operand = checkSubexprType(expr->unarySubexpr, scope);
         // *ptr
         if (match(expr->unaryOp, TOKEN_STAR)){
-            if (operand.indirectionLevel > 0){
-                operand.indirectionLevel--;
-                return operand;
+            if (operand.indirectionLevel() > 0){
+                return *(operand.ptrTo);
             }
             else{
                 logErrorMessage(expr->unaryOp, "Cannot be dereferenced. Not a valid pointer.");
@@ -870,6 +869,14 @@ DataType Parser::checkSubexprType(Subexpr *expr, StatementBlock *scope){
         }
         // &var
         else if (match(expr->unaryOp, TOKEN_AMPERSAND)){
+            // cannot get the address of an address
+            if (operand.tag == DataType::TAG_ADDRESS){
+                logErrorMessage(expr->unaryOp, "Cannot get the address of an address literal.");
+                errors++;
+                return DataTypes::Error;
+            }
+            
+            // cannot get the address of a literal
             if (expr->unarySubexpr->subtag == Subexpr::SUBEXPR_LEAF && 
                 matchv(expr->unarySubexpr->leaf, LITERAL_TOKEN_TYPES, ARRAY_COUNT(LITERAL_TOKEN_TYPES))){
                 
@@ -878,10 +885,35 @@ DataType Parser::checkSubexprType(Subexpr *expr, StatementBlock *scope){
                 errors++;
                 return DataTypes::Error;
             }
+            
+            // &val is valid only if &identifier, &struct.member, &array[i]
+            bool isValid = false;
+            
+            if (expr->unarySubexpr->subtag == Subexpr::SUBEXPR_LEAF && match(expr->unarySubexpr->leaf, TOKEN_IDENTIFIER)){
+                isValid = true;
+            }
+            else if (expr->unarySubexpr->subtag == Subexpr::SUBEXPR_BINARY_OP){
+                TokenType VALID_OP[] = {
+                    TOKEN_SQUARE_OPEN,
+                    TOKEN_DOT,
+                    TOKEN_ARROW,
+                };
+                
+                isValid = isValid || matchv(expr->unarySubexpr->op, VALID_OP, ARRAY_COUNT(VALID_OP));
+            }
+            
+            if (isValid){
+                DataType d;
+                d.tag = DataType::TAG_ADDRESS;
+                d.ptrTo = new DataType;
+                *(d.ptrTo) = operand;
+
+                return d;
+            }
             else{
-                operand.indirectionLevel++;
-                operand.specifierFlags |= DataType::Specifiers::CONST;
-                return operand;
+                logErrorMessage(expr->unaryOp, "Not a valid identifier.");
+                errors++;
+                return DataTypes::Error;
             }
         }
         // if struct then, no other unary operator other than & are defined
@@ -1345,7 +1377,7 @@ Node* Parser::parseDeclaration(StatementBlock *scope){
         expect(TOKEN_SEMI_COLON);
 
         // void type not allowed
-        if (type.tag == DataType::TAG_VOID && type.indirectionLevel == 0){
+        if (type.tag == DataType::TAG_VOID && type.indirectionLevel() == 0){
             errors++;
             logErrorMessage(type.type, "void type is not allowed.");
         }
@@ -1714,6 +1746,8 @@ bool Parser::checkContext(Node *n, StatementBlock *scope){
             errors++;
             return false;
         }
+
+        break;
         
     }
     
@@ -1860,7 +1894,7 @@ void printParseTree(Node *const current, int depth){
         printTabs(depth + 1);
 
         std::cout<< "type: ";
-        for (int level = 0; level < d->type.indirectionLevel; level++){
+        for (int level = 0; level < d->type.indirectionLevel(); level++){
             std::cout<<"*";
         }
         std::cout<<d->type.type.string<<"\n";
@@ -1893,7 +1927,7 @@ void printParseTree(Node *const current, int depth){
                 printTabs(depth + 2);
                 std::cout<<pair.second.identifier <<": ";
                 DataType *type = &pair.second.info;
-                for (int level = 0; level < type->indirectionLevel; level++){
+                for (int level = 0; level < type->indirectionLevel(); level++){
                     std::cout<<"*";
                 }
                 std::cout<<type->type.string<<"\n";
