@@ -4,6 +4,12 @@
 #include <sstream>
 #include <fstream>
 
+struct RegisterAllocator{
+    
+};
+
+
+
 
 struct CodeGenerator{
     std::stringstream buffer;

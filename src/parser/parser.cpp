@@ -1235,13 +1235,6 @@ Node* Parser::parseDeclaration(StatementBlock *scope){
         if (match(TOKEN_CURLY_OPEN)){
             
             // parse function body
-            /* NOTE: i wouldve liked to use parseStatementBlock() but that function is pretty much a standalone function that parses an independent block 
-            for function definition, the parameters need to be preadded to the symbol table before calling parseStatementBlock(), 
-            which would require modifying the function somehow, hence the repetition
-            
-            maybe keeping the symboltable as a reference instead of a member in a statement block might work, 
-            by ensuring that the table is allocated by the calling function
-            */
             foo.block = parseStatementBlock(scope);
             foo.block->subtag = StatementBlock::BLOCK_FUNCTION_BODY;
             foo.block->funcName = foo.funcName;
@@ -1249,19 +1242,7 @@ Node* Parser::parseDeclaration(StatementBlock *scope){
             // add parameters to symbol table
             for (auto &p : foo.parameters){
                 foo.block->symbols.add(p.identifier.string, p.type);
-            }
-
-            
-            // expect(TOKEN_CURLY_OPEN);
-            
-
-            // while (!match(TOKEN_CURLY_CLOSE)){
-            //     Node *stmt = parseStatement(foo.block);
-            //     if (stmt){
-            //         foo.block->statements.push_back(stmt);
-            //     }
-            // }
-            // expect(TOKEN_CURLY_CLOSE);
+            }            
         }
         // declaration only
         else{

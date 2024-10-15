@@ -2,6 +2,7 @@
 
 #include <tokenizer/token.h>
 #include "symbol-table.h"
+#include "datatype.h"
 #include <vector>
 
 
@@ -11,8 +12,8 @@ TODO:
     function params into symbols table - done
     function parsing only in global - done
     += -= operators in assignment + assignments are binary expressions - done
+    break/continue/return - done
     
-    break/continue/return - return somewhat supported
     arrays - indexing works, declarations remain, initialization remain
     type checking - somewhat done
     structs - declaration done
@@ -21,9 +22,10 @@ TODO:
     
 
     Specific refactors:
-        - find a better way to call the type checking function.
+        - implement an arena to reduce chances of memory leaks and easy allocs/frees - done
+        - find a better way to call the type checking function. - done
+        
         - probably change declaration initializers to be an assignment 
-        - implement an arena to reduce chances of memory leaks and easy allocs/frees
 
 
 

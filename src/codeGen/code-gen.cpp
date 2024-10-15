@@ -28,8 +28,23 @@ void CodeGenerator::generateSubexpr(const Subexpr *expr, StatementBlock *scope, 
         case TOKEN_PLUS:
             buffer << "    add " << destReg << ", " << destReg << ", " << tempReg << "\n";
             break;
+        case TOKEN_MINUS:
+            buffer << "    sub " << destReg << ", " << destReg << ", " << tempReg << "\n";
+            break;
         case TOKEN_STAR:
             buffer << "    mul " << destReg << ", " << destReg << ", " << tempReg << "\n";
+            break;
+        case TOKEN_SLASH:
+            buffer << "    div " << destReg << ", " << destReg << ", " << tempReg << "\n";
+            break;
+        case TOKEN_AMPERSAND:
+            buffer << "    and " << destReg << ", " << destReg << ", " << tempReg << "\n";
+            break;
+        case TOKEN_BITWISE_OR:
+            buffer << "    or " << destReg << ", " << destReg << ", " << tempReg << "\n";
+            break;
+        case TOKEN_BITWISE_XOR:
+            buffer << "    xor " << destReg << ", " << destReg << ", " << tempReg << "\n";
             break;
         
         default:

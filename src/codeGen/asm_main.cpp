@@ -4,16 +4,21 @@
 
 int main(int argc, char **argv){
     if (argc < 2){
-        fprintf(stderr, "Usage: %s <c file> [p]\n \t p: for parse program proper", argv[0]);
+        fprintf(stderr, "Usage: %s <c file>", argv[0]);
         return EXIT_FAILURE;
     }
 
     Tokenizer t;
     t.init();
     t.loadFileToBuffer(argv[1]);
+    
+    Arena a;
+    a.init(PAGE_SIZE * 2);
+    a.createFrame();
+
 
     Parser p;
-    p.init(&t);
+    p.init(&t, &a);
 
     IR *ir = p.parseProgram();
     
@@ -22,6 +27,9 @@ int main(int argc, char **argv){
         gen.generateAssembly(ir);
         gen.printAssembly();
     }
+
+    a.destroyFrame();
+    a.destroy();
     
 
 }
