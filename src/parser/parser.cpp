@@ -164,7 +164,8 @@ void Parser::rewindTo(Token checkpoint){
 
 bool Parser::isExprStart(){
     return match(TOKEN_IDENTIFIER) || matchv(UNARY_OP_TOKENS, ARRAY_COUNT(UNARY_OP_TOKENS))
-            || matchv(LITERAL_TOKEN_TYPES, ARRAY_COUNT(LITERAL_TOKEN_TYPES));
+            || matchv(LITERAL_TOKEN_TYPES, ARRAY_COUNT(LITERAL_TOKEN_TYPES))
+            || match(TOKEN_PARENTHESIS_OPEN);
 }
 
 
@@ -529,12 +530,20 @@ DataType Parser::checkSubexprType(Subexpr *expr, StatementBlock *scope){
             }
             
             // left must be of type struct
-            if (left.tag != DataType::TAG_STRUCT){
+            if (left.getBaseType().tag != DataType::TAG_STRUCT){
                 logErrorMessage(expr->op, "Not a valid struct.");
                 errors++;
                 return DataTypes::Error;
             }
             
+            // left must be struct if .
+            if (match(expr->op, TOKEN_DOT)){
+                if (left.indirectionLevel() != 0){
+                    logErrorMessage(expr->op, "Not a valid struct.");
+                    errors++;
+                    return DataTypes::Error;
+                }
+            }
             // left must be struct * if ->
             if (match(expr->op, TOKEN_ARROW)){
                 if (left.indirectionLevel() != 1){
@@ -544,7 +553,8 @@ DataType Parser::checkSubexprType(Subexpr *expr, StatementBlock *scope){
                 }
             }
             
-            StatementBlock *structDeclScope = findStructDeclaration(left.structName, scope);
+            DataType baseStructType = left.getBaseType();
+            StatementBlock *structDeclScope = findStructDeclaration(baseStructType.structName, scope);
 
             if (!structDeclScope){
                 logErrorMessage(expr->op, "Not a valid struct.");
@@ -560,7 +570,7 @@ DataType Parser::checkSubexprType(Subexpr *expr, StatementBlock *scope){
             }
             
             Splice memberName = expr->right->leaf.string;
-            Struct st = structDeclScope->structs.getInfo(left.structName.string).info;
+            Struct st = structDeclScope->structs.getInfo(baseStructType.structName.string).info;
             
             // the right identifier must be a valid member name in the struct
             if (!st.members.existKey(memberName)){
