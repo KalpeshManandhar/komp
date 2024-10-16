@@ -258,64 +258,88 @@ Token Parser::parseStructDefinition(StatementBlock *scope){
 }
 
 
-DataType Parser::parseDataType(StatementBlock *scope){
+DataType Parser::parsePointerType(StatementBlock *scope, DataType baseType){
+    assert(match(TOKEN_STAR));
+
+    consumeToken();
+    DataType ptr;
+    ptr.tag = DataType::TAG_PTR;
+    ptr.flags = DataType::Specifiers::NONE;
+    ptr.ptrTo = (DataType *)arena->alloc(sizeof(DataType));
+    *(ptr.ptrTo) = baseType;
+    
+
+    while (matchv(TYPE_QUALIFIER_TOKENS, ARRAY_COUNT(TYPE_QUALIFIER_TOKENS))){
+        if (match(TOKEN_CONST)){
+            ptr.flags |= DataType::Specifiers::CONST;
+        }
+        else if (match(TOKEN_VOLATILE)){
+            ptr.flags |= DataType::Specifiers::VOLATILE;
+        }
+        consumeToken();
+    }
+
+    return ptr;
+}
+
+
+
+DataType Parser::parseBaseDataType(StatementBlock *scope){
     assert(matchv(DATA_TYPE_TOKENS, ARRAY_COUNT(DATA_TYPE_TOKENS)) 
-            || matchv(TYPE_MODIFIER_TOKENS, ARRAY_COUNT(TYPE_MODIFIER_TOKENS)));
+            || matchv(TYPE_MODIFIER_TOKENS, ARRAY_COUNT(TYPE_MODIFIER_TOKENS))
+            || matchv(TYPE_QUALIFIER_TOKENS, ARRAY_COUNT(TYPE_QUALIFIER_TOKENS)));
 
     bool didError = false;
 
     DataType d;
-    d.specifierFlags = DataType::Specifiers::NONE;
+    d.flags = DataType::Specifiers::NONE;
+
+    
+
+
+
     
     // type modifiers: signed unsigned long and short
-    while (matchv(TYPE_MODIFIER_TOKENS, ARRAY_COUNT(TYPE_MODIFIER_TOKENS))){
+    while (matchv(TYPE_MODIFIER_TOKENS, ARRAY_COUNT(TYPE_MODIFIER_TOKENS))
+        || matchv(TYPE_QUALIFIER_TOKENS, ARRAY_COUNT(TYPE_QUALIFIER_TOKENS))
+    ){
+        if (match(TOKEN_CONST)){
+            d.flags |= DataType::Specifiers::CONST;
+        }
+        
         if (match(TOKEN_UNSIGNED)){
-            if (d.specifierFlags & DataType::Specifiers::UNSIGNED){
-                didError = true;
-            }
-            else{
-                d.specifierFlags |= DataType::Specifiers::UNSIGNED;
-            }   
+            didError = didError || (d.flags & DataType::Specifiers::UNSIGNED);
+            d.flags |= DataType::Specifiers::UNSIGNED;
         }
         else if (match(TOKEN_SIGNED)){
-            if (d.specifierFlags & DataType::Specifiers::SIGNED){
-                didError = true;
-            }
-            else{
-                d.specifierFlags |= DataType::Specifiers::SIGNED;
-            }
+            didError = didError || (d.flags & DataType::Specifiers::SIGNED);
+            d.flags |= DataType::Specifiers::SIGNED;
         }
         else if (match(TOKEN_LONG)){
-            if (d.specifierFlags & DataType::Specifiers::LONG_LONG){
-                didError = true;
-            }
-            else if (d.specifierFlags & DataType::Specifiers::LONG){
-                d.specifierFlags |= DataType::Specifiers::LONG_LONG;
-                d.specifierFlags ^= DataType::Specifiers::LONG;
+            didError = didError || (d.flags & DataType::Specifiers::LONG_LONG);
+            if (d.flags & DataType::Specifiers::LONG){
+                d.flags |= DataType::Specifiers::LONG_LONG;
+                d.flags ^= DataType::Specifiers::LONG;
             }
             else{
-                d.specifierFlags |= DataType::Specifiers::LONG;
+                d.flags |= DataType::Specifiers::LONG;
             }
         }
         else if (match(TOKEN_SHORT)){
-            if (d.specifierFlags & DataType::Specifiers::SHORT){
-                didError = true;
-            }
-            else{
-                d.specifierFlags |= DataType::Specifiers::SHORT;
-            }
+            didError = didError || (d.flags & DataType::Specifiers::SHORT);
+            d.flags |= DataType::Specifiers::SHORT;
         }
         consumeToken();
     }
 
     // long and short conflict
-    if ((d.specifierFlags & (DataType::Specifiers::LONG | DataType::Specifiers::LONG_LONG) )
-        && (d.specifierFlags & DataType::Specifiers::SHORT)){
+    if ((d.flags & (DataType::Specifiers::LONG | DataType::Specifiers::LONG_LONG) )
+        && (d.flags & DataType::Specifiers::SHORT)){
         didError = true;
     }
     // signed and unsigned conflict
-    if ((d.specifierFlags & (DataType::Specifiers::SIGNED))
-        && (d.specifierFlags & DataType::Specifiers::UNSIGNED)){
+    if ((d.flags & (DataType::Specifiers::SIGNED))
+        && (d.flags & DataType::Specifiers::UNSIGNED)){
         didError = true;
     }
 
@@ -332,19 +356,6 @@ DataType Parser::parseDataType(StatementBlock *scope){
     else{
         d.type = consumeToken();
         d.tag = DataType::TAG_PRIMARY;
-    }
-
-
-    // if a pointer
-    while (match(TOKEN_STAR)){
-        DataType ptr; 
-        ptr.tag = DataType::TAG_PTR;
-        ptr.ptrTo =  (DataType*) arena->alloc(sizeof(DataType));
-        *ptr.ptrTo = d;
-        
-        d = ptr;
-        
-        consumeToken(); 
     }
     
     // cannot use type modifiers with floats and doubles 
@@ -375,7 +386,7 @@ DataType Parser::parseDataType(StatementBlock *scope){
 
     // if not unsigned, then signed by default
     if (!d.isSet(DataType::Specifiers::UNSIGNED) && match(d.type, TOKEN_INT)){
-        d.specifierFlags |= DataType::Specifiers::SIGNED;
+        d.flags |= DataType::Specifiers::SIGNED;
     }
 
     if (match(d.type, TOKEN_VOID)){
@@ -385,6 +396,18 @@ DataType Parser::parseDataType(StatementBlock *scope){
     return d;
 }
 
+
+DataType Parser::parseDataType(StatementBlock *scope){
+    DataType base = parseBaseDataType(scope);
+    
+    DataType d = base;
+    while (match(TOKEN_STAR)){
+        DataType ptr = parsePointerType(scope, d);
+        d = ptr; 
+    }
+
+    return d;
+}
 
 Token Parser::getSubexprToken(Subexpr *expr) {
     switch (expr->subtag){
@@ -814,8 +837,8 @@ DataType Parser::checkSubexprType(Subexpr *expr, StatementBlock *scope){
                                 }
                             }
                             // unsigned counterpart of the signed types
-                            signedType.specifierFlags |= DataType::Specifiers::UNSIGNED;
-                            signedType.specifierFlags ^= DataType::Specifiers::SIGNED;
+                            signedType.flags |= DataType::Specifiers::UNSIGNED;
+                            signedType.flags ^= DataType::Specifiers::SIGNED;
                             return signedType;
                         };
                         
@@ -1177,6 +1200,7 @@ StatementBlock* Parser::findStructDeclaration(Token structName, StatementBlock *
 
 // parse variable declaration, function definition and struct definition
 Node* Parser::parseDeclaration(StatementBlock *scope){
+
     DataType type = parseDataType(scope);
     
 
@@ -1212,7 +1236,7 @@ Node* Parser::parseDeclaration(StatementBlock *scope){
         // parse parameters
         while (matchv(DATA_TYPE_TOKENS, ARRAY_COUNT(DATA_TYPE_TOKENS))){
             Function::Parameter p;
-            p.type = parseDataType(scope);
+            p.type = parseBaseDataType(scope);
             
             assert(match(TOKEN_IDENTIFIER));
             p.identifier = consumeToken();
@@ -1318,18 +1342,30 @@ Node* Parser::parseDeclaration(StatementBlock *scope){
     }
     // else it is var declaration
     else{        
-        Declaration *d =  (Declaration*) arena->alloc(sizeof(Declaration));
-        d->type = type;
-        d->tag = Node::NODE_DECLARATION;
 
+        Declaration *d =  (Declaration*) arena->alloc(sizeof(Declaration));
+        d->tag = Node::NODE_DECLARATION;
+        
         rewindTo(identifier);
+
+        // a kinda hacky solution: the first variable type has already been parsed 
+        // which is stored in "type". So the * tokens are not matched, and the whole type is used as the base. 
+        // for the next ones, the actual base type is used as the base on parsing the pointer types  
+        DataType base = type.getBaseType();
         
         do {
+            
+            while (match(TOKEN_STAR)){
+                type = parsePointerType(scope, type);
+            }
+            
+
             assert(match(TOKEN_IDENTIFIER));
             
             Declaration::DeclInfo var;
             var.identifier = consumeToken();
             var.initValue = 0;
+            var.type = type;
             
             // if there is an initializer value
             if (match(TOKEN_ASSIGNMENT)){
@@ -1342,17 +1378,19 @@ Node* Parser::parseDeclaration(StatementBlock *scope){
 
             if (!scope->symbols.existKey(var.identifier.string)){
                 d->decln.push_back(var);
-                scope->symbols.add(var.identifier.string, d->type);
+                scope->symbols.add(var.identifier.string, var.type);
             }
             else{
                 DataType prevType = scope->symbols.getInfo(var.identifier.string).info;
                 if (prevType.tag != DataType::TAG_ERROR){
                     logErrorMessage(var.identifier, "Redeclaration of \"%.*s\" with type \"%s\", previously defined with type \"%s\".",
                                     splicePrintf(var.identifier.string), 
-                                    dataTypePrintf(type), dataTypePrintf(prevType));
+                                    dataTypePrintf(var.type), dataTypePrintf(prevType));
+                    errors++;
                 }
             }
-
+            
+            type = base;
                 
             
         }while (match(TOKEN_COMMA) && expect(TOKEN_COMMA));
@@ -1374,7 +1412,8 @@ Node* Parser::parseStatement(StatementBlock *scope){
 
     Node *statement;
     if (matchv(DATA_TYPE_TOKENS, ARRAY_COUNT(DATA_TYPE_TOKENS))
-        || matchv(TYPE_MODIFIER_TOKENS, ARRAY_COUNT(TYPE_MODIFIER_TOKENS))){
+        || matchv(TYPE_MODIFIER_TOKENS, ARRAY_COUNT(TYPE_MODIFIER_TOKENS))
+        || matchv(TYPE_QUALIFIER_TOKENS, ARRAY_COUNT(TYPE_QUALIFIER_TOKENS))){
         statement = parseDeclaration(scope);
     }
     else if (match(TOKEN_IF)){
@@ -1873,14 +1912,10 @@ void printParseTree(Node *const current, int depth){
     }
     case Node::NODE_DECLARATION: {
         Declaration *d = (Declaration*) current;
-        printTabs(depth + 1);
-
-        std::cout<< "type: " << dataTypePrintf(d->type)<< "\n";
-
 
         for (auto &decl: d->decln){
             printTabs(depth + 1);
-            std::cout<< "id:   " << decl.identifier.string << "\n";
+            std::cout<< decl.identifier.string<<": " << dataTypePrintf(decl.type)<<"\n";
             
             if (decl.initValue){
                 printTabs(depth + 1);

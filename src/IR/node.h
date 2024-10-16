@@ -187,9 +187,9 @@ struct Subexpr: public Node{
 
 
 struct Declaration: public Node{
-    DataType type;
     // info for a single variable
     struct DeclInfo{
+        DataType type;
         Token identifier;
         Subexpr *initValue;
     };

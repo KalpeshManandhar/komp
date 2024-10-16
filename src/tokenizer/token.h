@@ -381,6 +381,11 @@ static TokenType TYPE_MODIFIER_TOKENS[] = {
     TOKEN_SHORT,
 };
 
+static TokenType TYPE_QUALIFIER_TOKENS[] = {
+    TOKEN_VOLATILE,
+    TOKEN_CONST,
+};
+
 
 
 static bool _match(Token token, TokenType type){
