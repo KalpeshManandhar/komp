@@ -76,5 +76,5 @@ int main(int argc, char **argv){
     a.destroyFrame();
     a.destroy();
     
-    return EXIT_SUCCESS;
+    return p.errors;
 }

@@ -367,6 +367,7 @@ DataType Parser::parseBaseDataType(StatementBlock *scope){
             || match(d.type, TOKEN_VOID) || match(d.type, TOKEN_STRUCT))){
         
         logErrorMessage(d.type, "Invalid use of modifiers with type \"%.*s\".", splicePrintf(d.type.string));
+        errors++;
         return DataTypes::Error;
     }
     // cannot use long, short with char 
@@ -374,6 +375,7 @@ DataType Parser::parseBaseDataType(StatementBlock *scope){
         || d.isSet(DataType::Specifiers::SHORT)) 
         && match(d.type, TOKEN_CHAR) ){
         logErrorMessage(d.type, "Invalid use of modifiers with type \"%.*s\".", splicePrintf(d.type.string));
+        errors++;
         return DataTypes::Error;
     }
 
@@ -1246,7 +1248,7 @@ Node* Parser::parseDeclaration(StatementBlock *scope){
         // parse parameters
         while (matchv(DATA_TYPE_TOKENS, ARRAY_COUNT(DATA_TYPE_TOKENS))){
             Function::Parameter p;
-            p.type = parseBaseDataType(scope);
+            p.type = parseDataType(scope);
             
             assert(match(TOKEN_IDENTIFIER));
             p.identifier = consumeToken();
@@ -1399,18 +1401,18 @@ Node* Parser::parseDeclaration(StatementBlock *scope){
                     errors++;
                 }
             }
+
+            // void type not allowed
+            if (type.tag == DataType::TAG_VOID && type.indirectionLevel() == 0){
+                errors++;
+                logErrorMessage(type.type, "void type is not allowed.");
+            }
             
             type = base;
-                
-            
         }while (match(TOKEN_COMMA) && expect(TOKEN_COMMA));
         expect(TOKEN_SEMI_COLON);
 
-        // void type not allowed
-        if (type.tag == DataType::TAG_VOID && type.indirectionLevel() == 0){
-            errors++;
-            logErrorMessage(type.type, "void type is not allowed.");
-        }
+        
 
         return d; 
     }
