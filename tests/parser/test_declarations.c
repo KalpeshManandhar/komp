@@ -18,31 +18,30 @@
     signed long long q;
     long int r;
 }
-// error
-// {
-//     signed unsigned int a; // signed unsigned conflict
-//     long short int b;  // long short conflict
-//     unsigned long short c; 
-//     long long long d; // extra long
-//     short short e; // extra short
+{
+    signed unsigned int a; // signed unsigned conflict
+    long short int b;  // long short conflict
+    unsigned long short c; 
+    long long long d; // extra long
+    short short e; // extra short
 
-//     // type modifiers with real types
-//     long double f;  
-//     short double f;
-//     short float f;
-//     unsigned float f;
-//     signed float f;
-//     signed double f;
-//     unsigned double f;
+    // type modifiers with real types
+    long double f;  
+    short double f;
+    short float f;
+    unsigned float f;
+    signed float f;
+    signed double f;
+    unsigned double f;
 
-//     // type modifiers with void
-//     unsigned void *g;
+    // type modifiers with void
+    unsigned void *g;
 
-//     // will not print errors for these
-//     a = 1;
-//     b = 2; 
+    // will not print errors for these
+    a = 1;
+    b = 2; 
 
-// }
+}
 // separate modifiers for each level of indirection
 {
     int a;

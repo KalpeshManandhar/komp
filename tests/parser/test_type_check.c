@@ -23,11 +23,11 @@ c = &1; // error: address of a literal
 c = a + "abc"; // warning: int = const char * 
 c = *(a + "abc"); // works: int = char (implicit typecast to int)
 
-e = & &a;
+e = & &a; // error : cannot get address of address
 
 
-void d = 1; // void type not allowed
-void *e = 1; // work
+void f = 1; // error: void type not allowed
+void *g = 1; // work
 
 int returnInt(){
     return 0;
@@ -45,4 +45,4 @@ void takesPtr(int *a){
     *a = 1;
 }
 
-takesPtr(1.0f);
+takesPtr(1.0f); // error: cannot convert float to int*

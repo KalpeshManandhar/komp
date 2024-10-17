@@ -24,7 +24,7 @@ struct C {
     }e; 
 };
 
-struct A afoo, *bfoo;
+struct A afoo, *bfoo, **ppfoo;
 afoo.a = 1;
 afoo.b = 2;
 
@@ -42,27 +42,30 @@ void foo(){
 
 
 // ERRORS
-// bfoo = 1; // error: A = int
-// afoo.c = "abc"; // error: float = char*
-// afoo.d = 1; // no .d member
-// afoo.1 = 2; // invalid member
-// afoo1.a = 3; // only check left operand for declaration
+afoo = 1; // error: A = int
+afoo.c = "abc"; // error: float = char*
+afoo.d = 1; // no .d member
+afoo.1 = 2; // invalid member
+afoo1.a = 3; // only check left operand for declaration
+afoo->a = 1; // cannot deref struct
+afoo->s = 1; // cannot deref struct
 
+ppfoo->a = 1; // cannot deref struct **
 
-// struct { // unnamed struct not supported
-//     int a;
-// };
+struct { // unnamed struct not supported
+    int a;
+};
 
-// struct A{ // struct redefinition
-//     int b;
-// };
+struct A{ // struct redefinition
+    int b;
+};
 
-// struct F;
+struct F;
 
-// struct G{
-//     struct F f; // struct F not defined till this point
-//     struct F *f; // struct F not defined till this point
-// };
+struct G{
+    struct F f; // struct F not defined till this point
+    struct F *f;
+};
 
 
 

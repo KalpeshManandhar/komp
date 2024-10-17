@@ -23,32 +23,32 @@ for (a = 0; a <= 12; a = a + 1){
 
 // if blocks
 if (ishwor == god){
-    // int isIshworGod = 1;
-    // break;
+    int isIshworGod = 1;
+    break;
 }
 else if (ishwor == veryGood){
-    // int willIshworDoParser = 1;
+    int willIshworDoParser = 1;
 }
 else{
-    // int elseBlock = a;
+    int elseBlock = a;
 }
 
 // only if
 if (a){
-    // a = 1;
+    a = 1;
 }
 
 // with else if only
 if (a){
-    // a = 1;
+    a = 1;
 }
 else if (b){
-    // b = 1;
+    b = 1;
 }
 
 
 // while loop
 while (ishwor == gyani){
-    // int willIshworGiveUsTreat = 1;
+    int willIshworGiveUsTreat = 1;
 }
 
