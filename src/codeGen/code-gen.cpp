@@ -62,6 +62,44 @@ void CodeGenerator::generateSubexpr(const Subexpr *expr, StatementBlock *scope, 
 
         break;
     }
+    case Subexpr::SUBEXPR_RECURSE_PARENTHESIS: {
+        generateSubexpr(expr->inside, scope, dest);    
+        break;
+    }
+    case Subexpr::SUBEXPR_UNARY: {
+        generateSubexpr(expr->unarySubexpr, scope, dest);  
+        
+        RV64_Register destReg = regAlloc.resolveRegister(dest);
+        const char *destName = RV64_RegisterName[destReg];
+        
+        switch (expr->unaryOp.type){
+
+        case TOKEN_PLUS:
+            break;
+        case TOKEN_MINUS:
+            buffer << "    neg " << destName << ", " << destName << "\n";
+            break;
+        case TOKEN_STAR:
+            break;
+        case TOKEN_LOGICAL_NOT:
+            buffer << "    seqz " << destName << ", " << destName << "\n";
+            break;
+        case TOKEN_BITWISE_NOT:
+            buffer << "    not " << destName << ", " << destName << "\n";
+            break;
+        case TOKEN_AMPERSAND:
+            break;
+        case TOKEN_PLUS_PLUS:
+            break;
+        case TOKEN_MINUS_MINUS:
+            break;
+        
+        default:
+            break;
+        }
+
+        break;
+    }
     
     case Subexpr::SUBEXPR_BINARY_OP: {
         Register temp = regAlloc.allocVRegister(RegisterType::REG_TEMPORARY);
@@ -78,41 +116,104 @@ void CodeGenerator::generateSubexpr(const Subexpr *expr, StatementBlock *scope, 
             generateSubexpr(expr->right, scope, temp);
         }
 
-        RV64_Register destReg = regAlloc.resolveRegister(dest);
-        RV64_Register tempReg = regAlloc.resolveRegister(temp);
+        RV64_Register leftReg = regAlloc.resolveRegister(dest);
+        RV64_Register rightReg = regAlloc.resolveRegister(temp);
 
-        const char *destName = RV64_RegisterName[destReg];
-        const char *tempName = RV64_RegisterName[tempReg];
+        const char *lRegName = RV64_RegisterName[leftReg];
+        const char *rRegName = RV64_RegisterName[rightReg];
         
         switch (expr->op.type){
         case TOKEN_PLUS:
-            buffer << "    add " << destName << ", " << destName << ", " << tempName << "\n";
+            buffer << "    add " << lRegName << ", " << lRegName << ", " << rRegName << "\n";
             break;
         case TOKEN_MINUS:
-            buffer << "    sub " << destName << ", " << destName << ", " << tempName << "\n";
+            buffer << "    sub " << lRegName << ", " << lRegName << ", " << rRegName << "\n";
             break;
         case TOKEN_STAR:
-            buffer << "    mul " << destName << ", " << destName << ", " << tempName << "\n";
+            buffer << "    mul " << lRegName << ", " << lRegName << ", " << rRegName << "\n";
             break;
         case TOKEN_SLASH:
-            buffer << "    div " << destName << ", " << destName << ", " << tempName << "\n";
+            buffer << "    div " << lRegName << ", " << lRegName << ", " << rRegName << "\n";
             break;
         case TOKEN_AMPERSAND:
-            buffer << "    and " << destName << ", " << destName << ", " << tempName << "\n";
+            buffer << "    and " << lRegName << ", " << lRegName << ", " << rRegName << "\n";
             break;
         case TOKEN_BITWISE_OR:
-            buffer << "    or " << destName << ", " << destName << ", " << tempName << "\n";
+            buffer << "    or " << lRegName << ", " << lRegName << ", " << rRegName << "\n";
             break;
         case TOKEN_BITWISE_XOR:
-            buffer << "    xor " << destName << ", " << destName << ", " << tempName << "\n";
+            buffer << "    xor " << lRegName << ", " << lRegName << ", " << rRegName << "\n";
+            break;
+        case TOKEN_MODULO:
+            break;
+        case TOKEN_SHIFT_LEFT:
+            break;
+        case TOKEN_SHIFT_RIGHT:
             break;
         
+        // TODO: the values may not be boolean
+        case TOKEN_LOGICAL_AND:
+            buffer << "    and " << lRegName << ", " << lRegName << ", " << rRegName << "\n";
+            break;
+        case TOKEN_LOGICAL_OR:
+            buffer << "    or " << lRegName << ", " << lRegName << ", " << rRegName << "\n";
+            break;
+        
+        case TOKEN_EQUALITY_CHECK:
+            buffer << "    sub " << lRegName << ", " << lRegName << ", " << rRegName << "\n";
+            buffer << "    seqz " << lRegName << ", " << lRegName << "\n";
+            break;
+        case TOKEN_NOT_EQUALS:
+            buffer << "    sub " << lRegName << ", " << lRegName << ", " << rRegName << "\n";
+            buffer << "    snez " << lRegName << ", " << lRegName << "\n";
+            break;
+        case TOKEN_GREATER_EQUALS:
+            buffer << "    slt " << lRegName << ", " << rRegName << ", " << lRegName << "\n";
+            break;
+        case TOKEN_GREATER_THAN:
+            buffer << "    sub " << lRegName << ", " << lRegName << ", " << rRegName << "\n";
+            buffer << "    sgtz " << lRegName << ", " << lRegName << "\n";
+            break;
+        case TOKEN_LESS_EQUALS:
+            buffer << "    sub " << lRegName << ", " << lRegName << ", " << rRegName << "\n";
+            buffer << "    sgtz " << lRegName << ", " << lRegName << "\n";
+            buffer << "    xori " << lRegName << ", " << lRegName << ", " << "1" << "\n";
+            break;
+        case TOKEN_LESS_THAN:
+            buffer << "    slt " << lRegName << ", " << lRegName << ", " << rRegName << "\n";
+            break;
+        case TOKEN_ASSIGNMENT:
+            break;
+        case TOKEN_PLUS_ASSIGN:
+            break;
+        case TOKEN_MINUS_ASSIGN:
+            break;
+        case TOKEN_MUL_ASSIGN:
+            break;
+        case TOKEN_DIV_ASSIGN:
+            break;
+        case TOKEN_SQUARE_OPEN:
+            break;
+        case TOKEN_LSHIFT_ASSIGN:
+            break;
+        case TOKEN_RSHIFT_ASSIGN:
+            break;
+        case TOKEN_BITWISE_AND_ASSIGN:
+            break;
+        case TOKEN_BITWISE_OR_ASSIGN:
+            break;
+        case TOKEN_BITWISE_XOR_ASSIGN:
+            break;
+        case TOKEN_ARROW:
+            break;
+        case TOKEN_DOT:
+            break;
         default:
             break;
         }
 
         regAlloc.freeRegister(temp);
-        
+
         break;
     }
     default:
