@@ -302,7 +302,7 @@ struct PunctuatorDFA: public DFA{
         this->addTransition(STATE_AMPERSAND, "&", STATE_LOGICAL_AND);
         this->addTransition(STATE_AMPERSAND, "=", STATE_BITWISE_AND_ASSIGN);
 
-        this->addTransition(STATE_BITWISE_OR, "&", STATE_LOGICAL_OR);
+        this->addTransition(STATE_BITWISE_OR, "|", STATE_LOGICAL_OR);
         this->addTransition(STATE_BITWISE_OR, "=", STATE_BITWISE_OR_ASSIGN);
         
         this->addTransition(STATE_BITWISE_XOR, "=", STATE_BITWISE_XOR_ASSIGN);
