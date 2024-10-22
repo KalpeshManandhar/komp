@@ -2,56 +2,117 @@
 #include <tokenizer/token.h>
 
 
+int max(int a, int b){
+    return (a>b)?a:b;
+}
+
+int min(int a, int b){
+    return (a<b)?a:b;
+}
 
 
-void CodeGenerator::generateSubexpr(const Subexpr *expr, StatementBlock *scope, const char *destReg, const char *tempReg){
+static int getDepth(const Subexpr *expr){
+    if (!expr){
+        return 0;
+    }
+    
+    switch (expr->subtag){
+    case Subexpr::SUBEXPR_FUNCTION_CALL: 
+    case Subexpr::SUBEXPR_LEAF: 
+        return 1;
+    
+    case Subexpr::SUBEXPR_BINARY_OP: {
+        int left = getDepth(expr->left);
+        int right = getDepth(expr->right);
+
+        return max(left, right) + 1;
+    }
+    case Subexpr::SUBEXPR_UNARY: {
+        int operand = getDepth(expr->unarySubexpr);
+
+        return operand + 1;
+    }
+    case Subexpr::SUBEXPR_RECURSE_PARENTHESIS: {
+        int inside = getDepth(expr->inside);
+
+        return inside + 1;
+    }
+    default:
+        return 0;
+    }
+
+}
+
+// allocate the dest register before calling 
+void CodeGenerator::generateSubexpr(const Subexpr *expr, StatementBlock *scope,  Register dest){
     if (!expr){
         return;
     }
 
     switch (expr->subtag){
     case Subexpr::SUBEXPR_LEAF: {
+        RV64_Register destReg = regAlloc.resolveRegister(dest);
+        const char *destName = RV64_RegisterName[destReg];
+
+
         if (_matchv(expr->leaf, LITERAL_TOKEN_TYPES, ARRAY_COUNT(LITERAL_TOKEN_TYPES))){
-            buffer << "    li " << destReg << ", " << expr->leaf.string << "\n";
+            buffer << "    li " << destName << ", " << expr->leaf.string << "\n";
             return;
         }
 
         break;
     }
     
-    // uses t1 as a temporary register for all operations
     case Subexpr::SUBEXPR_BINARY_OP: {
-        generateSubexpr(expr->left, scope, destReg, "t1");
-        generateSubexpr(expr->right, scope, tempReg, "t1");
+        Register temp = regAlloc.allocVRegister(RegisterType::REG_TEMPORARY);
+        
+        int leftDepth = getDepth(expr->left);
+        int rightDepth = getDepth(expr->right);
+        
+        if (leftDepth < rightDepth){
+            generateSubexpr(expr->right, scope, temp);    
+            generateSubexpr(expr->left, scope, dest);
+        }
+        else{
+            generateSubexpr(expr->left, scope, dest);
+            generateSubexpr(expr->right, scope, temp);
+        }
+
+        RV64_Register destReg = regAlloc.resolveRegister(dest);
+        RV64_Register tempReg = regAlloc.resolveRegister(temp);
+
+        const char *destName = RV64_RegisterName[destReg];
+        const char *tempName = RV64_RegisterName[tempReg];
         
         switch (expr->op.type){
         case TOKEN_PLUS:
-            buffer << "    add " << destReg << ", " << destReg << ", " << tempReg << "\n";
+            buffer << "    add " << destName << ", " << destName << ", " << tempName << "\n";
             break;
         case TOKEN_MINUS:
-            buffer << "    sub " << destReg << ", " << destReg << ", " << tempReg << "\n";
+            buffer << "    sub " << destName << ", " << destName << ", " << tempName << "\n";
             break;
         case TOKEN_STAR:
-            buffer << "    mul " << destReg << ", " << destReg << ", " << tempReg << "\n";
+            buffer << "    mul " << destName << ", " << destName << ", " << tempName << "\n";
             break;
         case TOKEN_SLASH:
-            buffer << "    div " << destReg << ", " << destReg << ", " << tempReg << "\n";
+            buffer << "    div " << destName << ", " << destName << ", " << tempName << "\n";
             break;
         case TOKEN_AMPERSAND:
-            buffer << "    and " << destReg << ", " << destReg << ", " << tempReg << "\n";
+            buffer << "    and " << destName << ", " << destName << ", " << tempName << "\n";
             break;
         case TOKEN_BITWISE_OR:
-            buffer << "    or " << destReg << ", " << destReg << ", " << tempReg << "\n";
+            buffer << "    or " << destName << ", " << destName << ", " << tempName << "\n";
             break;
         case TOKEN_BITWISE_XOR:
-            buffer << "    xor " << destReg << ", " << destReg << ", " << tempReg << "\n";
+            buffer << "    xor " << destName << ", " << destName << ", " << tempName << "\n";
             break;
         
         default:
             break;
         }
 
-
+        regAlloc.freeRegister(temp);
+        
         break;
     }
     default:
@@ -92,7 +153,8 @@ void CodeGenerator::generateNode(const Node *current, StatementBlock *scope){
         // Load immediate into a0 (return value register)
         Subexpr *s = (Subexpr *)r->returnVal;
 
-        generateSubexpr(r->returnVal, scope, "a0", "t0");
+        Register a0 = regAlloc.allocRegister(REG_A0);
+        generateSubexpr(r->returnVal, scope, a0);
 
         StatementBlock *funcScope = scope->getParentFunction();
         // jump to function epilogue instead of ret
@@ -151,8 +213,6 @@ void CodeGenerator::printAssembly(){
 
 
 void CodeGenerator::generateAssembly(IR *ir){
-    
-
 
     outputBuffer << "    .text\n";
 
