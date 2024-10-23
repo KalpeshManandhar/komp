@@ -1,11 +1,11 @@
 Param(
-    [Parameter(Mandatory, HelpMessage = "Usage: <script> <exec> <test_folder>")]
+    [Parameter(Mandatory, HelpMessage = "Usage: <script> <exec>")]
     [string]$exec_path
 )
 
-. ".\tests\parser\errors_info.ps1"
-
 $test_folder = ".\tests\parser"
+
+. "$test_folder/errors_info.ps1"
 $errors_found = $errors_expected.Clone()
 
 $files = Get-ChildItem -Path $test_folder"\*" -Include "*.c" 

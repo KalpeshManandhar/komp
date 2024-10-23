@@ -26,6 +26,7 @@ int main(int argc, char **argv){
         CodeGenerator gen;
         gen.generateAssembly(ir);
         gen.printAssembly();
+        gen.writeAssemblyToFile("./codegen_output.s");
     }
 
     a.destroyFrame();
