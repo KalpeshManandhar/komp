@@ -31,4 +31,4 @@
 *.out
 *.app
 
-.\src\parser\bison_tests
+tests/codeGen/path_info.ps1
