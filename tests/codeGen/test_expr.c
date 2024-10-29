@@ -1,11 +1,10 @@
 int main(){
-
     return 
       (((1 + 2 * 3 * 5/5 + (-5) * (-1)) == 12)  // basic arithmetic
     && ((2 | 3 | 4) == 7)   // bitwise or
     
     && (12 != 4)    // not equals 
-    && (12 >= 4)    // ge 
+    && (12 >= 4)    // ge +
     && (4 > 0)    // gt 
     && (0 < 4)    // lt 
     && (4 <= 4)    // le 

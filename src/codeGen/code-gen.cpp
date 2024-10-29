@@ -43,8 +43,40 @@ static int getDepth(const Subexpr *expr){
 
 }
 
+size_t CodeGenerator::allocStackSpace(StatementBlock *scope, ScopeInfo *storage){
+    size_t totalSize = 0;
+
+    for (auto &dt: scope->symbols.entries){
+        int size = sizeOfType(dt.second.info);
+        totalSize = alignUpPowerOf2(totalSize, size);
+        totalSize += size;
+    }
+    totalSize = alignUpPowerOf2(totalSize, 16);
+
+    if (totalSize > 0){
+        size_t mem = stackAlloc.allocate(totalSize);
+        size_t offset = 0;
+
+        for (auto &dt: scope->symbols.entries){
+            int size = sizeOfType(dt.second.info);
+            offset = alignUpPowerOf2(offset, size);
+            offset += size;
+
+            StorageInfo s;
+            s.memAddress = mem + offset;
+            s.tag = StorageInfo::STORAGE_MEMORY;
+
+            storage->storage.add(dt.second.identifier, s);
+
+        }    
+    }
+
+    return totalSize;
+}
+
+
 // allocate the dest register before calling 
-void CodeGenerator::generateSubexpr(const Subexpr *expr, StatementBlock *scope,  Register dest){
+void CodeGenerator::generateSubexpr(const Subexpr *expr, StatementBlock *scope, Register dest, ScopeInfo *storageScope){
     if (!expr){
         return;
     }
@@ -53,21 +85,29 @@ void CodeGenerator::generateSubexpr(const Subexpr *expr, StatementBlock *scope, 
     case Subexpr::SUBEXPR_LEAF: {
         RV64_Register destReg = regAlloc.resolveRegister(dest);
         const char *destName = RV64_RegisterName[destReg];
-
+        
 
         if (_matchv(expr->leaf, LITERAL_TOKEN_TYPES, ARRAY_COUNT(LITERAL_TOKEN_TYPES))){
             buffer << "    li " << destName << ", " << expr->leaf.string << "\n";
             return;
         }
+        
+        if (_match(expr->leaf, TOKEN_IDENTIFIER)){
+            StorageInfo sInfo = storageScope->storage.getInfo(expr->leaf.string).info;
+            
+            int64_t offset = storageScope->frameBase - sInfo.memAddress;
+
+            buffer << "    lw " << destName << ", " << offset << "(fp)" << "\n";
+        }
 
         break;
     }
     case Subexpr::SUBEXPR_RECURSE_PARENTHESIS: {
-        generateSubexpr(expr->inside, scope, dest);    
+        generateSubexpr(expr->inside, scope, dest, storageScope);    
         break;
     }
     case Subexpr::SUBEXPR_UNARY: {
-        generateSubexpr(expr->unarySubexpr, scope, dest);  
+        generateSubexpr(expr->unarySubexpr, scope, dest, storageScope);  
         
         RV64_Register destReg = regAlloc.resolveRegister(dest);
         const char *destName = RV64_RegisterName[destReg];
@@ -108,12 +148,12 @@ void CodeGenerator::generateSubexpr(const Subexpr *expr, StatementBlock *scope, 
         int rightDepth = getDepth(expr->right);
         
         if (leftDepth < rightDepth){
-            generateSubexpr(expr->right, scope, temp);    
-            generateSubexpr(expr->left, scope, dest);
+            generateSubexpr(expr->right, scope, temp, storageScope);    
+            generateSubexpr(expr->left, scope, dest, storageScope);
         }
         else{
-            generateSubexpr(expr->left, scope, dest);
-            generateSubexpr(expr->right, scope, temp);
+            generateSubexpr(expr->left, scope, dest, storageScope);
+            generateSubexpr(expr->right, scope, temp, storageScope);
         }
 
         RV64_Register leftReg = regAlloc.resolveRegister(dest);
@@ -223,7 +263,7 @@ void CodeGenerator::generateSubexpr(const Subexpr *expr, StatementBlock *scope, 
 
 
 
-void CodeGenerator::generateNode(const Node *current, StatementBlock *scope){
+void CodeGenerator::generateNode(const Node *current, StatementBlock *scope, ScopeInfo *storageScope){
     if (!current){
         return;
     }
@@ -232,30 +272,49 @@ void CodeGenerator::generateNode(const Node *current, StatementBlock *scope){
     
     case Node::NODE_DECLARATION:{
         Declaration *d = (Declaration *)current;
-        buffer << ".data\n";
-        for (const auto &decl : d->decln){
-            // Initialize to 0
-            buffer << decl.identifier.string << ": .word 0\n";
+        
+        for (auto &decl: d->decln){
+            if (decl.initValue){
+                Register temp = regAlloc.allocVRegister(RegisterType::REG_TEMPORARY);
+                
+                generateSubexpr(decl.initValue, scope, temp, storageScope);
+                            
+                const char *name = RV64_RegisterName[regAlloc.resolveRegister(temp)]; 
+                
+                StorageInfo sInfo = storageScope->storage.getInfo(decl.identifier.string).info;
+                int64_t offset = storageScope->frameBase - sInfo.memAddress;
+
+                buffer << "    sw " << name << ", " << offset << "(fp)" << "\n";
+                regAlloc.freeRegister(temp);
+            }
         }
-        buffer << ".text\n";
         break;
     }
 
     case Node::NODE_STMT_BLOCK:{
         StatementBlock *b = (StatementBlock *)current;
+        
+        ScopeInfo currentStorageScope;
+        currentStorageScope.frameBase = storageScope->frameBase;
+        currentStorageScope.parent = storageScope;
+        
+        size_t totalSize = allocStackSpace(b, &currentStorageScope);
+        buffer << "    addi sp, sp, -" << totalSize << "\n"; 
+        
         for (auto &stmt : b->statements){
-            generateNode(stmt, scope);
+            generateNode(stmt, scope, &currentStorageScope);
         }
+        buffer << "    addi sp, sp, " << totalSize << "\n"; 
+        stackAlloc.deallocate(totalSize);
+
         break;
     }
 
     case Node::NODE_RETURN:{
         ReturnNode *r = (ReturnNode *)current;
-        // Load immediate into a0 (return value register)
-        Subexpr *s = (Subexpr *)r->returnVal;
 
         Register a0 = regAlloc.allocRegister(REG_A0);
-        generateSubexpr(r->returnVal, scope, a0);
+        generateSubexpr(r->returnVal, scope, a0, storageScope);
 
         StatementBlock *funcScope = scope->getParentFunction();
         // jump to function epilogue instead of ret
@@ -268,12 +327,14 @@ void CodeGenerator::generateNode(const Node *current, StatementBlock *scope){
     }
 }
 
-void CodeGenerator::generateFunction(Function *foo){
+void CodeGenerator::generateFunction(Function *foo, ScopeInfo *storageScope){
     buffer << "    .globl " << foo->funcName.string << "\n";
     buffer << foo->funcName.string << ":\n";
     // Function prologue
     buffer << "    addi sp, sp, -16\n"; // Allocate stack space
     buffer << "    sd ra, 8(sp)\n";     // Save return address
+    buffer << "    sd fp, 0(sp)\n";     // Save prev frame pointer
+    buffer << "    mv fp, sp\n";        // Save current stack pointer 
 
     // Moving the parameters to registers
     for (int i = 5; auto &param : foo->parameters)
@@ -281,12 +342,12 @@ void CodeGenerator::generateFunction(Function *foo){
         buffer << "mv a" << (i--) << ", a0\n";
     }
 
-    // Function opeartions
-    // Needs improvement
-    generateNode(foo->block, foo->block);
+    generateNode(foo->block, foo->block, storageScope);
 
     // Function epilogue
     buffer << "."<<foo->funcName.string << "_ep:\n";
+    buffer << "    mv sp, fp\n";       // Restore stack pointer
+    buffer << "    ld fp, 0(sp)\n";    // Restore previous frame pointer
     buffer << "    ld ra, 8(sp)\n";    // Restore return address
     buffer << "    addi sp, sp, 16\n"; // Deallocate stack space
     buffer << "    ret\n";             // Return from function
@@ -314,11 +375,14 @@ void CodeGenerator::printAssembly(){
 
 
 void CodeGenerator::generateAssembly(IR *ir){
-
     outputBuffer << "    .text\n";
+    
+    ScopeInfo s;
+    s.frameBase = 0;
+    s.parent = 0;
 
     for (auto &pair: ir->functions.entries){
-        generateFunction(&pair.second.info);
+        generateFunction(&pair.second.info, &s);
 
         Function *foo = &pair.second.info;
 
