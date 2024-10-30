@@ -205,7 +205,7 @@ Token Parser::parseStructDefinition(StatementBlock *scope){
                 }
                 
                 // if the struct type is incomplete
-                if (member.type.indirectionLevel() == 0 && !findStructDeclaration(member.type.structName, scope)){
+                if (member.type.indirectionLevel() == 0 && !scope->findStructDeclaration(member.type.structName)){
                     logErrorMessage(member.type.structName, "Struct \"%.*s\" incomplete.", splicePrintf(member.type.structName.string));
                     errors++;
                 }
@@ -556,7 +556,7 @@ DataType Parser::checkSubexprType(Subexpr *expr, StatementBlock *scope){
             }
             
             DataType baseStructType = left.getBaseType();
-            StatementBlock *structDeclScope = findStructDeclaration(baseStructType.structName, scope);
+            StatementBlock *structDeclScope = scope->findStructDeclaration(baseStructType.structName);
 
             if (!structDeclScope){
                 logErrorMessage(expr->op, "Not a valid struct.");
@@ -962,19 +962,10 @@ DataType Parser::checkSubexprType(Subexpr *expr, StatementBlock *scope){
 
     case Subexpr::SUBEXPR_LEAF:{
         // check if identifier has been declared
-        auto findVarDeclaration = [&](Splice name) -> StatementBlock *{
-            StatementBlock *currentScope = scope;
-            while(currentScope){
-                if (currentScope->symbols.existKey(name)){
-                    return currentScope;
-                }
-                currentScope = currentScope->parent;
-            }
-            return NULL;
-        };
+        
 
         if (match(expr->leaf, TOKEN_IDENTIFIER)){
-            StatementBlock *varDeclScope = findVarDeclaration(expr->leaf.string);
+            StatementBlock *varDeclScope = scope->findVarDeclaration(expr->leaf.string);
             
             if (!varDeclScope){
                 logErrorMessage(expr->leaf, "Undeclared identifier \"%.*s\"", splicePrintf(expr->leaf.string));
@@ -1194,19 +1185,6 @@ Subexpr* Parser::parsePrimary(StatementBlock *scope){
 
 
 
-StatementBlock* Parser::findStructDeclaration(Token structName, StatementBlock *scope){
-    StatementBlock *currentScope = scope;
-    while (currentScope){
-        if (currentScope->structs.existKey(structName.string)){
-            if (currentScope->structs.getInfo(structName.string).info.defined){
-                return currentScope;
-            }
-        }
-
-        currentScope = currentScope->parent;
-    }
-    return NULL;
-}
 
 
 
@@ -1226,7 +1204,7 @@ Node* Parser::parseDeclaration(StatementBlock *scope){
     // check if struct has been defined: only defined structs can be used for declaration
     if (type.tag == DataType::TAG_STRUCT){
         
-        if (!findStructDeclaration(type.structName, scope)){
+        if (!scope->findStructDeclaration(type.structName)){
             logErrorMessage(type.structName, "Struct \"%.*s\" incomplete.", splicePrintf(type.structName.string));
             errors++;
         }

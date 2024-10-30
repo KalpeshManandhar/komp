@@ -240,6 +240,33 @@ struct StatementBlock: public Node{
         }
         return NULL;
     };
+
+    StatementBlock* findStructDeclaration(Token structName){
+        StatementBlock *currentScope = this;
+        while (currentScope){
+            if (currentScope->structs.existKey(structName.string)){
+                if (currentScope->structs.getInfo(structName.string).info.defined){
+                    return currentScope;
+                }
+            }
+
+            currentScope = currentScope->parent;
+        }
+        return NULL;
+    }
+
+
+    StatementBlock * findVarDeclaration(Splice name) {
+        StatementBlock *currentScope = this;
+        while(currentScope){
+            if (currentScope->symbols.existKey(name)){
+                return currentScope;
+            }
+            currentScope = currentScope->parent;
+        }
+        return NULL;
+    };
+
 };
 
 struct Function: public Node{
