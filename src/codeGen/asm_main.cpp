@@ -20,10 +20,12 @@ int main(int argc, char **argv){
     Parser p;
     p.init(&t, &a);
 
-    IR *ir = p.parseProgram();
+    AST *ir = p.parseProgram();
     
     if (ir){
         CodeGenerator gen;
+        gen.arena = &a;
+        
         gen.generateAssembly(ir);
         gen.printAssembly();
         gen.writeAssemblyToFile("./codegen_output.s");

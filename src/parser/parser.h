@@ -14,7 +14,7 @@ struct Parser{
     // to check if any parsing went into error: set to true whenever the parser tries to recover from an error
     bool didError;
 
-    IR *ir;
+    AST *ir;
     
 
     // token/state management
@@ -61,7 +61,7 @@ public:
         
     size_t errors;
 
-    IR * parseProgram();
+    AST * parseProgram();
     
 
     void init(Tokenizer *t, Arena *arena){
@@ -69,7 +69,7 @@ public:
         this->currentToken = t->nextToken();
         this->errors = 0;
 
-        this->ir = new IR;
+        this->ir = new AST;
 
         this->ir->global.parent = 0;
         this->ir->global.tag = Node::NODE_STMT_BLOCK;
@@ -78,7 +78,7 @@ public:
         this->arena = arena;
     }
     
-    IR *parse(){
+    AST *parse(){
 
         while (currentToken.type != TOKEN_EOF){
             Node *stmt = this->parseStatement(&ir->global);

@@ -19,7 +19,7 @@ int main(int argc, char **argv){
     Parser p;
     p.init(&t, &a);
 
-    IR *ir = NULL;
+    AST *ir = NULL;
     if (argc == 3 && strcmp(argv[2], "p") == 0){
         ir = p.parseProgram();
     }

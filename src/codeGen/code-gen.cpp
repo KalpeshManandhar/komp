@@ -43,6 +43,50 @@ static int getDepth(const Subexpr *expr){
 
 }
 
+static int getDepth(const Exp_Expr *expr){
+    if (!expr){
+        return 0;
+    }
+    
+    switch (expr->tag){
+    case Exp_Expr::EXPR_ADDRESSOF: {
+        return 1;
+    }
+    case Exp_Expr::EXPR_BINARY: {
+        int left = getDepth(expr->binary.left);
+        int right = getDepth(expr->binary.right);
+
+        return max(left, right) + 1;
+    }
+    case Exp_Expr::EXPR_CAST: {
+        int operand = getDepth(expr->cast.expr);
+        return operand + 1;
+    }
+    case Exp_Expr::EXPR_DEREF: {
+        int operand = getDepth(expr->unary.unarySubexpr);
+        return operand + 1;
+    }
+    case Exp_Expr::EXPR_FUNCTION_CALL: {
+        return 1;
+    }
+    case Exp_Expr::EXPR_LOAD_IMMEDIATE: {
+        return 1;
+    }
+    case Exp_Expr::EXPR_STORE: {
+        int lval = getDepth(expr->store.left);
+        int rval = getDepth(expr->store.right);
+        return max(lval, rval) + 1;
+    }
+    case Exp_Expr::EXPR_UNARY: {
+        int operand = getDepth(expr->unary.unarySubexpr);
+        return operand + 1;
+    }
+    default:
+        return 0;
+    }
+
+}
+
 size_t CodeGenerator::allocStackSpace(StatementBlock *scope, ScopeInfo *storage){
     size_t totalSize = 0;
 
@@ -77,6 +121,12 @@ size_t CodeGenerator::allocStackSpace(StatementBlock *scope, ScopeInfo *storage)
 
 // allocate the dest register before calling 
 void CodeGenerator::generateSubexpr(const Subexpr *expr, StatementBlock *scope, Register dest, ScopeInfo *storageScope){
+    Exp_Expr *expanded = expandSubexpr(expr, scope); 
+    
+    generateExpandedExpr(expanded, scope, dest, storageScope);
+    return;
+    
+    
     if (!expr){
         return;
     }
@@ -262,6 +312,258 @@ void CodeGenerator::generateSubexpr(const Subexpr *expr, StatementBlock *scope, 
 }
 
 
+const char* sizeSuffix(size_t size){
+    if (size == 8){
+        return "d";
+    }
+    if (size == 4){
+        return "w";
+    }
+    if (size == 2){
+        return "h";
+    }
+    if (size == 1){
+        return "b";
+    }
+    return "d";
+}
+
+
+
+void CodeGenerator::generateExpandedExpr(Exp_Expr *current, StatementBlock *scope, Register dest, ScopeInfo *storageScope){
+    switch (current->tag)
+    {
+    case Exp_Expr::EXPR_LOAD_IMMEDIATE:{
+        RV64_Register destReg = regAlloc.resolveRegister(dest);
+        const char *destName = RV64_RegisterName[destReg];
+        
+        buffer << "    li " << destName << ", " << current->immediate.leaf.string << "\n";
+        break;
+    }
+
+    case Exp_Expr::EXPR_ADDRESSOF:{
+        auto getAddressScope = [&](Splice symbol) -> ScopeInfo*{
+            ScopeInfo *current = storageScope;
+
+            while (current){
+                if (current->storage.existKey(symbol)){
+                    return current;
+                }
+                current = current->parent;
+            }
+
+            return 0;
+        };
+
+        ScopeInfo *storage = getAddressScope(current->addressOf.symbol.string);
+        StorageInfo sInfo = storage->storage.getInfo(current->addressOf.symbol.string).info;
+        current->addressOf.offset = storage->frameBase - sInfo.memAddress;
+
+        break;
+    }
+    
+    case Exp_Expr::EXPR_DEREF:{
+        const char *destName = RV64_RegisterName[regAlloc.resolveRegister(dest)];
+        
+        if (current->deref.base->tag == Exp_Expr::EXPR_ADDRESSOF && !current->deref.offset){
+            // generate for base address
+            generateExpandedExpr(current->deref.base, scope, dest, storageScope);
+            Exp_Expr *base = current->deref.base;
+            buffer << "    l" << sizeSuffix(current->deref.size) << " " << destName << ", " << base->addressOf.offset << "(fp)\n";
+            return;
+        }
+    
+        Register temp = regAlloc.allocVRegister(REG_TEMPORARY);
+        const char *tempName = RV64_RegisterName[regAlloc.resolveRegister(temp)];
+        
+        // generate for offset
+        if (current->deref.offset){
+            generateExpandedExpr(current->deref.offset, scope, temp, storageScope);
+            // offset x size
+            buffer << "    li " <<  destName << ", " << sizeOfType(current->type) << "\n";
+            buffer << "    mul " << tempName << ", " << tempName << ", " << destName << "\n";
+        }
+        
+
+        generateExpandedExpr(current->deref.base, scope, dest, storageScope);    
+        
+        buffer << "    add " << destName << ", " << destName << ", " << tempName << "\n";
+        buffer << "    l" << sizeSuffix(current->deref.size) << " " << destName << ", " << 0 << "(" << destName << ")\n";
+        
+        regAlloc.freeRegister(temp);
+
+        break;
+    }
+    
+    case Exp_Expr::EXPR_STORE:{
+
+        break;
+    }
+    
+    case Exp_Expr::EXPR_BINARY:{
+        const char *destName = RV64_RegisterName[regAlloc.resolveRegister(dest)];
+        
+        Register temp = regAlloc.allocVRegister(REG_TEMPORARY);
+        const char *tempName = RV64_RegisterName[regAlloc.resolveRegister(temp)];
+        
+        int leftDepth = getDepth(current->binary.left);
+        int rightDepth = getDepth(current->binary.right);
+
+        if (leftDepth < rightDepth){
+            generateExpandedExpr(current->binary.right, scope, temp, storageScope);
+            generateExpandedExpr(current->binary.left, scope, dest, storageScope);
+        }
+        else{
+            generateExpandedExpr(current->binary.left, scope, dest, storageScope);
+            generateExpandedExpr(current->binary.right, scope, temp, storageScope);
+        }
+
+        switch (current->binary.op){
+            case Exp_Expr::BinaryOp::EXPR_UADD:
+            case Exp_Expr::BinaryOp::EXPR_IADD:{
+                buffer << "    add " << destName << ", " << destName << ", " << tempName << "\n";
+                break;
+            }
+            case Exp_Expr::BinaryOp::EXPR_USUB:
+            case Exp_Expr::BinaryOp::EXPR_ISUB:{
+                buffer << "    sub " << destName << ", " << destName << ", " << tempName << "\n";
+                break;
+            }
+            case Exp_Expr::BinaryOp::EXPR_UMUL:
+            case Exp_Expr::BinaryOp::EXPR_IMUL:{
+                buffer << "    mul " << destName << ", " << destName << ", " << tempName << "\n";
+                break;
+            }
+            case Exp_Expr::BinaryOp::EXPR_UDIV:
+            case Exp_Expr::BinaryOp::EXPR_IDIV:{
+                buffer << "    div " << destName << ", " << destName << ", " << tempName << "\n";
+                break;
+            }
+
+            
+            case Exp_Expr::BinaryOp::EXPR_IBITWISE_AND:{
+                buffer << "    and " << destName << ", " << destName << ", " << tempName << "\n";
+                break;
+            }
+            case Exp_Expr::BinaryOp::EXPR_IBITWISE_OR:{
+                buffer << "    or " << destName << ", " << destName << ", " << tempName << "\n";
+                break;
+            }
+            case Exp_Expr::BinaryOp::EXPR_IBITWISE_XOR:{
+                buffer << "    xor " << destName << ", " << destName << ", " << tempName << "\n";
+                break;
+            }
+            
+            case Exp_Expr::BinaryOp::EXPR_LOGICAL_AND:{
+                buffer << "    and " << destName << ", " << destName << ", " << tempName << "\n";
+                break;
+            }
+            case Exp_Expr::BinaryOp::EXPR_LOGICAL_OR:{
+                buffer << "    or " << destName << ", " << destName << ", " << tempName << "\n";
+                break;
+            }
+            
+            case Exp_Expr::BinaryOp::EXPR_IBITWISE_LSHIFT:{
+                buffer << "    sll " << destName << ", " << destName << ", " << tempName << "\n";
+                break;
+            }
+            case Exp_Expr::BinaryOp::EXPR_IBITWISE_RSHIFT:{
+                buffer << "    srl " << destName << ", " << destName << ", " << tempName << "\n";
+                break;
+            }
+
+            case Exp_Expr::BinaryOp::EXPR_ICOMPARE_LT:{
+                buffer << "    srl " << destName << ", " << destName << ", " << tempName << "\n";
+                break;
+            }
+            case Exp_Expr::BinaryOp::EXPR_ICOMPARE_GT:{
+                buffer << "    sub " << destName << ", " << destName << ", " << tempName << "\n";
+                buffer << "    sgtz " << destName << ", " << destName << "\n";
+                break;
+            }
+            case Exp_Expr::BinaryOp::EXPR_ICOMPARE_LE:{
+                buffer << "    sub " << destName << ", " << destName << ", " << tempName << "\n";
+                buffer << "    sgtz " << destName << ", " << destName << "\n";
+                buffer << "    xori " << destName << ", " << destName << ", " << "1" << "\n";
+                break;
+            }
+            case Exp_Expr::BinaryOp::EXPR_ICOMPARE_GE:{
+                buffer << "    slt " << destName << ", " << tempName << ", " << destName << "\n";
+                break;
+            }
+            case Exp_Expr::BinaryOp::EXPR_ICOMPARE_EQ:{
+                buffer << "    sub " << destName << ", " << destName << ", " << tempName << "\n";
+                buffer << "    seqz " << destName << ", " << destName << "\n";
+                break;
+            }
+            case Exp_Expr::BinaryOp::EXPR_ICOMPARE_NEQ:{
+                buffer << "    sub " << destName << ", " << destName << ", " << tempName << "\n";
+                buffer << "    snez " << destName << ", " << destName << "\n";
+                break;
+            }
+
+            case Exp_Expr::BinaryOp::EXPR_FCOMPARE_LT:{
+                buffer << "    slt " << destName << ", " << destName << ", " << tempName << "\n";
+                break;
+            }
+
+            case Exp_Expr::BinaryOp::EXPR_FADD:
+            case Exp_Expr::BinaryOp::EXPR_FSUB:
+            case Exp_Expr::BinaryOp::EXPR_FMUL:
+            case Exp_Expr::BinaryOp::EXPR_FDIV:
+            case Exp_Expr::BinaryOp::EXPR_FCOMPARE_GT:
+            case Exp_Expr::BinaryOp::EXPR_FCOMPARE_LE:
+            case Exp_Expr::BinaryOp::EXPR_FCOMPARE_GE:
+            case Exp_Expr::BinaryOp::EXPR_FCOMPARE_EQ:
+            case Exp_Expr::BinaryOp::EXPR_FCOMPARE_NEQ:
+                assert(false && "Floating point operations unimplemented.");
+                break;
+            default:
+                break;
+        }
+
+        
+
+
+        break;
+    }
+    
+    case Exp_Expr::EXPR_CAST:{
+        break;
+    }
+    case Exp_Expr::EXPR_UNARY:{
+        const char *destName = RV64_RegisterName[regAlloc.resolveRegister(dest)];
+
+        generateExpandedExpr(current->unary.unarySubexpr, scope, dest, storageScope);
+        
+        switch (current->unary.op){
+            case Exp_Expr::UnaryOp::EXPR_INEGATE:{
+                buffer << "    neg " << destName << ", " << destName << "\n";
+                break;
+            }
+            case Exp_Expr::UnaryOp::EXPR_IBITWISE_NOT:{
+                buffer << "    not " << destName << ", " << destName << "\n";
+                break;
+            }
+            case Exp_Expr::UnaryOp::EXPR_LOGICAL_NOT:{
+                buffer << "    seqz " << destName << ", " << destName << "\n";
+                break;
+            }
+            default:
+                break;
+        }
+
+        break;
+    }
+    case Exp_Expr::EXPR_FUNCTION_CALL:{
+        break;
+    }
+    default:
+        break;
+    }
+}
+
+
 
 void CodeGenerator::generateNode(const Node *current, StatementBlock *scope, ScopeInfo *storageScope){
     if (!current){
@@ -374,7 +676,9 @@ void CodeGenerator::printAssembly(){
 }
 
 
-void CodeGenerator::generateAssembly(IR *ir){
+void CodeGenerator::generateAssembly(AST *ir){
+    this->ir = ir;
+
     outputBuffer << "    .text\n";
     
     ScopeInfo s;
@@ -392,4 +696,293 @@ void CodeGenerator::generateAssembly(IR *ir){
         buffer.clear();
         
     }
+}
+
+
+void CodeGenerator::insertTypeCast(Exp_Expr *d){
+    Exp_Expr *left = d->binary.left;
+    Exp_Expr *right = d->binary.right;
+
+    if (!(left->type == d->type)){
+        Exp_Expr *cast = (Exp_Expr*)arena->alloc(sizeof(Exp_Expr));
+        cast->tag = Exp_Expr::EXPR_CAST;
+        cast->cast.from = left->type; 
+        cast->cast.to = d->type; 
+        cast->cast.expr = left;
+
+        d->binary.left = cast;
+    }
+    if (!(right->type == d->type)){
+        Exp_Expr *cast = (Exp_Expr*)arena->alloc(sizeof(Exp_Expr));
+        cast->tag = Exp_Expr::EXPR_CAST;
+        cast->cast.from = right->type; 
+        cast->cast.to = d->type; 
+        cast->cast.expr = right;
+        
+        d->binary.right = cast;
+    }
+}
+
+
+
+Exp_Expr* CodeGenerator::expandSubexpr(const Subexpr *expr, StatementBlock *scope){
+    Exp_Expr *d = (Exp_Expr *)arena->alloc(sizeof(Exp_Expr));
+    
+    switch (expr->subtag){
+    case Subexpr::SUBEXPR_BINARY_OP :{
+        Exp_Expr *left = expandSubexpr(expr->left, scope);
+        Exp_Expr *right = expandSubexpr(expr->right, scope);
+        
+        d->type = getResultantType(left->type, right->type, expr);
+        d->tag = Exp_Expr::EXPR_BINARY;
+
+        switch (expr->op.type){
+        case TOKEN_PLUS:{
+            d->binary.op = Exp_Expr::BinaryOp::EXPR_IADD;
+            break;
+        } 
+        case TOKEN_MINUS:{
+            d->binary.op = Exp_Expr::BinaryOp::EXPR_ISUB;
+            break;
+        } 
+        case TOKEN_STAR:{
+            d->binary.op = Exp_Expr::BinaryOp::EXPR_IMUL;
+            break;
+        } 
+        case TOKEN_SLASH:{
+            d->binary.op = Exp_Expr::BinaryOp::EXPR_IDIV;
+            break;
+        } 
+        case TOKEN_MODULO:{
+            assert(false);
+            d->binary.op = Exp_Expr::BinaryOp::EXPR_IDIV;
+            break;
+        } 
+        case TOKEN_AMPERSAND:{
+            d->binary.op = Exp_Expr::BinaryOp::EXPR_IBITWISE_AND;
+            break;
+        } 
+        case TOKEN_BITWISE_OR:{
+            d->binary.op = Exp_Expr::BinaryOp::EXPR_IBITWISE_OR;
+            break;
+        } 
+        case TOKEN_BITWISE_XOR:{
+            d->binary.op = Exp_Expr::BinaryOp::EXPR_IBITWISE_XOR;
+            break;
+        } 
+        case TOKEN_SHIFT_LEFT:{
+            d->binary.op = Exp_Expr::BinaryOp::EXPR_IBITWISE_LSHIFT;
+            break;
+        } 
+        case TOKEN_SHIFT_RIGHT:{
+            d->binary.op = Exp_Expr::BinaryOp::EXPR_IBITWISE_RSHIFT;
+            break;
+        }
+        case TOKEN_LOGICAL_AND:{
+            d->binary.op = Exp_Expr::BinaryOp::EXPR_LOGICAL_AND;
+            break;
+        }
+        case TOKEN_LOGICAL_OR:{
+            d->binary.op = Exp_Expr::BinaryOp::EXPR_LOGICAL_OR;
+            break;
+        }
+        case TOKEN_EQUALITY_CHECK:{
+            d->binary.op = Exp_Expr::BinaryOp::EXPR_ICOMPARE_EQ;
+            break;
+        }
+        case TOKEN_NOT_EQUALS:{
+            d->binary.op = Exp_Expr::BinaryOp::EXPR_ICOMPARE_NEQ;
+            break;
+        }
+        case TOKEN_GREATER_EQUALS:{
+            d->binary.op = Exp_Expr::BinaryOp::EXPR_ICOMPARE_GE;
+            break;
+        }
+        case TOKEN_GREATER_THAN:{
+            d->binary.op = Exp_Expr::BinaryOp::EXPR_ICOMPARE_GT;
+            break;
+        }
+        case TOKEN_LESS_EQUALS:{
+            d->binary.op = Exp_Expr::BinaryOp::EXPR_ICOMPARE_LE;
+            break;
+        }
+        case TOKEN_LESS_THAN:{
+            d->binary.op = Exp_Expr::BinaryOp::EXPR_ICOMPARE_LT;
+            break;
+        }
+        
+        case TOKEN_ASSIGNMENT:{
+            d->type = left->type;
+            d->tag  = Exp_Expr::EXPR_STORE;
+
+            break;
+        }
+        case TOKEN_PLUS_ASSIGN:{
+            Exp_Expr *add = (Exp_Expr*)arena->alloc(sizeof(Exp_Expr));
+            Exp_Expr *addLeft = (Exp_Expr*)arena->alloc(sizeof(Exp_Expr));
+            
+            add->tag = Exp_Expr::EXPR_BINARY;
+            add->binary.left = addLeft;
+            add->binary.right = right;
+            add->binary.op = Exp_Expr::BinaryOp::EXPR_IADD;
+            add->type = getResultantType(left->type, right->type, expr);
+            
+            *addLeft = *left;
+
+            insertTypeCast(add);
+            
+            d->type = left->type;
+            d->tag = Exp_Expr::EXPR_STORE;
+
+            right = add;
+            break;
+        }
+        case TOKEN_MINUS_ASSIGN:{
+            break;
+        }
+        case TOKEN_MUL_ASSIGN:{
+            break;
+        }
+        case TOKEN_DIV_ASSIGN:{
+            break;
+        }
+        case TOKEN_SQUARE_OPEN:{
+            break;
+        }
+        case TOKEN_LSHIFT_ASSIGN:{
+            break;
+        }
+        case TOKEN_RSHIFT_ASSIGN:{
+            break;
+        }
+        case TOKEN_BITWISE_AND_ASSIGN:{
+            break;
+        }
+        case TOKEN_BITWISE_OR_ASSIGN:{
+            break;
+        }
+        case TOKEN_BITWISE_XOR_ASSIGN:{
+            break;
+        }
+
+        case TOKEN_ARROW:{
+            break;
+        }
+        case TOKEN_DOT:{
+            break;
+        }
+
+
+
+        default:
+            break;
+        }
+        
+        d->binary.left = left;
+        d->binary.right = right;
+
+
+        break;
+    }
+
+    case Subexpr::SUBEXPR_LEAF :{
+        if (_match(expr->leaf, TOKEN_IDENTIFIER)){
+            StatementBlock *varDeclScope = scope->findVarDeclaration(expr->leaf.string);
+            assert(varDeclScope != NULL);
+            
+            d->type = varDeclScope->symbols.getInfo(expr->leaf.string).info;
+            d->tag = Exp_Expr::EXPR_DEREF;
+            
+            Exp_Expr *address = (Exp_Expr*) arena->alloc(sizeof(Exp_Expr));
+            address->addressOf.symbol = expr->leaf;
+
+            d->deref.base = address;
+            d->deref.offset = 0;
+            d->deref.size = sizeOfType(d->type);
+        
+            return d;
+        }
+        
+        switch (expr->leaf.type){
+            case TOKEN_CHARACTER_LITERAL:
+                d->type = DataTypes::Char;
+                break;
+            case TOKEN_NUMERIC_FLOAT:
+                d->type = DataTypes::Float;
+                break;
+            case TOKEN_NUMERIC_DOUBLE:
+                d->type = DataTypes::Double;
+                break;
+            case TOKEN_NUMERIC_DEC:
+            case TOKEN_NUMERIC_BIN:
+            case TOKEN_NUMERIC_HEX:
+            case TOKEN_NUMERIC_OCT:
+                d->type = DataTypes::Int;
+                break;
+            case TOKEN_STRING_LITERAL:
+                d->type = DataTypes::String;
+                break;
+            default:
+                break;
+        }
+
+        d->tag = Exp_Expr::EXPR_LOAD_IMMEDIATE;
+        d->immediate.leaf = expr->leaf;
+        return d;
+    }
+
+    case Subexpr::SUBEXPR_UNARY: {
+        d->tag = Exp_Expr::EXPR_UNARY;
+        d->unary.unarySubexpr = expandSubexpr(expr->unarySubexpr, scope); 
+
+        switch (expr->unaryOp.type){
+
+        case TOKEN_PLUS:
+            break;
+        case TOKEN_MINUS:
+            d->unary.op = Exp_Expr::UnaryOp::EXPR_INEGATE;
+            break;
+        case TOKEN_STAR:
+
+
+            break;
+        case TOKEN_LOGICAL_NOT:
+            d->unary.op = Exp_Expr::UnaryOp::EXPR_LOGICAL_NOT;
+            break;
+        case TOKEN_BITWISE_NOT:
+            d->unary.op = Exp_Expr::UnaryOp::EXPR_IBITWISE_NOT;
+            break;
+        case TOKEN_AMPERSAND:
+            break;
+        case TOKEN_PLUS_PLUS:
+            break;
+        case TOKEN_MINUS_MINUS:
+            break;
+        
+        default:
+            break;
+        }
+
+        break;
+    }
+    case Subexpr::SUBEXPR_RECURSE_PARENTHESIS :{
+        return expandSubexpr(expr->inside, scope);
+    }
+    case Subexpr::SUBEXPR_FUNCTION_CALL:{
+
+        FunctionCall *fooCall = expr->functionCall;
+        Function foo = ir->functions.getInfo(fooCall->funcName.string).info;
+        
+
+        d->type = foo.returnType;
+    }
+        
+        break;
+    
+    default:
+        break;
+    }
+
+    return d;
+
 }

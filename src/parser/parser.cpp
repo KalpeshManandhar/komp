@@ -1626,7 +1626,7 @@ Node* Parser::parseFor(StatementBlock *scope){
 }
 
 
-IR *Parser::parseProgram(){
+AST *Parser::parseProgram(){
     while (peekToken().type != TOKEN_EOF){
         if (matchv(DATA_TYPE_TOKENS, ARRAY_COUNT(DATA_TYPE_TOKENS))){
             Node *stmt = this->parseDeclaration(&ir->global);

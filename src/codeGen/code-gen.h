@@ -16,11 +16,17 @@ struct CodeGenerator{
 
     RegisterAllocator regAlloc;
     StackAllocator stackAlloc;
-    
+
+    AST *ir;
+    Arena *arena;
 
     void generateNode(const Node *current, StatementBlock *scope, ScopeInfo *storageScope);
     void generateFunction(Function *foo, ScopeInfo *storageScope);
     void generateSubexpr(const Subexpr *expr, StatementBlock *scope, Register destReg, ScopeInfo *storageScope);
+    Exp_Expr* expandSubexpr(const Subexpr *expr, StatementBlock *scope);
+    void generateExpandedExpr(Exp_Expr *current, StatementBlock *scope, Register dest, ScopeInfo *storageScope);
+    void insertTypeCast(Exp_Expr *d);
+    
     size_t allocStackSpace(StatementBlock *scope, ScopeInfo *storage);
     
 
@@ -28,6 +34,6 @@ struct CodeGenerator{
     void printAssembly();
 
 public:
-    void generateAssembly(IR *ir);
+    void generateAssembly(AST *ir);
 
 };

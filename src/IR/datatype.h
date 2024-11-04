@@ -185,6 +185,11 @@ static bool operator==(DataType a, DataType b){
     if (a.indirectionLevel() != b.indirectionLevel()){
         return false;
     }
+    
+    int mask = (DataType::Specifiers::SHORT | DataType::Specifiers::UNSIGNED 
+              | DataType::Specifiers::LONG | DataType::Specifiers::LONG_LONG);
+    a.flags &= mask;
+    b.flags &= mask;
 
 
     if (a.flags != b.flags){
@@ -245,4 +250,26 @@ static size_t sizeOfType(DataType d){
 
     return 8;
 }
+
+static int getIntegerConversionRank(DataType d){
+    if (d.isSet(DataType::Specifiers::LONG_LONG)){
+        return 4;
+    }
+    if (d.isSet(DataType::Specifiers::LONG)){
+        return 3;
+    }
+    if (!d.isSet(DataType::Specifiers::LONG) && !d.isSet(DataType::Specifiers::SHORT)){
+        if (_match(d.type, TOKEN_INT)){
+            return 2;
+        }
+        if (_match(d.type, TOKEN_CHAR)){
+            return 0;
+        }
+        
+    }
+    if (d.isSet(DataType::Specifiers::SHORT)){
+        return 1;
+    }
+    return -1;
+};
 
