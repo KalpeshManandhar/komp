@@ -733,7 +733,7 @@ Exp_Expr* CodeGenerator::expandSubexpr(const Subexpr *expr, StatementBlock *scop
         Exp_Expr *left = expandSubexpr(expr->left, scope);
         Exp_Expr *right = expandSubexpr(expr->right, scope);
         
-        d->type = getResultantType(left->type, right->type, expr);
+        d->type = getResultantType(left->type, right->type, expr->op);
         d->tag = Exp_Expr::EXPR_BINARY;
 
         switch (expr->op.type){
@@ -825,7 +825,7 @@ Exp_Expr* CodeGenerator::expandSubexpr(const Subexpr *expr, StatementBlock *scop
             add->binary.left = addLeft;
             add->binary.right = right;
             add->binary.op = Exp_Expr::BinaryOp::EXPR_IADD;
-            add->type = getResultantType(left->type, right->type, expr);
+            add->type = getResultantType(left->type, right->type, expr->op);
             
             *addLeft = *left;
 

@@ -273,3 +273,155 @@ static int getIntegerConversionRank(DataType d){
     return -1;
 };
 
+
+static DataType getResultantType(DataType left, DataType right, Token op){
+    
+    // diff level of indirection
+    if (left.indirectionLevel() != right.indirectionLevel()){
+        // pointer arithmetic 
+        // (ptr + int)/(ptr - int)/(ptr += int)/(ptr -= int)
+        if (left.indirectionLevel() > 0 && (_match(right.type, TOKEN_INT) || _match(right.type, TOKEN_CHAR))){ 
+            if (_match(op, TOKEN_PLUS) || _match(op, TOKEN_MINUS) 
+            || _match(op, TOKEN_PLUS_ASSIGN) || _match(op, TOKEN_MINUS_ASSIGN) ){
+                return left;
+            }
+            else if (_match(op, TOKEN_ASSIGNMENT)){
+                return left;
+            }
+        }
+        // (int + ptr) 
+        else if (right.indirectionLevel() > 0 && (_match(left.type, TOKEN_INT) || _match(left.type, TOKEN_CHAR))){
+            if (_match(op, TOKEN_PLUS)){
+                return right;
+            }
+            if (_match(op, TOKEN_ASSIGNMENT)){
+                return right;
+            }
+        }
+        // both pointers of different level of indirection
+        // can only assign but log a warning
+        else if (left.indirectionLevel() > 0 && right.indirectionLevel() > 0){
+            if (_match(op, TOKEN_ASSIGNMENT)){
+                return left;
+            }
+        }
+
+    }
+    // same level of indirection
+    else{
+        // both are pointers
+        if (left.indirectionLevel() > 0){
+            // can assign, but log error if of different types
+            if (_match(op, TOKEN_ASSIGNMENT)){
+                return left;
+            }
+
+            if (left == right){
+                // ptr difference: (ptr - ptr)
+                if (_match(op, TOKEN_MINUS)){
+                    return DataTypes::Long_Long;
+                }
+            }
+        }
+        // same type but not pointers
+        else if (left == right){
+            // assignment is defined for all operands of the same type  
+            if (_match(op, TOKEN_ASSIGNMENT)){
+                return left;
+            }
+            
+            // all other primary operands work with all other operators 
+            // (floating point exceptions have been handled at the start)
+            if (left.tag == DataType::TAG_PRIMARY){
+                return left;
+            }
+
+            // if struct, only assignment between same structs is allowed 
+            if (_match(left.type, TOKEN_STRUCT)){
+                if (_match(op, TOKEN_ASSIGNMENT) && compare(left.structName.string, right.structName.string)){
+                    return left;
+                }
+            }
+        }
+        
+        // different types of primary types
+        else if (left.tag == DataType::TAG_PRIMARY && right.tag == DataType::TAG_PRIMARY){
+            
+            // for valid assignment operations, the resultant type is the type of the left operand
+            if (_matchv(op, ASSIGNMENT_OP, ARRAY_COUNT(ASSIGNMENT_OP))){
+                return left;
+            }
+
+            // if any is double or float, convert to that
+            if (_match(left.type, TOKEN_DOUBLE) || _match(right.type, TOKEN_DOUBLE)){
+                return DataTypes::Double;
+            }   
+            else if (_match(left.type, TOKEN_FLOAT) || _match(right.type, TOKEN_FLOAT)){
+                return DataTypes::Float;
+            }   
+
+            // same signedness, conversion to greater conversion rank
+            else if ((left.isSet(DataType::Specifiers::SIGNED) && right.isSet(DataType::Specifiers::SIGNED))
+                    || (left.isSet(DataType::Specifiers::UNSIGNED) && right.isSet(DataType::Specifiers::UNSIGNED))){
+                
+                if (getIntegerConversionRank(left) > getIntegerConversionRank(right)){
+                    return left;
+                }
+                
+                return right;
+                
+            }   
+            
+            // different signedness
+            else {
+                // if unsigned has higher or equal rank, then unsigned
+                // else, if signed can accomodate full range of unsigned then convert to signed, 
+                // else convert to unsigned counterpart of the signed types
+                
+                auto signedUnsignedConversion = [&](DataType unsignedType, DataType signedType){
+                    if (getIntegerConversionRank(unsignedType) >= getIntegerConversionRank(signedType)){
+                        return unsignedType;
+                    }
+                    else if (signedType.isSet(DataType::Specifiers::LONG_LONG)){
+                        return signedType;
+                    }
+                    else if (signedType.isSet(DataType::Specifiers::LONG)){
+                        // signed long cannot accomodate unsigned int
+                        if (!unsignedType.isSet(DataType::Specifiers::LONG)){
+                            return signedType;
+                        }
+                    }
+                    else if (!signedType.isSet(DataType::Specifiers::SHORT)){
+                        // signed int can accomodate unsigned short and char
+                        if (unsignedType.isSet(DataType::Specifiers::SHORT) || _match(unsignedType.type, TOKEN_CHAR)){
+                            return signedType;
+                        }
+                    }
+                    else if (signedType.isSet(DataType::Specifiers::SHORT)){
+                        // signed short can accomodate unsigneds char
+                        if (_match(unsignedType.type, TOKEN_CHAR)){
+                            return signedType;
+                        }
+                    }
+                    // unsigned counterpart of the signed types
+                    signedType.flags |= DataType::Specifiers::UNSIGNED;
+                    signedType.flags ^= DataType::Specifiers::SIGNED;
+                    return signedType;
+                };
+                
+                
+                if (left.isSet(DataType::Specifiers::UNSIGNED)){
+                    return signedUnsignedConversion(left, right);
+                }
+                else {
+                    return signedUnsignedConversion(right, left);
+                }
+            }
+            
+        
+        }
+
+    }
+
+    return DataTypes::Int;
+};
