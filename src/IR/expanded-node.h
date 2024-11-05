@@ -10,6 +10,8 @@ struct Exp_Expr{
     enum ExprType{
         EXPR_ADDRESSOF,
         EXPR_DEREF,
+        EXPR_INDEX,
+        EXPR_LEAF,
 
         EXPR_LOAD,
         EXPR_LOAD_IMMEDIATE,
@@ -78,8 +80,9 @@ struct Exp_Expr{
     union{
         struct StoreInfo{
             Exp_Expr *left;
-            size_t size;
             Exp_Expr *right;
+            int64_t offset;
+            size_t size;
         }store;
 
         struct Cast{
@@ -90,15 +93,27 @@ struct Exp_Expr{
         
 
         struct AddressOfInfo{
-            Token symbol;
+            Exp_Expr *of;
+
             int64_t offset;
         }addressOf;
 
+        struct Leaf{
+            Token val;
+        }leaf;
+
         struct Deref{
             Exp_Expr *base;
-            Exp_Expr *offset;
+            // offset used for structs, for indexing use offset
+            int64_t offset;
             size_t size;
         }deref;
+
+        struct IndexInfo{
+            Exp_Expr *base;
+            Exp_Expr *index;
+            size_t size;
+        }index;
 
         // binary: left op right
         struct BinaryExpr{        
@@ -110,7 +125,7 @@ struct Exp_Expr{
         
         // leaf 
         struct Immediate{
-            Token leaf;
+            Token val;
         }immediate;
 
         // unary: unaryOp unarySubexpr

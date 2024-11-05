@@ -337,27 +337,34 @@ void CodeGenerator::generateExpandedExpr(Exp_Expr *current, StatementBlock *scop
         RV64_Register destReg = regAlloc.resolveRegister(dest);
         const char *destName = RV64_RegisterName[destReg];
         
-        buffer << "    li " << destName << ", " << current->immediate.leaf.string << "\n";
+        buffer << "    li " << destName << ", " << current->immediate.val.string << "\n";
         break;
     }
 
     case Exp_Expr::EXPR_ADDRESSOF:{
-        auto getAddressScope = [&](Splice symbol) -> ScopeInfo*{
-            ScopeInfo *current = storageScope;
+        Exp_Expr *of = current->addressOf.of;
 
-            while (current){
-                if (current->storage.existKey(symbol)){
-                    return current;
+        if (of->tag == Exp_Expr::EXPR_LEAF){
+            auto getAddressScope = [&](Splice symbol) -> ScopeInfo*{
+                ScopeInfo *current = storageScope;
+
+                while (current){
+                    if (current->storage.existKey(symbol)){
+                        return current;
+                    }
+                    current = current->parent;
                 }
-                current = current->parent;
-            }
 
-            return 0;
-        };
+                return 0;
+            };
 
-        ScopeInfo *storage = getAddressScope(current->addressOf.symbol.string);
-        StorageInfo sInfo = storage->storage.getInfo(current->addressOf.symbol.string).info;
-        current->addressOf.offset = storage->frameBase - sInfo.memAddress;
+            ScopeInfo *storage = getAddressScope(of->leaf.val.string);
+            StorageInfo sInfo = storage->storage.getInfo(of->leaf.val.string).info;
+            current->addressOf.offset = storage->frameBase - sInfo.memAddress;
+            break;
+        }
+
+
 
         break;
     }
@@ -365,38 +372,65 @@ void CodeGenerator::generateExpandedExpr(Exp_Expr *current, StatementBlock *scop
     case Exp_Expr::EXPR_DEREF:{
         const char *destName = RV64_RegisterName[regAlloc.resolveRegister(dest)];
         
-        if (current->deref.base->tag == Exp_Expr::EXPR_ADDRESSOF && !current->deref.offset){
+        if (current->deref.base->tag == Exp_Expr::EXPR_ADDRESSOF){
             // generate for base address
             generateExpandedExpr(current->deref.base, scope, dest, storageScope);
             Exp_Expr *base = current->deref.base;
-            buffer << "    l" << sizeSuffix(current->deref.size) << " " << destName << ", " << base->addressOf.offset << "(fp)\n";
+            buffer << "    l" << sizeSuffix(current->deref.size) << " " << destName << ", " << base->addressOf.offset + current->deref.offset << "(fp)\n";
             return;
         }
+
+        generateExpandedExpr(current->deref.base, scope, dest, storageScope);    
+        buffer << "    l" << sizeSuffix(current->deref.size) << " " << destName << ", " << current->deref.offset << "(" << destName << ")\n";
+        
+        break;
+    }
     
+    case Exp_Expr::EXPR_STORE:{
+        const char *destName = RV64_RegisterName[regAlloc.resolveRegister(dest)];
+
+        generateExpandedExpr(current->store.right, scope, dest, storageScope);
+        
+        if (current->store.left->tag == Exp_Expr::EXPR_ADDRESSOF){
+            // generate for base address
+            generateExpandedExpr(current->store.left, scope, dest, storageScope);
+            Exp_Expr *base = current->store.left;
+            buffer << "    s" << sizeSuffix(current->store.size) << " " << destName << ", " << base->addressOf.offset + current->store.offset << "(fp)\n";
+            return;
+        }
+        
+        
+        Register temp = regAlloc.allocVRegister(REG_TEMPORARY);
+        const char *tempName = RV64_RegisterName[regAlloc.resolveRegister(temp)];
+
+        generateExpandedExpr(current->store.left, scope, temp, storageScope);    
+        buffer << "    s" << sizeSuffix(current->store.size) << " " << destName << ", " << current->store.offset << "(" << tempName << ")\n";
+        
+        regAlloc.freeRegister(temp);
+        break;
+    }
+    
+    case Exp_Expr::EXPR_INDEX:{
+        const char *destName = RV64_RegisterName[regAlloc.resolveRegister(dest)];
+        
         Register temp = regAlloc.allocVRegister(REG_TEMPORARY);
         const char *tempName = RV64_RegisterName[regAlloc.resolveRegister(temp)];
         
         // generate for offset
         if (current->deref.offset){
-            generateExpandedExpr(current->deref.offset, scope, temp, storageScope);
-            // offset x size
-            buffer << "    li " <<  destName << ", " << sizeOfType(current->type) << "\n";
-            buffer << "    mul " << tempName << ", " << tempName << ", " << destName << "\n";
+            generateExpandedExpr(current->index.index, scope, temp, storageScope);
+            
+            if (current->index.size > 1){
+                // offset x size
+                buffer << "    li " <<  destName << ", " << current->index.size << "\n";
+                buffer << "    mul " << tempName << ", " << tempName << ", " << destName << "\n";
+            }
         }
-        
 
-        generateExpandedExpr(current->deref.base, scope, dest, storageScope);    
-        
+        generateExpandedExpr(current->index.base, scope, dest, storageScope);
         buffer << "    add " << destName << ", " << destName << ", " << tempName << "\n";
-        buffer << "    l" << sizeSuffix(current->deref.size) << " " << destName << ", " << 0 << "(" << destName << ")\n";
-        
+
         regAlloc.freeRegister(temp);
-
-        break;
-    }
-    
-    case Exp_Expr::EXPR_STORE:{
-
         break;
     }
     
@@ -621,6 +655,18 @@ void CodeGenerator::generateNode(const Node *current, StatementBlock *scope, Sco
         StatementBlock *funcScope = scope->getParentFunction();
         // jump to function epilogue instead of ret
         buffer << "    j ."<< funcScope->funcName.string << "_ep\n";
+        regAlloc.freeRegister(a0);
+        break;
+    }
+    
+    case Node::NODE_SUBEXPR:{
+        Subexpr *s = (Subexpr *)current;
+        
+        Register temp = regAlloc.allocVRegister(REG_TEMPORARY);
+        generateSubexpr(s, scope, temp, storageScope);
+
+        regAlloc.freeRegister(temp);
+
         break;
     }
 
@@ -730,6 +776,88 @@ Exp_Expr* CodeGenerator::expandSubexpr(const Subexpr *expr, StatementBlock *scop
     
     switch (expr->subtag){
     case Subexpr::SUBEXPR_BINARY_OP :{
+        bool isAssignment = _matchv(expr->op, ASSIGNMENT_OP, ARRAY_COUNT(ASSIGNMENT_OP));
+
+        if (isAssignment){
+            Exp_Expr *left = expandSubexpr(expr->left, scope);
+            Exp_Expr *right = expandSubexpr(expr->right, scope);
+
+
+            switch (expr->op.type){
+            case TOKEN_ASSIGNMENT:{
+                break;
+            }
+            case TOKEN_PLUS_ASSIGN:{
+                Exp_Expr *add = (Exp_Expr*)arena->alloc(sizeof(Exp_Expr));
+                Exp_Expr *addLeft = (Exp_Expr*)arena->alloc(sizeof(Exp_Expr));
+                
+                add->tag = Exp_Expr::EXPR_BINARY;
+                add->binary.left = addLeft;
+                add->binary.right = right;
+                add->binary.op = Exp_Expr::BinaryOp::EXPR_IADD;
+                add->type = getResultantType(left->type, right->type, expr->op);
+                
+                *addLeft = *left;
+
+                insertTypeCast(add);
+
+                right = add;
+                break;
+            }
+            case TOKEN_MINUS_ASSIGN:{
+                break;
+            }
+            case TOKEN_MUL_ASSIGN:{
+                break;
+            }
+            case TOKEN_DIV_ASSIGN:{
+                break;
+            }
+            case TOKEN_SQUARE_OPEN:{
+                break;
+            }
+            case TOKEN_LSHIFT_ASSIGN:{
+                break;
+            }
+            case TOKEN_RSHIFT_ASSIGN:{
+                break;
+            }
+            case TOKEN_BITWISE_AND_ASSIGN:{
+                break;
+            }
+            case TOKEN_BITWISE_OR_ASSIGN:{
+                break;
+            }
+            case TOKEN_BITWISE_XOR_ASSIGN:{
+                break;
+            }
+            default:
+                break;
+            }
+            
+            d->type = left->type;
+            d->tag = Exp_Expr::EXPR_STORE;
+            
+
+            /* 
+            - Any variable will generate a deref node.
+            - For lvalue, we need an address in the left node of the store node.
+            - So, remove that node: 
+                - set the base address of the deref as the left node. 
+                - set the offset as the offset in the store node.
+            */
+            assert(left->tag == Exp_Expr::EXPR_DEREF);
+            d->store.offset = left->deref.offset;
+            
+            left = left->deref.base;
+            d->store.left = left;
+            d->store.right = right;
+            d->store.size = sizeOfType(d->type);
+
+            return d;
+        }
+
+
         Exp_Expr *left = expandSubexpr(expr->left, scope);
         Exp_Expr *right = expandSubexpr(expr->right, scope);
         
@@ -811,59 +939,7 @@ Exp_Expr* CodeGenerator::expandSubexpr(const Subexpr *expr, StatementBlock *scop
             break;
         }
         
-        case TOKEN_ASSIGNMENT:{
-            d->type = left->type;
-            d->tag  = Exp_Expr::EXPR_STORE;
-
-            break;
-        }
-        case TOKEN_PLUS_ASSIGN:{
-            Exp_Expr *add = (Exp_Expr*)arena->alloc(sizeof(Exp_Expr));
-            Exp_Expr *addLeft = (Exp_Expr*)arena->alloc(sizeof(Exp_Expr));
-            
-            add->tag = Exp_Expr::EXPR_BINARY;
-            add->binary.left = addLeft;
-            add->binary.right = right;
-            add->binary.op = Exp_Expr::BinaryOp::EXPR_IADD;
-            add->type = getResultantType(left->type, right->type, expr->op);
-            
-            *addLeft = *left;
-
-            insertTypeCast(add);
-            
-            d->type = left->type;
-            d->tag = Exp_Expr::EXPR_STORE;
-
-            right = add;
-            break;
-        }
-        case TOKEN_MINUS_ASSIGN:{
-            break;
-        }
-        case TOKEN_MUL_ASSIGN:{
-            break;
-        }
-        case TOKEN_DIV_ASSIGN:{
-            break;
-        }
-        case TOKEN_SQUARE_OPEN:{
-            break;
-        }
-        case TOKEN_LSHIFT_ASSIGN:{
-            break;
-        }
-        case TOKEN_RSHIFT_ASSIGN:{
-            break;
-        }
-        case TOKEN_BITWISE_AND_ASSIGN:{
-            break;
-        }
-        case TOKEN_BITWISE_OR_ASSIGN:{
-            break;
-        }
-        case TOKEN_BITWISE_XOR_ASSIGN:{
-            break;
-        }
+        
 
         case TOKEN_ARROW:{
             break;
@@ -893,8 +969,13 @@ Exp_Expr* CodeGenerator::expandSubexpr(const Subexpr *expr, StatementBlock *scop
             d->type = varDeclScope->symbols.getInfo(expr->leaf.string).info;
             d->tag = Exp_Expr::EXPR_DEREF;
             
+            Exp_Expr *leaf = (Exp_Expr*) arena->alloc(sizeof(Exp_Expr));
+            leaf->leaf.val = expr->leaf;
+            leaf->tag = Exp_Expr::EXPR_LEAF;
+
             Exp_Expr *address = (Exp_Expr*) arena->alloc(sizeof(Exp_Expr));
-            address->addressOf.symbol = expr->leaf;
+            address->addressOf.of = leaf;
+            address->tag = Exp_Expr::EXPR_ADDRESSOF;
 
             d->deref.base = address;
             d->deref.offset = 0;
@@ -927,13 +1008,35 @@ Exp_Expr* CodeGenerator::expandSubexpr(const Subexpr *expr, StatementBlock *scop
         }
 
         d->tag = Exp_Expr::EXPR_LOAD_IMMEDIATE;
-        d->immediate.leaf = expr->leaf;
+        d->immediate.val = expr->leaf;
         return d;
     }
 
     case Subexpr::SUBEXPR_UNARY: {
+        Exp_Expr *operand = expandSubexpr(expr->unarySubexpr, scope);
+        
+        if (_match(expr->unaryOp, TOKEN_STAR)){
+            d->tag = Exp_Expr::EXPR_DEREF;
+            d->type = *(operand->type.ptrTo);
+
+            d->deref.base = operand;
+            d->deref.offset = 0;
+            d->deref.size = sizeOfType(d->type);
+        }
+
+        else if(_match(expr->unaryOp, TOKEN_AMPERSAND)){
+            d->tag = Exp_Expr::EXPR_ADDRESSOF;
+            
+            d->type.tag = DataType::TAG_ADDRESS;
+            d->type.ptrTo = (DataType*) arena->alloc(sizeof(DataType));
+            *(d->type.ptrTo) = operand->type;
+
+            // d->addressOf.symbol
+        }
+        
+        
         d->tag = Exp_Expr::EXPR_UNARY;
-        d->unary.unarySubexpr = expandSubexpr(expr->unarySubexpr, scope); 
+        d->unary.unarySubexpr = operand; 
 
         switch (expr->unaryOp.type){
 
@@ -943,8 +1046,6 @@ Exp_Expr* CodeGenerator::expandSubexpr(const Subexpr *expr, StatementBlock *scop
             d->unary.op = Exp_Expr::UnaryOp::EXPR_INEGATE;
             break;
         case TOKEN_STAR:
-
-
             break;
         case TOKEN_LOGICAL_NOT:
             d->unary.op = Exp_Expr::UnaryOp::EXPR_LOGICAL_NOT;

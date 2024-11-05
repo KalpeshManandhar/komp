@@ -425,3 +425,4 @@ static DataType getResultantType(DataType left, DataType right, Token op){
 
     return DataTypes::Int;
 };
+
