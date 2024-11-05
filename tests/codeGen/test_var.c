@@ -1,7 +1,13 @@
 int main(){
-    int a = 0, b;
+    long int a = 0, b;
     a = 12;
     b = 12/3;
     
-    return a + b;
+    long int *ap;
+    ap = &a;
+
+    *ap = 20;
+    
+
+    return *ap + b;
 }

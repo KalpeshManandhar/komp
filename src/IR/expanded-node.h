@@ -14,6 +14,7 @@ struct Exp_Expr{
         EXPR_LEAF,
 
         EXPR_LOAD,
+        EXPR_LOAD_ADDRESS,
         EXPR_LOAD_IMMEDIATE,
         
         EXPR_STORE,
@@ -127,6 +128,11 @@ struct Exp_Expr{
         struct Immediate{
             Token val;
         }immediate;
+        
+        struct LoadAddress{
+            Exp_Expr *base;
+            int64_t offset;
+        }loadAddress;
 
         // unary: unaryOp unarySubexpr
         struct UnaryExpr{

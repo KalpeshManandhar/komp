@@ -216,6 +216,7 @@ static bool operator==(DataType a, DataType b){
 static size_t sizeOfType(DataType d){
     switch (d.tag)
     {
+    case DataType::TAG_ADDRESS:
     case DataType::TAG_PTR:
         return 8;
     case DataType::TAG_PRIMARY:

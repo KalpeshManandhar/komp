@@ -369,6 +369,19 @@ void CodeGenerator::generateExpandedExpr(Exp_Expr *current, StatementBlock *scop
         break;
     }
     
+    case Exp_Expr::EXPR_LOAD_ADDRESS:{
+        Exp_Expr *base = current->loadAddress.base;
+        const char *destName = RV64_RegisterName[regAlloc.resolveRegister(dest)];
+        
+
+        assert(base->tag == Exp_Expr::EXPR_ADDRESSOF);
+        generateExpandedExpr(base, scope, dest, storageScope);
+        
+        buffer << "    addi " << destName << ", fp, " << base->addressOf.offset + current->loadAddress.offset << "\n";
+
+        break;
+    }
+    
     case Exp_Expr::EXPR_DEREF:{
         const char *destName = RV64_RegisterName[regAlloc.resolveRegister(dest)];
         
@@ -1022,21 +1035,30 @@ Exp_Expr* CodeGenerator::expandSubexpr(const Subexpr *expr, StatementBlock *scop
             d->deref.base = operand;
             d->deref.offset = 0;
             d->deref.size = sizeOfType(d->type);
+
+            return d;
         }
 
         else if(_match(expr->unaryOp, TOKEN_AMPERSAND)){
-            d->tag = Exp_Expr::EXPR_ADDRESSOF;
+            d->tag = Exp_Expr::EXPR_LOAD_ADDRESS;
+
+
+            assert(operand->tag == Exp_Expr::EXPR_DEREF);
+            d->loadAddress.base = operand->deref.base;
+            d->loadAddress.offset = operand->deref.offset;
+
             
             d->type.tag = DataType::TAG_ADDRESS;
             d->type.ptrTo = (DataType*) arena->alloc(sizeof(DataType));
             *(d->type.ptrTo) = operand->type;
 
-            // d->addressOf.symbol
+            return d;
         }
         
         
         d->tag = Exp_Expr::EXPR_UNARY;
         d->unary.unarySubexpr = operand; 
+        d->type = operand->type;
 
         switch (expr->unaryOp.type){
 
