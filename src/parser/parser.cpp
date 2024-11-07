@@ -8,7 +8,10 @@
 
 
 
-// referenced from https://en.cppreference.com/w/c/language/operator_precedence
+/*
+    Get relative precedence of an operator.
+    Referenced from https://en.cppreference.com/w/c/language/operator_precedence
+*/
 int getPrecedence(Token opToken){
     switch (opToken.type){
     case TOKEN_PLUS_PLUS:
@@ -57,7 +60,9 @@ int getPrecedence(Token opToken){
 }
 
 
-// error recovery: skip until the next semi colon, end of scope or until EOF
+/*
+    Recover from error: skip until the next semi colon, start/end of scope or EOF.
+*/
 bool Parser::tryRecover(TokenType extraDelimiter){
     TokenType recoveryDelimiters[] = {
         TOKEN_SEMI_COLON, 
@@ -76,8 +81,10 @@ bool Parser::tryRecover(TokenType extraDelimiter){
 }
 
 
-
-// consumes expected token
+/*
+    Expect that the current token is of given type. If not, try and recover.
+    Consumes the current token if the type matches.
+*/
 bool Parser::expect(TokenType type){
     // unexpected token
     if (!match(type)) {
@@ -88,6 +95,7 @@ bool Parser::expect(TokenType type){
         logErrorMessage(peekToken(), "Expected token %s but found \"%.*s\"", TOKEN_TYPE_STRING[type], (int)currentToken.string.len, currentToken.string.data);
         errors++;
         
+        // try and recover from syntax error
         tryRecover(type);
         
         if (match(type)){
@@ -101,11 +109,12 @@ bool Parser::expect(TokenType type){
 }
 
 
-// checks if current token matches given type
+/*
+    Checks if current token matches given type.
+*/
 bool Parser::match(TokenType type){
     return currentToken.type == type;
 }
-
 
 
 bool Parser::matchv(TokenType type[], int n){
@@ -118,6 +127,9 @@ bool Parser::matchv(TokenType type[], int n){
 }
 
 
+/*
+    Checks if a given token matches given type.
+*/
 bool Parser::match(Token token, TokenType type){
     return token.type == type;
 }
@@ -132,13 +144,18 @@ bool Parser::matchv(Token token, TokenType type[], int n){
 }
 
 
-
+/*
+    Return the current token without consuming it.
+*/
 Token Parser::peekToken(){
     return currentToken;
 }
 
 
-// advance to next token. will not advance past an EOF token
+/*
+    Consume the current token and advance to next token. 
+    Will not advance past an EOF token.
+*/
 Token Parser::consumeToken(){
     Token current = currentToken;
 
@@ -149,7 +166,9 @@ Token Parser::consumeToken(){
 }
 
 
-// rewind the current token to given checkpoint
+/*
+    Rewind the parser state (current token) and tokenizer state (cursor/lineNo/charNo) to given checkpoint.
+*/
 void Parser::rewindTo(Token checkpoint){
     currentToken = checkpoint;
 
@@ -162,6 +181,9 @@ void Parser::rewindTo(Token checkpoint){
 }
 
 
+/*
+    Check if the current token can be the start of an expression.
+*/
 bool Parser::isExprStart(){
     return match(TOKEN_IDENTIFIER) || matchv(UNARY_OP_TOKENS, ARRAY_COUNT(UNARY_OP_TOKENS))
             || matchv(LITERAL_TOKEN_TYPES, ARRAY_COUNT(LITERAL_TOKEN_TYPES))
@@ -169,13 +191,17 @@ bool Parser::isExprStart(){
 }
 
 
+/*
+    Parse struct definition. 
+    Supports struct declaration and definition.
+*/
 Token Parser::parseStructDefinition(StatementBlock *scope){
     assert(expect(TOKEN_STRUCT));
 
     Struct s;
     s.defined = false;
     
-
+    // unnamed structs arent supported.
     if (match(TOKEN_IDENTIFIER)){
         s.structName = consumeToken();
     }
@@ -193,12 +219,14 @@ Token Parser::parseStructDefinition(StatementBlock *scope){
         
 
         // TODO: maybe change this to a declaration?
+        // porse the struct members
         while (matchv(DATA_TYPE_TOKENS, ARRAY_COUNT(DATA_TYPE_TOKENS))){
             Struct::MemberInfo member;
             member.type = parseDataType(scope);
+            
 
             if (member.type.tag == DataType::TAG_STRUCT){
-                // struct declarations can also occur without identifiers
+                // struct declarations can also occur without identifiers/ variable declarations
                 if (match(TOKEN_SEMI_COLON)){
                     consumeToken();
                     continue;
@@ -259,6 +287,11 @@ Token Parser::parseStructDefinition(StatementBlock *scope){
 }
 
 
+
+/*
+    Parses the pointer part of a declaration. 
+    Eg: int (* const) 
+*/
 DataType Parser::parsePointerType(StatementBlock *scope, DataType baseType){
     assert(match(TOKEN_STAR));
 
@@ -285,6 +318,10 @@ DataType Parser::parsePointerType(StatementBlock *scope, DataType baseType){
 
 
 
+/*
+    Parses the base data type without pointers. 
+    (const int) * a;
+*/
 DataType Parser::parseBaseDataType(StatementBlock *scope){
     assert(matchv(DATA_TYPE_TOKENS, ARRAY_COUNT(DATA_TYPE_TOKENS)) 
             || matchv(TYPE_MODIFIER_TOKENS, ARRAY_COUNT(TYPE_MODIFIER_TOKENS))
@@ -294,9 +331,6 @@ DataType Parser::parseBaseDataType(StatementBlock *scope){
 
     DataType d;
     d.flags = DataType::Specifiers::NONE;
-
-    
-
 
 
     
@@ -400,6 +434,10 @@ DataType Parser::parseBaseDataType(StatementBlock *scope){
 }
 
 
+/*
+    Parse a full data type.
+    Eg: (const int * const) a;
+*/
 DataType Parser::parseDataType(StatementBlock *scope){
     DataType base = parseBaseDataType(scope);
     
@@ -412,6 +450,10 @@ DataType Parser::parseDataType(StatementBlock *scope){
     return d;
 }
 
+
+/*
+    Get the token of a subexpr for error logging.
+*/
 Token Parser::getSubexprToken(Subexpr *expr) {
     switch (expr->subtag){
         case Subexpr::SUBEXPR_LEAF:
@@ -435,7 +477,9 @@ Token Parser::getSubexprToken(Subexpr *expr) {
 };
 
 
-
+/*
+    Check if a datatype can be converted to another.
+*/
 bool Parser::canBeConverted(Subexpr *from, DataType fromType, DataType toType){
     if (fromType.tag == DataType::TAG_ERROR || toType.tag == DataType::TAG_ERROR){
         return false;
@@ -507,9 +551,10 @@ bool Parser::canBeConverted(Subexpr *from, DataType fromType, DataType toType){
 
 
 
-
-// get the expected type of a subexpr while checking for errors
-// reference from https://en.cppreference.com/w/c/language/conversion
+/*
+    Get the expected type of a subexpr while checking for errors.
+    Type conversion rules referenced from https://en.cppreference.com/w/c/language/conversion
+*/
 DataType Parser::checkSubexprType(Subexpr *expr, StatementBlock *scope){
     if (!expr){
         return DataTypes::Void;
@@ -680,30 +725,6 @@ DataType Parser::checkSubexprType(Subexpr *expr, StatementBlock *scope){
         }
 
     
-
-        
-        auto getIntegerConversionRank = [&](DataType d) -> int{
-            if (d.isSet(DataType::Specifiers::LONG_LONG)){
-                return 4;
-            }
-            if (d.isSet(DataType::Specifiers::LONG)){
-                return 3;
-            }
-            if (!d.isSet(DataType::Specifiers::LONG) && !d.isSet(DataType::Specifiers::SHORT)){
-                if (match(d.type, TOKEN_INT)){
-                    return 2;
-                }
-                if (match(d.type, TOKEN_CHAR)){
-                    return 0;
-                }
-                
-            }
-            if (d.isSet(DataType::Specifiers::SHORT)){
-                return 1;
-            }
-            return -1;
-        };
-
 
         auto getResultantType = [&](DataType left, DataType right) -> DataType{
             bool didError = false;
@@ -962,8 +983,6 @@ DataType Parser::checkSubexprType(Subexpr *expr, StatementBlock *scope){
 
     case Subexpr::SUBEXPR_LEAF:{
         // check if identifier has been declared
-        
-
         if (match(expr->leaf, TOKEN_IDENTIFIER)){
             StatementBlock *varDeclScope = scope->findVarDeclaration(expr->leaf.string);
             
@@ -978,6 +997,7 @@ DataType Parser::checkSubexprType(Subexpr *expr, StatementBlock *scope){
             return type;
         }
         
+        // e;se is an immediate value
         switch (expr->leaf.type){
             case TOKEN_CHARACTER_LITERAL:
                 return DataTypes::Char;
@@ -999,11 +1019,10 @@ DataType Parser::checkSubexprType(Subexpr *expr, StatementBlock *scope){
         break;
     }
 
-
+    
     case Subexpr::SUBEXPR_FUNCTION_CALL:{
 
         FunctionCall *fooCall = expr->functionCall;
-
 
         // check if function has been declared
         if (!ir->functions.existKey(fooCall->funcName.string)){
@@ -1053,7 +1072,9 @@ DataType Parser::checkSubexprType(Subexpr *expr, StatementBlock *scope){
 
 
 
-
+/*
+    Parses a general expression.
+*/
 Subexpr* Parser::parseSubexpr(int precedence, StatementBlock *scope){
     Subexpr *left = (Subexpr*)parsePrimary(scope);
 
@@ -1090,6 +1111,7 @@ Subexpr* Parser::parseSubexpr(int precedence, StatementBlock *scope){
         s->right  = next;
         s->subtag = Subexpr::SUBEXPR_BINARY_OP;
         
+        // for array indexing []
         if (match(s->op,TOKEN_SQUARE_OPEN)){
             expect(TOKEN_SQUARE_CLOSE);
         }
@@ -1106,6 +1128,10 @@ Subexpr* Parser::parseSubexpr(int precedence, StatementBlock *scope){
 }
 
 
+
+/*
+    Parses a primary value that has higher precedence.
+*/
 Subexpr* Parser::parsePrimary(StatementBlock *scope){
     Subexpr *s = (Subexpr*) arena->alloc(sizeof(Subexpr));
     s->tag = Node::NODE_SUBEXPR;
@@ -1187,8 +1213,9 @@ Subexpr* Parser::parsePrimary(StatementBlock *scope){
 
 
 
-
-// parse variable declaration, function definition and struct definition
+/*
+    Parses variable declaration, function declaration/definition and struct declaration/definition.
+*/
 Node* Parser::parseDeclaration(StatementBlock *scope){
 
     DataType type = parseDataType(scope);
@@ -1339,8 +1366,12 @@ Node* Parser::parseDeclaration(StatementBlock *scope){
         rewindTo(identifier);
 
         // a kinda hacky solution: the first variable type has already been parsed 
+        // eg: (const int * const) a, *b;
         // which is stored in "type". So the * tokens are not matched, and the whole type is used as the base. 
         // for the next ones, the actual base type is used as the base on parsing the pointer types  
+        // for a, the * will not be matched, so base type is (const int * const)
+        // for b, the * is parsed and the actual base type is used (const int)
+        
         DataType base = type.getBaseType();
         
         do {
@@ -1397,10 +1428,14 @@ Node* Parser::parseDeclaration(StatementBlock *scope){
 }
 
 
+/*
+    Parses different types of statements allowed.
+*/
 Node* Parser::parseStatement(StatementBlock *scope){
     didError = false;
 
     Node *statement;
+    // is declaration if starts with datatype token
     if (matchv(DATA_TYPE_TOKENS, ARRAY_COUNT(DATA_TYPE_TOKENS))
         || matchv(TYPE_MODIFIER_TOKENS, ARRAY_COUNT(TYPE_MODIFIER_TOKENS))
         || matchv(TYPE_QUALIFIER_TOKENS, ARRAY_COUNT(TYPE_QUALIFIER_TOKENS))){
@@ -1424,6 +1459,7 @@ Node* Parser::parseStatement(StatementBlock *scope){
     else if (match(TOKEN_CONTINUE)){
         statement = parseContinue(scope);
     }
+    // { represents a new scope/statment block
     else if (match(TOKEN_CURLY_OPEN)){
         statement = parseStatementBlock(scope);
     }
@@ -1433,11 +1469,6 @@ Node* Parser::parseStatement(StatementBlock *scope){
     }
     else if (isExprStart()){
         statement = parseSubexpr(INT32_MAX, scope);
-
-        // if (!didError){
-        //     checkSubexprType((Subexpr *)statement, scope);
-        // }
-        
         expect(TOKEN_SEMI_COLON);
     }
     else {
@@ -1454,12 +1485,14 @@ Node* Parser::parseStatement(StatementBlock *scope){
 }
 
 
+
 ReturnNode* Parser::parseReturn(StatementBlock *scope){
     ReturnNode* r = (ReturnNode*) arena->alloc(sizeof(ReturnNode));
     r->returnToken = consumeToken();
     r->returnVal = NULL;
     r->tag = Node::NODE_RETURN;
     
+    // parse the return value
     if (!match(TOKEN_SEMI_COLON)){
         r->returnVal = parseSubexpr(INT32_MAX, scope);
     }
@@ -1502,6 +1535,8 @@ StatementBlock* Parser::parseStatementBlock(StatementBlock *scope){
     block->subtag = StatementBlock::BLOCK_UNNAMED;
     
     expect(TOKEN_CURLY_OPEN);
+
+    // parse statements
     while (!match(TOKEN_CURLY_CLOSE)){
         Node *stmt = parseStatement(block);
         if (stmt){
@@ -1562,15 +1597,16 @@ Node* Parser::parseIf(StatementBlock *scope){
 }
 
 
+
 Node* Parser::parseWhile(StatementBlock *scope){
     WhileNode *whileNode = (WhileNode*) arena->alloc(sizeof(WhileNode));
 
     whileNode->tag = Node::NODE_WHILE; 
 
     expect(TOKEN_WHILE);
+    
     // parse condition
     expect(TOKEN_PARENTHESIS_OPEN);
-
     if (isExprStart()){
         whileNode->condition = (Subexpr *)parseSubexpr(INT32_MAX, scope);
     }
@@ -1579,8 +1615,8 @@ Node* Parser::parseWhile(StatementBlock *scope){
         logErrorMessage(peekToken(), "Missing expression for while condition.");
         errors++;
     }
-
     expect(TOKEN_PARENTHESIS_CLOSE);
+
     
     whileNode->block = (StatementBlock *)parseStatementBlock(scope);
     whileNode->block->subtag = StatementBlock::BLOCK_WHILE;
@@ -1589,6 +1625,8 @@ Node* Parser::parseWhile(StatementBlock *scope){
 
     return whileNode;
 }
+
+
 
 
 Node* Parser::parseFor(StatementBlock *scope){
@@ -1600,18 +1638,20 @@ Node* Parser::parseFor(StatementBlock *scope){
     forNode->update = NULL; 
 
     expect(TOKEN_FOR);
-    // parse condition
+    // parse init expr
     expect(TOKEN_PARENTHESIS_OPEN);
     if (isExprStart()){
         forNode->init = (Subexpr *)parseSubexpr(INT32_MAX, scope);
     }
     expect(TOKEN_SEMI_COLON);
     
+    // parse condition expr
     if (isExprStart()){
         forNode->exitCondition = (Subexpr *)parseSubexpr(INT32_MAX, scope);
     }
     expect(TOKEN_SEMI_COLON);
 
+    // porse update expr
     if (isExprStart()){
         forNode->update = (Subexpr *)parseSubexpr(INT32_MAX, scope);
     }
@@ -1626,6 +1666,12 @@ Node* Parser::parseFor(StatementBlock *scope){
 }
 
 
+
+/*
+    Parse text as a proper C program.
+    Returns the constructed AST on no errors.
+    Returns NULL on error.
+*/
 AST *Parser::parseProgram(){
     while (peekToken().type != TOKEN_EOF){
         if (matchv(DATA_TYPE_TOKENS, ARRAY_COUNT(DATA_TYPE_TOKENS))){
@@ -1653,7 +1699,9 @@ AST *Parser::parseProgram(){
 }
 
 
-
+/*
+    Check overall context of the program.
+*/
 bool Parser::checkContext(Node *n, StatementBlock *scope){
     if (!n){
         return false;
@@ -1778,7 +1826,7 @@ bool Parser::checkContext(Node *n, StatementBlock *scope){
             return false;
         };
 
-        // check if return is inside function
+        // check if break is inside a for/while loop
         if (!isValidBreak()){
             logErrorMessage(b->breakToken, "No control statement to break out of.");
             errors++;
@@ -1804,7 +1852,7 @@ bool Parser::checkContext(Node *n, StatementBlock *scope){
             return false;
         };
 
-        // check if return is inside function
+        // check if continue is inside a for/while loop
         if (!isValidContinue()){
             logErrorMessage(c->breakToken, "\"continue\" can only be used inside a loop body.");
             errors++;

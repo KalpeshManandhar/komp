@@ -15,14 +15,8 @@ struct DataType{
         TAG_ARRAY,
     }tag;
 
-    enum {
-        
-    }subtag;
-
-
-    
     union{
-        // for primary typess
+        // for primary types
         Token type;
 
         // for structs

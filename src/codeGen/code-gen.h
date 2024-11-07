@@ -20,16 +20,19 @@ struct CodeGenerator{
     AST *ir;
     Arena *arena;
 
+    // expand Subexpr to lower level
+    Exp_Expr* expandSubexpr(const Subexpr *expr, StatementBlock *scope);
+    void insertTypeCast(Exp_Expr *d);
+    
+
+    // assembly generation
     void generateNode(const Node *current, StatementBlock *scope, ScopeInfo *storageScope);
     void generateFunction(Function *foo, ScopeInfo *storageScope);
     void generateSubexpr(const Subexpr *expr, StatementBlock *scope, Register destReg, ScopeInfo *storageScope);
-    Exp_Expr* expandSubexpr(const Subexpr *expr, StatementBlock *scope);
-    void generateExpandedExpr(Exp_Expr *current, StatementBlock *scope, Register dest, ScopeInfo *storageScope);
-    void insertTypeCast(Exp_Expr *d);
-    
+    void generateExpandedExpr(Exp_Expr *current, Register dest, ScopeInfo *storageScope);
     size_t allocStackSpace(StatementBlock *scope, ScopeInfo *storage);
     
-
+    // output
     void writeAssemblyToFile(const char *filename);
     void printAssembly();
 
