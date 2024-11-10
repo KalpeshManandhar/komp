@@ -7,37 +7,6 @@
 
 
 /*
-
-TODO:
-    function params into symbols table - done
-    function parsing only in global - done
-    += -= operators in assignment + assignments are binary expressions - done
-    break/continue/return - done
-    
-    arrays - indexing works, declarations remain, initialization remain
-    type checking - somewhat done
-    structs - declaration done
-    
-    character literal tokenization
-    
-
-    Specific refactors:
-        - implement an arena to reduce chances of memory leaks and easy allocs/frees - done
-        - find a better way to call the type checking function. - done
-        
-        - probably change declaration initializers to be an assignment 
-
-
-
-
-
-
-*/
-
-
-
-
-/*
 The grammar *currently* used in the parser. 
 NOTE: 
     - Literals are surrounded with double quotes "" 
@@ -201,13 +170,15 @@ struct Declaration: public Node{
 struct Struct: public Node{
     Token structName;
     bool defined;
+    size_t size;
 
     struct MemberInfo{
         DataType type;
         Token memberName;
+        size_t offset;
     };
 
-    SymbolTable<MemberInfo> members;
+    SymbolTableOrdered<MemberInfo> members;
 };
 
 
@@ -228,7 +199,7 @@ struct StatementBlock: public Node{
 
     std::vector<Node *> statements;
     SymbolTable<DataType> symbols;
-    SymbolTable<Struct> structs;
+    SymbolTableOrdered<Struct> structs;
     StatementBlock *parent;
 
 

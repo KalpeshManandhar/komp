@@ -19,17 +19,25 @@ struct CodeGenerator{
 
     AST *ir;
     Arena *arena;
+    
+    
+    // RV64 specific info
+    size_t sizeOfType(DataType d, StatementBlock* scope);
+    
+
 
     // expand Subexpr to lower level
     Exp_Expr* expandSubexpr(const Subexpr *expr, StatementBlock *scope);
     void insertTypeCast(Exp_Expr *d);
+    void calcStructMemberOffsets(StatementBlock *scope);
+
     
 
     // assembly generation
     void generateNode(const Node *current, StatementBlock *scope, ScopeInfo *storageScope);
     void generateFunction(Function *foo, ScopeInfo *storageScope);
     void generateSubexpr(const Subexpr *expr, StatementBlock *scope, Register destReg, ScopeInfo *storageScope);
-    void generateExpandedExpr(Exp_Expr *current, Register dest, ScopeInfo *storageScope);
+    void generateExpandedExpr(Exp_Expr *current, Register dest, StatementBlock *scope, ScopeInfo *storageScope);
     size_t allocStackSpace(StatementBlock *scope, ScopeInfo *storage);
     
     // output

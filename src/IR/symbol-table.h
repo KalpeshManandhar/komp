@@ -58,3 +58,43 @@ struct SymbolTable{
     }
 
 };
+
+template <typename T>
+struct SymbolTableOrdered{
+
+    struct SymbolTableEntry{
+        Splice identifier;
+        T info;
+    };
+
+    std::unordered_map<uint32_t, SymbolTableEntry> entries;
+    std::vector<Splice> order;
+
+    void add(Splice name, T info){
+        uint32_t hash = adler32((unsigned char *)name.data, name.len);
+
+        entries.insert({hash, {name, info}});
+        order.push_back(name);
+    }
+
+    bool existKey(Splice name){
+        uint32_t hash = adler32((unsigned char *)name.data, name.len);
+
+        return entries.contains(hash);
+    }
+
+    SymbolTableEntry &getInfo(Splice name){
+        uint32_t hash = adler32((unsigned char *)name.data, name.len);
+
+        return entries[hash];
+    }
+    size_t count(){
+        return entries.size();
+    }
+    void update(Splice name, T info){
+        uint32_t hash = adler32((unsigned char *)name.data, name.len);
+
+        entries[hash] = {name, info};
+    }
+
+};

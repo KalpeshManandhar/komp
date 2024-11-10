@@ -56,7 +56,7 @@ static int getDepth(const Exp_Expr *expr){
         return 1;
     }
     case Exp_Expr::EXPR_DEREF: {
-        int operand = getDepth(expr->unary.unarySubexpr);
+        int operand = getDepth(expr->deref.base);
         return operand + 1;
     }
     case Exp_Expr::EXPR_INDEX: {
@@ -112,7 +112,7 @@ size_t CodeGenerator::allocStackSpace(StatementBlock *scope, ScopeInfo *storage)
     
     // compute size
     for (auto &dt: scope->symbols.entries){
-        int size = sizeOfType(dt.second.info);
+        int size = sizeOfType(dt.second.info, scope);
         totalSize = alignUpPowerOf2(totalSize, size);
         totalSize += size;
     }
@@ -128,7 +128,7 @@ size_t CodeGenerator::allocStackSpace(StatementBlock *scope, ScopeInfo *storage)
         
         // assign memory offsets as storage info for each variable 
         for (auto &dt: scope->symbols.entries){
-            int size = sizeOfType(dt.second.info);
+            int size = sizeOfType(dt.second.info, scope);
             offset = alignUpPowerOf2(offset, size);
             offset += size;
 
@@ -150,11 +150,16 @@ size_t CodeGenerator::allocStackSpace(StatementBlock *scope, ScopeInfo *storage)
     Generate assembly for a subexpr node.
 */
 void CodeGenerator::generateSubexpr(const Subexpr *expr, StatementBlock *scope, Register dest, ScopeInfo *storageScope){
+    arena->createFrame();
+    
     // expand into a lower level IR
     Exp_Expr *expanded = expandSubexpr(expr, scope); 
     
     // generate assembly using the lower level IR
-    generateExpandedExpr(expanded, dest, storageScope);
+    generateExpandedExpr(expanded, dest, scope, storageScope);
+    
+    arena->destroyFrame();
+    
     return;
     
     // after this is no longer used 
@@ -377,7 +382,7 @@ const char* sizeSuffix(size_t size){
     dest    : The register to put the result in.    
 
 */
-void CodeGenerator::generateExpandedExpr(Exp_Expr *current, Register dest, ScopeInfo *storageScope){
+void CodeGenerator::generateExpandedExpr(Exp_Expr *current, Register dest, StatementBlock *scope, ScopeInfo *storageScope){
     switch (current->tag)
     {
     case Exp_Expr::EXPR_LOAD_IMMEDIATE:{
@@ -427,7 +432,7 @@ void CodeGenerator::generateExpandedExpr(Exp_Expr *current, Register dest, Scope
         
         assert(base->tag == Exp_Expr::EXPR_ADDRESSOF);
         // resolve variable into address
-        generateExpandedExpr(base, dest, storageScope);
+        generateExpandedExpr(base, dest, scope, storageScope);
         
         // load address + offset into a register
         buffer << "    addi " << destName << ", fp, " << base->addressOf.offset + current->loadAddress.offset << "\n";
@@ -443,7 +448,7 @@ void CodeGenerator::generateExpandedExpr(Exp_Expr *current, Register dest, Scope
         // if the given address is a direct AddressOf node, then the address can be used instead of loading it into a register first.
         if (current->deref.base->tag == Exp_Expr::EXPR_ADDRESSOF){
             // resolve the base address
-            generateExpandedExpr(current->deref.base, dest, storageScope);
+            generateExpandedExpr(current->deref.base, dest, scope, storageScope);
             Exp_Expr *base = current->deref.base;
             
             // dereference the value and load into destination register
@@ -452,7 +457,7 @@ void CodeGenerator::generateExpandedExpr(Exp_Expr *current, Register dest, Scope
         }
         
         // else load the address into the register first
-        generateExpandedExpr(current->deref.base, dest, storageScope); 
+        generateExpandedExpr(current->deref.base, dest, scope, storageScope); 
 
         // dereference value and load   
         buffer << "    l" << sizeSuffix(current->deref.size) << " " << destName << ", " << current->deref.offset << "(" << destName << ")\n";
@@ -466,12 +471,12 @@ void CodeGenerator::generateExpandedExpr(Exp_Expr *current, Register dest, Scope
         const char *destName = RV64_RegisterName[regAlloc.resolveRegister(dest)];
 
         // Load the rvalue into the destination register
-        generateExpandedExpr(current->store.right, dest, storageScope);
+        generateExpandedExpr(current->store.right, dest, scope, storageScope);
         
         // if the lvalue has a direct address, use that directly instead of loading it to a register first
         if (current->store.left->tag == Exp_Expr::EXPR_ADDRESSOF){
             // resolve the base adddress
-            generateExpandedExpr(current->store.left, dest, storageScope);
+            generateExpandedExpr(current->store.left, dest, scope, storageScope);
             Exp_Expr *base = current->store.left;
             
             // store the value at (address + offset)
@@ -483,7 +488,7 @@ void CodeGenerator::generateExpandedExpr(Exp_Expr *current, Register dest, Scope
         Register temp = regAlloc.allocVRegister(REG_TEMPORARY);
         const char *tempName = RV64_RegisterName[regAlloc.resolveRegister(temp)];
         
-        generateExpandedExpr(current->store.left, temp, storageScope);    
+        generateExpandedExpr(current->store.left, temp, scope, storageScope);    
         
         // store the value at (address + offset)
         buffer << "    s" << sizeSuffix(current->store.size) << " " << destName << ", " << current->store.offset << "(" << tempName << ")\n";
@@ -501,7 +506,7 @@ void CodeGenerator::generateExpandedExpr(Exp_Expr *current, Register dest, Scope
         const char *tempName = RV64_RegisterName[regAlloc.resolveRegister(temp)];
         
         // calculate index and load it into register
-        generateExpandedExpr(current->index.index, temp, storageScope);
+        generateExpandedExpr(current->index.index, temp, scope, storageScope);
         
         // multiply the index with the size to get correct offset 
         if (current->index.size > 1){
@@ -511,7 +516,7 @@ void CodeGenerator::generateExpandedExpr(Exp_Expr *current, Register dest, Scope
         }
 
         // load the given base address into register
-        generateExpandedExpr(current->index.base, dest, storageScope);
+        generateExpandedExpr(current->index.base, dest, scope, storageScope);
         
         if (current->index.base->tag == Exp_Expr::EXPR_ADDRESSOF){
             Exp_Expr *address = current->index.base;
@@ -538,12 +543,12 @@ void CodeGenerator::generateExpandedExpr(Exp_Expr *current, Register dest, Scope
 
         // Generate the one with the greatest depth first so that intermediate values need not be stored.
         if (leftDepth < rightDepth){
-            generateExpandedExpr(current->binary.right, temp, storageScope);
-            generateExpandedExpr(current->binary.left, dest, storageScope);
+            generateExpandedExpr(current->binary.right, temp, scope, storageScope);
+            generateExpandedExpr(current->binary.left, dest, scope, storageScope);
         }
         else{
-            generateExpandedExpr(current->binary.left, dest, storageScope);
-            generateExpandedExpr(current->binary.right, temp, storageScope);
+            generateExpandedExpr(current->binary.left, dest, scope, storageScope);
+            generateExpandedExpr(current->binary.right, temp, scope, storageScope);
         }
 
         switch (current->binary.op){
@@ -668,7 +673,7 @@ void CodeGenerator::generateExpandedExpr(Exp_Expr *current, Register dest, Scope
     case Exp_Expr::EXPR_UNARY:{
         const char *destName = RV64_RegisterName[regAlloc.resolveRegister(dest)];
 
-        generateExpandedExpr(current->unary.unarySubexpr, dest, storageScope);
+        generateExpandedExpr(current->unary.unarySubexpr, dest, scope, storageScope);
         
         switch (current->unary.op){
             case Exp_Expr::UnaryOp::EXPR_INEGATE:{
@@ -742,6 +747,9 @@ void CodeGenerator::generateNode(const Node *current, StatementBlock *scope, Sco
 
         StatementBlock *b = (StatementBlock *)current;
         
+        // fill in the struct member offsets and the struct size
+        calcStructMemberOffsets(b);
+
         ScopeInfo currentStorageScope;
         // the frame is the same
         currentStorageScope.frameBase = storageScope->frameBase;
@@ -856,11 +864,14 @@ void CodeGenerator::printAssembly(){
 void CodeGenerator::generateAssembly(AST *ir){
     this->ir = ir;
 
-    outputBuffer << "    .text\n";
-    
+    calcStructMemberOffsets(&ir->global);
+
     ScopeInfo s;
     s.frameBase = 0;
     s.parent = 0;
+
+    outputBuffer << "    .text\n";
+
 
     for (auto &pair: ir->functions.entries){
         generateFunction(&pair.second.info, &s);
@@ -905,6 +916,35 @@ void CodeGenerator::insertTypeCast(Exp_Expr *d){
 }
 
 
+/*
+    Fill in the offsets of each member of each struct within a scope.
+*/
+void CodeGenerator::calcStructMemberOffsets(StatementBlock *scope){
+    for (auto &structName: scope->structs.order){
+
+        Struct &structInfo = scope->structs.getInfo(structName).info;
+        size_t offset = 0;
+        
+        for(auto &memberName: structInfo.members.order){
+            Struct::MemberInfo &member = structInfo.members.getInfo(memberName).info;
+
+            size_t size = sizeOfType(member.type, scope);
+            offset = alignUpPowerOf2(offset, size);
+            member.offset = offset;
+            
+            offset += size;
+        }
+        
+        offset = alignUpPowerOf2(offset, 8);
+
+        structInfo.size = offset;
+    }
+}
+
+
+
+
+
 
 
 /*
@@ -915,6 +955,29 @@ Exp_Expr* CodeGenerator::expandSubexpr(const Subexpr *expr, StatementBlock *scop
     
     switch (expr->subtag){
     case Subexpr::SUBEXPR_BINARY_OP :{
+        if (_match(expr->op, TOKEN_DOT)){
+            d = expandSubexpr(expr->left, scope);
+
+            DataType structType = d->type;
+            assert(structType.tag == DataType::TAG_STRUCT);
+            assert(expr->right->subtag == Subexpr::SUBEXPR_LEAF);
+
+            StatementBlock *structDeclScope = scope->findStructDeclaration(structType.structName);
+            
+            assert(structDeclScope != NULL);
+            Struct &structInfo = structDeclScope->structs.getInfo(structType.structName.string).info;
+            
+            assert(structInfo.members.existKey(expr->right->leaf.string));
+            Struct::MemberInfo member = structInfo.members.getInfo(expr->right->leaf.string).info;
+            
+            d->type = member.type;
+            d->deref.size = sizeOfType(member.type, scope);
+            d->deref.offset += member.offset;
+            return d;
+        }
+
+
+
         bool isAssignment = _matchv(expr->op, ASSIGNMENT_OP, ARRAY_COUNT(ASSIGNMENT_OP));
         
         // assignments are converted into stores
@@ -1024,7 +1087,7 @@ Exp_Expr* CodeGenerator::expandSubexpr(const Subexpr *expr, StatementBlock *scop
             left = left->deref.base;
             d->store.left = left;
             d->store.right = right;
-            d->store.size = sizeOfType(d->type);
+            d->store.size = sizeOfType(d->type, scope);
 
             return d;
         }
@@ -1122,14 +1185,6 @@ Exp_Expr* CodeGenerator::expandSubexpr(const Subexpr *expr, StatementBlock *scop
             break;
         }
         
-        
-
-        case TOKEN_ARROW:{
-            break;
-        }
-        case TOKEN_DOT:{
-            break;
-        }
 
 
 
@@ -1181,7 +1236,7 @@ Exp_Expr* CodeGenerator::expandSubexpr(const Subexpr *expr, StatementBlock *scop
 
             d->deref.base = address;
             d->deref.offset = 0;
-            d->deref.size = sizeOfType(d->type);
+            d->deref.size = sizeOfType(d->type, scope);
         
             return d;
         }
@@ -1244,7 +1299,7 @@ Exp_Expr* CodeGenerator::expandSubexpr(const Subexpr *expr, StatementBlock *scop
 
             d->deref.base = operand;
             d->deref.offset = 0;
-            d->deref.size = sizeOfType(d->type);
+            d->deref.size = sizeOfType(d->type, scope);
 
             return d;
         }
@@ -1337,4 +1392,50 @@ Exp_Expr* CodeGenerator::expandSubexpr(const Subexpr *expr, StatementBlock *scop
 
     return d;
 
+}
+
+
+
+
+size_t CodeGenerator::sizeOfType(DataType d, StatementBlock* scope){
+    switch (d.tag)
+    {
+    case DataType::TAG_ADDRESS:
+    case DataType::TAG_PTR:
+        return 8;
+    case DataType::TAG_PRIMARY:
+        if (_match(d.type, TOKEN_CHAR))
+            return 1;
+
+        if (_match(d.type, TOKEN_INT)){
+            if (d.isSet(DataType::Specifiers::SHORT))
+                return 2;
+            if (d.isSet(DataType::Specifiers::LONG))
+                return 8;
+            if (d.isSet(DataType::Specifiers::LONG_LONG))
+                return 8;
+
+            return 4;
+        }
+
+        if (_match(d.type, TOKEN_FLOAT))
+            return 4;
+
+        // Note: long double isnt supported currently
+        if (_match(d.type, TOKEN_DOUBLE))
+            return 8;
+
+    case DataType::TAG_STRUCT:{
+
+        StatementBlock *structDeclScope = scope->findStructDeclaration(d.structName);
+        assert(structDeclScope != NULL);
+
+        return structDeclScope->structs.getInfo(d.structName.string).info.size;
+    }
+
+    default:
+        break;
+    }
+
+    return 8;
 }

@@ -207,44 +207,6 @@ static bool operator==(DataType a, DataType b){
     return true;
 }
 
-static size_t sizeOfType(DataType d){
-    switch (d.tag)
-    {
-    case DataType::TAG_ADDRESS:
-    case DataType::TAG_PTR:
-        return 8;
-    case DataType::TAG_PRIMARY:
-        if (_match(d.type, TOKEN_CHAR))
-            return 1;
-
-        if (_match(d.type, TOKEN_INT)){
-            if (d.isSet(DataType::Specifiers::SHORT))
-                return 2;
-            if (d.isSet(DataType::Specifiers::LONG))
-                return 8;
-            if (d.isSet(DataType::Specifiers::LONG_LONG))
-                return 8;
-
-            return 4;
-        }
-
-        if (_match(d.type, TOKEN_FLOAT))
-            return 4;
-
-        // Note: long double isnt supported currently
-        if (_match(d.type, TOKEN_DOUBLE))
-            return 8;
-
-    case DataType::TAG_STRUCT:
-        assert(false && "Implement this.");
-        return 8;
-
-    default:
-        break;
-    }
-
-    return 8;
-}
 
 static int getIntegerConversionRank(DataType d){
     if (d.isSet(DataType::Specifiers::LONG_LONG)){
