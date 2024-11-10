@@ -268,8 +268,8 @@ Token Parser::parseStructDefinition(StatementBlock *scope){
     }
     
     // if struct exists and is already defined
-    if (scope->structs.existKey(s.structName.string)){
-        if (s.defined){
+    if (s.defined){
+        if (scope->structs.existKey(s.structName.string)){
             if (scope->structs.getInfo(s.structName.string).info.defined){
                 logErrorMessage(s.structName, "Redefinition of struct \"%.*s\".", splicePrintf(s.structName.string));
                 errors++; 
@@ -278,11 +278,11 @@ Token Parser::parseStructDefinition(StatementBlock *scope){
                 scope->structs.update(s.structName.string, s);
             }
         }
-    }
-    else{
-        // unnamed structs aren't supported
-        if (!compare(s.structName.string, "unnamed-struct"))
-            scope->structs.add(s.structName.string, s);
+        else{
+            // unnamed structs aren't supported
+            if (!compare(s.structName.string, "unnamed-struct"))
+                scope->structs.add(s.structName.string, s);
+        }
     }
 
     return s.structName;
