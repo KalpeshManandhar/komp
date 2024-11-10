@@ -220,7 +220,9 @@ Token Parser::parseStructDefinition(StatementBlock *scope){
 
         // TODO: maybe change this to a declaration?
         // porse the struct members
-        while (matchv(DATA_TYPE_TOKENS, ARRAY_COUNT(DATA_TYPE_TOKENS))){
+        while (matchv(DATA_TYPE_TOKENS, ARRAY_COUNT(DATA_TYPE_TOKENS)) 
+            || matchv(TYPE_MODIFIER_TOKENS, ARRAY_COUNT(TYPE_MODIFIER_TOKENS))
+            || matchv(TYPE_QUALIFIER_TOKENS, ARRAY_COUNT(TYPE_QUALIFIER_TOKENS))){
             Struct::MemberInfo member;
             member.type = parseDataType(scope);
             
