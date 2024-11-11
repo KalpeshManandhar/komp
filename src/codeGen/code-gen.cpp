@@ -975,6 +975,28 @@ Exp_Expr* CodeGenerator::expandSubexpr(const Subexpr *expr, StatementBlock *scop
             d->deref.offset += member.offset;
             return d;
         }
+        
+        if (_match(expr->op, TOKEN_ARROW)){
+            d->deref.base = expandSubexpr(expr->left, scope);
+
+            DataType structType = d->deref.base->type.getBaseType();
+            assert(structType.tag == DataType::TAG_STRUCT);
+            assert(expr->right->subtag == Subexpr::SUBEXPR_LEAF);
+
+            StatementBlock *structDeclScope = scope->findStructDeclaration(structType.structName);
+            
+            assert(structDeclScope != NULL);
+            Struct &structInfo = structDeclScope->structs.getInfo(structType.structName.string).info;
+            
+            assert(structInfo.members.existKey(expr->right->leaf.string));
+            Struct::MemberInfo member = structInfo.members.getInfo(expr->right->leaf.string).info;
+            
+            d->type = member.type;
+            d->deref.size = sizeOfType(member.type, scope);
+            d->deref.offset = member.offset;
+            d->tag = Exp_Expr::EXPR_DEREF;
+            return d;
+        }
 
 
 
