@@ -12,10 +12,29 @@
     Get relative precedence of an operator.
     Referenced from https://en.cppreference.com/w/c/language/operator_precedence
 */
-int getPrecedence(Token opToken){
+int getPrecedence(Token opToken, bool isUnary = false){
+    if (isUnary){
+        switch (opToken.type)
+        {        
+        case TOKEN_PLUS_PLUS:
+        case TOKEN_MINUS_MINUS:
+            return 1;
+        case TOKEN_PLUS:
+        case TOKEN_MINUS:
+        case TOKEN_LOGICAL_NOT:
+        case TOKEN_BITWISE_NOT:
+        case TOKEN_STAR:
+        case TOKEN_AMPERSAND:
+            return 2;
+
+        default:
+            return INT32_MAX;
+        }
+    }
+    
+    
     switch (opToken.type){
-    case TOKEN_PLUS_PLUS:
-    case TOKEN_MINUS_MINUS:
+    
     case TOKEN_SQUARE_OPEN:
     case TOKEN_DOT:
     case TOKEN_ARROW:
@@ -1150,7 +1169,7 @@ Subexpr* Parser::parsePrimary(StatementBlock *scope){
     else if (matchv(UNARY_OP_TOKENS, ARRAY_COUNT(UNARY_OP_TOKENS))){
         s->unaryOp = consumeToken();
 
-        s->unarySubexpr = (Subexpr *)parsePrimary(scope);
+        s->unarySubexpr = (Subexpr *)parseSubexpr(getPrecedence(s->unaryOp, true), scope);
         s->subtag = Subexpr::SUBEXPR_UNARY;
     }
     // identifiers
