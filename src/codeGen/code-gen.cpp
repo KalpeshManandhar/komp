@@ -956,6 +956,21 @@ Exp_Expr* CodeGenerator::expandSubexpr(const Subexpr *expr, StatementBlock *scop
     switch (expr->subtag){
     case Subexpr::SUBEXPR_BINARY_OP :{
         if (_match(expr->op, TOKEN_DOT)){
+            /*
+                Struct member dereference is expanded into 
+                a.x
+
+                            DEREF
+                           /     \
+                         /        \
+                offset /           \ base
+                     /              \
+              OFFSET OF x        ADDRESS    
+               in struct           of a 
+            
+            */ 
+
+
             d = expandSubexpr(expr->left, scope);
 
             DataType structType = d->type;
@@ -977,6 +992,25 @@ Exp_Expr* CodeGenerator::expandSubexpr(const Subexpr *expr, StatementBlock *scop
         }
         
         if (_match(expr->op, TOKEN_ARROW)){
+            /*
+                Struct member dereference through pointer is expanded into 
+                a->x
+
+                            DEREF
+                           /     \
+                         /        \
+                offset /           \ base
+                     /              \
+              OFFSET OF x         DEREF    
+               in struct            |   \
+                                    |    \
+                              base  |     \ offset
+                                    |      \
+                                ADDRESS of  0
+                                    a 
+            */ 
+            
+            
             d->deref.base = expandSubexpr(expr->left, scope);
 
             DataType structType = d->deref.base->type.getBaseType();

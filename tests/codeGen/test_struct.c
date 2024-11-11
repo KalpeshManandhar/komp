@@ -28,5 +28,8 @@ int main(){
     ap->b1.bi2 = ap->ai2 + 1; // 12
     bp->bi1 = bp->bi1 + 100; // 103
 
-    return a.ai1 + a.b1.bi1 + ap->b1.bi2; // 1 + 103 + 12 = 116
+    *(&a.ai1) = 2;
+    (*bp).bi1 = 100;
+
+    return a.ai1 + a.b1.bi1 + ap->b1.bi2; // 2 + 100 + 12 = 114
 }
