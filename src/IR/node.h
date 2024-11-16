@@ -162,6 +162,7 @@ struct Declaration: public Node{
     struct DeclInfo{
         DataType type;
         Token identifier;
+        Subexpr *count;
         Subexpr *initValue;
     };
     std::vector<DeclInfo> decln;

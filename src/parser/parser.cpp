@@ -1380,8 +1380,9 @@ Node* Parser::parseDeclaration(StatementBlock *scope){
     }
     // else it is var declaration
     else{        
+        void *mem = arena->alloc(sizeof(Declaration));
+        Declaration *d =  new (mem) Declaration;
 
-        Declaration *d =  (Declaration*) arena->alloc(sizeof(Declaration));
         d->tag = Node::NODE_DECLARATION;
         
         rewindTo(identifier);
@@ -1407,7 +1408,46 @@ Node* Parser::parseDeclaration(StatementBlock *scope){
             Declaration::DeclInfo var;
             var.identifier = consumeToken();
             var.initValue = 0;
+
+            var.count = (Subexpr *)arena->alloc(sizeof(Subexpr));
+            var.count->tag = Node::NODE_SUBEXPR;
+            var.count->subtag = Subexpr::SUBEXPR_LEAF;
+            var.count->leaf = Token{.type = TOKEN_NUMERIC_DEC, .string = {.data = "1", .len = 1}};
+            
             var.type = type;
+
+            while (match(TOKEN_SQUARE_OPEN)){
+                consumeToken();
+                
+                if (match(TOKEN_SQUARE_CLOSE)){
+                    logErrorMessage(peekToken(), "Incomplete type: Missing array size.");
+                    errors++;
+                }
+                else{
+                    Subexpr * count = parseSubexpr(INT32_MAX, scope);
+                    
+                    // create a multiply node to get the actual count of the array
+                    Subexpr *mul = (Subexpr *)arena->alloc(sizeof(Subexpr));
+                    mul->tag = Node::NODE_SUBEXPR;
+                    mul->subtag = Subexpr::SUBEXPR_BINARY_OP;
+                    mul->op = Token{.type = TOKEN_STAR};
+                    mul->left = var.count;
+                    mul->right = count;
+                    
+                    var.count = mul;
+                }
+
+                // add pointer to type
+                DataType array = {};
+                array.tag = DataType::TAG_PTR;
+                array.ptrTo = (DataType *)arena->alloc(sizeof(DataType));
+                (*array.ptrTo) = var.type;
+                array.flags |= DataType::Specifiers::CONST;
+
+                var.type = array;
+
+                expect(TOKEN_SQUARE_CLOSE);
+            }
             
             // if there is an initializer value
             if (match(TOKEN_ASSIGNMENT)){
@@ -1880,6 +1920,25 @@ bool Parser::checkContext(Node *n, StatementBlock *scope){
             return false;
         }
 
+        break;
+    }
+
+    case Node::NODE_DECLARATION:{
+        Declaration *d = (Declaration*)n;
+        
+        for (auto &decln: d->decln){
+
+            checkSubexprType(decln.initValue, scope);
+            
+            DataType type = checkSubexprType(decln.count, scope);
+            
+            if (!(type == DataTypes::Int)){
+                logErrorMessage(getSubexprToken(decln.count), "An array must have an integer count.");
+                errors++;
+                continue;
+            }
+
+        }
         break;
     }
 
