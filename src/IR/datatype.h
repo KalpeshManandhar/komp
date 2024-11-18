@@ -1,5 +1,6 @@
 #include <tokenizer/token.h>
 #include <assert.h>
+#include <stdlib.h>
 
 
 struct DataType{
@@ -22,8 +23,13 @@ struct DataType{
         // for structs
         Token structName;
 
-        // for pointer types
-        DataType *ptrTo;  
+
+        struct{
+            // for pointer types
+            DataType *ptrTo;  
+            // element count for arrays
+            size_t arrayCount;
+        };
     };
     
     enum Specifiers{
@@ -56,7 +62,7 @@ struct DataType{
 
         int level = 0;
         DataType *current = this;
-        while (current->tag == TAG_PTR){
+        while (current->tag == TAG_PTR || current->tag == TAG_ARRAY){
             current = current->ptrTo;
             level++;
         }
@@ -65,6 +71,10 @@ struct DataType{
 
     DataType getBaseType(){
         if (tag == TAG_ADDRESS){
+            return *ptrTo;
+        }
+        
+        if (tag == TAG_ARRAY){
             return *ptrTo;
         }
 
@@ -105,6 +115,14 @@ static void _recursePrintf(DataType d, char *scratchpad, int *sp){
     switch (d.tag){
         case DataType::TAG_ADDRESS :{
             scratchpad[(*sp)++] = '&';
+            _recursePrintf(*(d.ptrTo), scratchpad, sp);
+            break;
+        }
+        case DataType::TAG_ARRAY :{
+            append("[");
+            int n = sprintf(&scratchpad[*sp], "%llu", d.arrayCount);
+            (*sp) += n;
+            append("]");
             _recursePrintf(*(d.ptrTo), scratchpad, sp);
             break;
         }

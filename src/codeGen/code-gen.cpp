@@ -1033,6 +1033,42 @@ Exp_Expr* CodeGenerator::expandSubexpr(const Subexpr *expr, StatementBlock *scop
         }
 
 
+        if (_match(expr->op, TOKEN_SQUARE_OPEN)){
+            Exp_Expr *left = expandSubexpr(expr->left, scope);
+            Exp_Expr *right = expandSubexpr(expr->right, scope);
+            
+            assert(left->type.tag == DataType::TAG_PTR || 
+                    left->type.tag == DataType::TAG_ARRAY ||
+                    left->type.tag == DataType::TAG_ADDRESS);
+        
+            // if an array, then the address is implicit, so there is no need to deref the array 
+            // a[i] 
+            d->tag = Exp_Expr::EXPR_DEREF;
+            d->type = *(left->type.ptrTo);
+
+            int64_t derefOffset = 0;
+            if (left->type.tag == DataType::TAG_ARRAY){
+                // remove the deref but save the offset
+                assert(left->tag == Exp_Expr::EXPR_DEREF);
+                derefOffset = left->deref.offset;
+                left = left->deref.base;
+            }
+
+
+            Exp_Expr *index = (Exp_Expr *)arena->alloc(sizeof(Exp_Expr));
+            index->tag = Exp_Expr::EXPR_INDEX;
+            index->index.index = right;
+            index->type = DataType{.tag = DataType::TAG_ADDRESS};
+            index->index.base = left;
+
+            d->deref.base = index;
+            d->deref.offset = derefOffset;
+            d->deref.size = sizeOfType(d->type, scope);
+
+            return d;
+        }
+
+
 
         bool isAssignment = _matchv(expr->op, ASSIGNMENT_OP, ARRAY_COUNT(ASSIGNMENT_OP));
         
@@ -1452,13 +1488,17 @@ Exp_Expr* CodeGenerator::expandSubexpr(const Subexpr *expr, StatementBlock *scop
 
 
 
-
+/*
+    RV64 specific sizes of types.
+*/
 size_t CodeGenerator::sizeOfType(DataType d, StatementBlock* scope){
     switch (d.tag)
     {
     case DataType::TAG_ADDRESS:
     case DataType::TAG_PTR:
         return 8;
+    case DataType::TAG_ARRAY:
+        return d.arrayCount * sizeOfType(*(d.ptrTo), scope);
     case DataType::TAG_PRIMARY:
         if (_match(d.type, TOKEN_CHAR))
             return 1;

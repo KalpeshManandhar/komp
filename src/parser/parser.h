@@ -34,10 +34,11 @@ struct Parser{
     bool isValidLvalue(Subexpr *expr);
     bool isExprStart();
     
-    // type checking
+    // type/context checking
     bool canBeConverted(Subexpr *from, DataType fromType, DataType toType);
     DataType checkSubexprType(Subexpr *operation, StatementBlock *scope);
     bool checkContext(Node *n, StatementBlock *scope);
+    bool canResolveToConstant(Subexpr *s, StatementBlock *scope);
 
     // parsing
     Node* parseDeclaration(StatementBlock *scope);

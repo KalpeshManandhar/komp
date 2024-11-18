@@ -1230,6 +1230,62 @@ Subexpr* Parser::parsePrimary(StatementBlock *scope){
 }
 
 
+bool Parser::canResolveToConstant(Subexpr *s, StatementBlock *scope){
+    if (!s){
+        return false;
+    }
+    
+    switch (s->subtag){
+    case Subexpr::SUBEXPR_LEAF:{
+        TokenType VALID_LITERALS[] = {
+            TOKEN_NUMERIC_BIN,
+            TOKEN_NUMERIC_DEC,
+            TOKEN_NUMERIC_OCT,
+            TOKEN_NUMERIC_HEX,
+            TOKEN_NUMERIC_FLOAT,
+            TOKEN_NUMERIC_DOUBLE,
+            TOKEN_CHAR,
+        };
+
+        return matchv(s->leaf, VALID_LITERALS, ARRAY_COUNT(VALID_LITERALS));
+    }
+    case Subexpr::SUBEXPR_BINARY_OP:{
+        if (matchv(s->op, ASSIGNMENT_OP, ARRAY_COUNT(ASSIGNMENT_OP))){
+            return false;
+        }
+
+        return canResolveToConstant(s->left, scope) &&  canResolveToConstant(s->right, scope);
+    }
+    case Subexpr::SUBEXPR_UNARY:{
+        TokenType INVALID_OP[] = {
+            TOKEN_AMPERSAND,
+            TOKEN_STAR,
+            TOKEN_PLUS_PLUS,
+            TOKEN_MINUS_MINUS,
+        };
+        
+        if (matchv(s->unaryOp, INVALID_OP, ARRAY_COUNT(INVALID_OP))){
+            return false;
+        }
+
+        return canResolveToConstant(s->unarySubexpr, scope);
+    }
+
+    case Subexpr::SUBEXPR_RECURSE_PARENTHESIS:{
+        return canResolveToConstant(s->inside, scope);
+    }
+    default:
+        break;
+    }
+
+    return false;
+
+    
+}
+
+
+
+
 
 
 
@@ -1409,15 +1465,16 @@ Node* Parser::parseDeclaration(StatementBlock *scope){
             var.identifier = consumeToken();
             var.initValue = 0;
 
-            var.count = (Subexpr *)arena->alloc(sizeof(Subexpr));
-            var.count->tag = Node::NODE_SUBEXPR;
-            var.count->subtag = Subexpr::SUBEXPR_LEAF;
-            var.count->leaf = Token{.type = TOKEN_NUMERIC_DEC, .string = {.data = "1", .len = 1}};
             
             var.type = type;
+            DataType *arrayChainEnd = &var.type;
+
 
             while (match(TOKEN_SQUARE_OPEN)){
                 consumeToken();
+
+                size_t elementCount = 0;
+
                 
                 if (match(TOKEN_SQUARE_CLOSE)){
                     logErrorMessage(peekToken(), "Incomplete type: Missing array size.");
@@ -1426,28 +1483,32 @@ Node* Parser::parseDeclaration(StatementBlock *scope){
                 else{
                     Subexpr * count = parseSubexpr(INT32_MAX, scope);
                     
-                    // create a multiply node to get the actual count of the array
-                    Subexpr *mul = (Subexpr *)arena->alloc(sizeof(Subexpr));
-                    mul->tag = Node::NODE_SUBEXPR;
-                    mul->subtag = Subexpr::SUBEXPR_BINARY_OP;
-                    mul->op = Token{.type = TOKEN_STAR};
-                    mul->left = var.count;
-                    mul->right = count;
-                    
-                    var.count = mul;
+
+                    // TODO: implement this to evaluate constant operations at compile time
+                    assert(count->subtag == Subexpr::SUBEXPR_LEAF);
+
+                    DataType d = checkSubexprType(count, scope);
+                    assert(match(d.type, TOKEN_INT));
+
+                    elementCount = strtoll(count->leaf.string.data, 0, 10);
                 }
+                
 
-                // add pointer to type
+                // add array to type
                 DataType array = {};
-                array.tag = DataType::TAG_PTR;
+                array.tag = DataType::TAG_ARRAY;
                 array.ptrTo = (DataType *)arena->alloc(sizeof(DataType));
-                (*array.ptrTo) = var.type;
+                array.arrayCount = elementCount;
                 array.flags |= DataType::Specifiers::CONST;
-
-                var.type = array;
+                
+                (*arrayChainEnd) = array;
+                arrayChainEnd = arrayChainEnd->ptrTo;
 
                 expect(TOKEN_SQUARE_CLOSE);
             }
+
+            (*arrayChainEnd) = type;
+
             
             // if there is an initializer value
             if (match(TOKEN_ASSIGNMENT)){
@@ -1930,13 +1991,13 @@ bool Parser::checkContext(Node *n, StatementBlock *scope){
 
             checkSubexprType(decln.initValue, scope);
             
-            DataType type = checkSubexprType(decln.count, scope);
+            // DataType type = checkSubexprType(decln.count, scope);
             
-            if (!(type == DataTypes::Int)){
-                logErrorMessage(getSubexprToken(decln.count), "An array must have an integer count.");
-                errors++;
-                continue;
-            }
+            // if (!(type == DataTypes::Int)){
+            //     logErrorMessage(getSubexprToken(decln.count), "An array must have an integer count.");
+            //     errors++;
+            //     continue;
+            // }
 
         }
         break;
