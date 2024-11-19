@@ -209,6 +209,57 @@ bool Parser::isExprStart(){
             || match(TOKEN_PARENTHESIS_OPEN);
 }
 
+/*
+    Parses the array info for a variable declaration
+*/
+DataType Parser::parseArrayType(StatementBlock *scope, DataType memberType){
+    DataType varType = memberType;
+    DataType *arrayChainEnd = &varType;
+
+
+    while (match(TOKEN_SQUARE_OPEN)){
+        consumeToken();
+
+        size_t elementCount = 0;
+
+        
+        if (match(TOKEN_SQUARE_CLOSE)){
+            logErrorMessage(peekToken(), "Incomplete type: Missing array size.");
+            errors++;
+        }
+        else{
+            Subexpr * count = parseSubexpr(INT32_MAX, scope);
+            
+
+            // TODO: implement this to evaluate constant operations at compile time
+            assert(count->subtag == Subexpr::SUBEXPR_LEAF);
+
+            DataType d = checkSubexprType(count, scope);
+            assert(match(d.type, TOKEN_INT));
+
+            elementCount = strtoll(count->leaf.string.data, 0, 10);
+        }
+        
+
+        // add array to type
+        DataType array = {};
+        array.tag = DataType::TAG_ARRAY;
+        array.ptrTo = (DataType *)arena->alloc(sizeof(DataType));
+        array.arrayCount = elementCount;
+        array.flags |= DataType::Specifiers::CONST;
+        
+        (*arrayChainEnd) = array;
+        arrayChainEnd = arrayChainEnd->ptrTo;
+
+        expect(TOKEN_SQUARE_CLOSE);
+    }
+
+    (*arrayChainEnd) = memberType;
+
+    return varType;
+}
+
+
 
 /*
     Parse struct definition. 
@@ -243,10 +294,10 @@ Token Parser::parseStructDefinition(StatementBlock *scope){
             || matchv(TYPE_MODIFIER_TOKENS, ARRAY_COUNT(TYPE_MODIFIER_TOKENS))
             || matchv(TYPE_QUALIFIER_TOKENS, ARRAY_COUNT(TYPE_QUALIFIER_TOKENS))){
             Struct::MemberInfo member;
-            member.type = parseDataType(scope);
+            DataType base = parseBaseDataType(scope);
             
 
-            if (member.type.tag == DataType::TAG_STRUCT){
+            if (base.tag == DataType::TAG_STRUCT){
                 // struct declarations can also occur without identifiers/ variable declarations
                 if (match(TOKEN_SEMI_COLON)){
                     consumeToken();
@@ -254,7 +305,7 @@ Token Parser::parseStructDefinition(StatementBlock *scope){
                 }
                 
                 // if the struct type is incomplete
-                if (member.type.indirectionLevel() == 0 && !scope->findStructDeclaration(member.type.structName)){
+                if (base.indirectionLevel() == 0 && !scope->findStructDeclaration(base.structName)){
                     logErrorMessage(member.type.structName, "Struct \"%.*s\" incomplete.", splicePrintf(member.type.structName.string));
                     errors++;
                 }
@@ -262,14 +313,21 @@ Token Parser::parseStructDefinition(StatementBlock *scope){
 
 
             do{
+                // parse pointer info
+                DataType withPtr = parsePointerType(scope, base);
                 if (match(TOKEN_IDENTIFIER)){
                     member.memberName = consumeToken();
+                    // parse array info
+                    DataType withArray = parseArrayType(scope, withPtr);
+                    member.type = withArray;
                     s.members.add(member.memberName.string, member);   
+                    
                 }
                 else{
                     logErrorMessage(peekToken(), "Expected an identifier for member name.");
                     errors++;
                 }
+                
                 
                 if (!match(TOKEN_COMMA)){
                     break;
@@ -314,24 +372,24 @@ Token Parser::parseStructDefinition(StatementBlock *scope){
     Eg: int (* const) 
 */
 DataType Parser::parsePointerType(StatementBlock *scope, DataType baseType){
-    assert(match(TOKEN_STAR));
-
-    consumeToken();
-    DataType ptr;
-    ptr.tag = DataType::TAG_PTR;
-    ptr.flags = DataType::Specifiers::NONE;
-    ptr.ptrTo = (DataType *)arena->alloc(sizeof(DataType));
-    *(ptr.ptrTo) = baseType;
+    DataType ptr = baseType;
+    if (match(TOKEN_STAR)){
+        consumeToken();
+        ptr.tag = DataType::TAG_PTR;
+        ptr.flags = DataType::Specifiers::NONE;
+        ptr.ptrTo = (DataType *)arena->alloc(sizeof(DataType));
+        *(ptr.ptrTo) = baseType;
     
 
-    while (matchv(TYPE_QUALIFIER_TOKENS, ARRAY_COUNT(TYPE_QUALIFIER_TOKENS))){
-        if (match(TOKEN_CONST)){
-            ptr.flags |= DataType::Specifiers::CONST;
+        while (matchv(TYPE_QUALIFIER_TOKENS, ARRAY_COUNT(TYPE_QUALIFIER_TOKENS))){
+            if (match(TOKEN_CONST)){
+                ptr.flags |= DataType::Specifiers::CONST;
+            }
+            else if (match(TOKEN_VOLATILE)){
+                ptr.flags |= DataType::Specifiers::VOLATILE;
+            }
+            consumeToken();
         }
-        else if (match(TOKEN_VOLATILE)){
-            ptr.flags |= DataType::Specifiers::VOLATILE;
-        }
-        consumeToken();
     }
 
     return ptr;
@@ -456,7 +514,7 @@ DataType Parser::parseBaseDataType(StatementBlock *scope){
 
 
 /*
-    Parse a full data type.
+    Parse a full data type, without array.
     Eg: (const int * const) a;
 */
 DataType Parser::parseDataType(StatementBlock *scope){
@@ -1104,7 +1162,7 @@ Subexpr* Parser::parseSubexpr(int precedence, StatementBlock *scope){
     // while next token is an operator and its precedence is higher (value is lower) than current one, add to the tree 
     while (matchv(BINARY_OP_TOKENS, ARRAY_COUNT(BINARY_OP_TOKENS))){
         bool isRtoLAssociative = matchv(ASSIGNMENT_OP, ARRAY_COUNT(ASSIGNMENT_OP));
-        isRtoLAssociative = isRtoLAssociative || match(TOKEN_SQUARE_OPEN);
+        // isRtoLAssociative = isRtoLAssociative || match(TOKEN_SQUARE_OPEN);
         
         
         // for left to right associativity, break out when next op has a lower or equal precedence than current one
@@ -1127,15 +1185,18 @@ Subexpr* Parser::parseSubexpr(int precedence, StatementBlock *scope){
         s->op = consumeToken();
         
 
-        Subexpr *next = (Subexpr*)parseSubexpr(getPrecedence(s->op), scope);
-
-        s->right  = next;
-        s->subtag = Subexpr::SUBEXPR_BINARY_OP;
-        
+        Subexpr *next;
         // for array indexing []
         if (match(s->op,TOKEN_SQUARE_OPEN)){
+            next = (Subexpr*)parseSubexpr(INT32_MAX, scope);
             expect(TOKEN_SQUARE_CLOSE);
         }
+        else{
+            next = (Subexpr*)parseSubexpr(getPrecedence(s->op), scope);
+        }
+        
+        s->right  = next;
+        s->subtag = Subexpr::SUBEXPR_BINARY_OP;
         
         if (next->tag == Node::NODE_ERROR){
             s->tag = Node::NODE_ERROR;
@@ -1453,7 +1514,7 @@ Node* Parser::parseDeclaration(StatementBlock *scope){
         DataType base = type.getBaseType();
         
         do {
-            
+            // parse pointer info
             while (match(TOKEN_STAR)){
                 type = parsePointerType(scope, type);
             }
@@ -1465,49 +1526,8 @@ Node* Parser::parseDeclaration(StatementBlock *scope){
             var.identifier = consumeToken();
             var.initValue = 0;
 
-            
-            var.type = type;
-            DataType *arrayChainEnd = &var.type;
-
-
-            while (match(TOKEN_SQUARE_OPEN)){
-                consumeToken();
-
-                size_t elementCount = 0;
-
-                
-                if (match(TOKEN_SQUARE_CLOSE)){
-                    logErrorMessage(peekToken(), "Incomplete type: Missing array size.");
-                    errors++;
-                }
-                else{
-                    Subexpr * count = parseSubexpr(INT32_MAX, scope);
-                    
-
-                    // TODO: implement this to evaluate constant operations at compile time
-                    assert(count->subtag == Subexpr::SUBEXPR_LEAF);
-
-                    DataType d = checkSubexprType(count, scope);
-                    assert(match(d.type, TOKEN_INT));
-
-                    elementCount = strtoll(count->leaf.string.data, 0, 10);
-                }
-                
-
-                // add array to type
-                DataType array = {};
-                array.tag = DataType::TAG_ARRAY;
-                array.ptrTo = (DataType *)arena->alloc(sizeof(DataType));
-                array.arrayCount = elementCount;
-                array.flags |= DataType::Specifiers::CONST;
-                
-                (*arrayChainEnd) = array;
-                arrayChainEnd = arrayChainEnd->ptrTo;
-
-                expect(TOKEN_SQUARE_CLOSE);
-            }
-
-            (*arrayChainEnd) = type;
+            // parse array info
+            var.type = parseArrayType(scope, type);
 
             
             // if there is an initializer value

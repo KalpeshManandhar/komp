@@ -48,7 +48,9 @@ struct Parser{
     Node* parseFor(StatementBlock *scope);
     DataType parseBaseDataType(StatementBlock *scope);
     DataType parsePointerType(StatementBlock *scope, DataType baseType);
+    DataType parseArrayType(StatementBlock *scope, DataType baseType);
     DataType parseDataType(StatementBlock *scope);
+
     Token parseStructDefinition(StatementBlock *scope);
     Subexpr* parsePrimary(StatementBlock *scope);
     Subexpr* parseSubexpr(int precedence, StatementBlock *scope); 
