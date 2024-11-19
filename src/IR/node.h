@@ -171,6 +171,7 @@ struct Struct: public Node{
     Token structName;
     bool defined;
     size_t size;
+    size_t alignment;
 
     struct MemberInfo{
         DataType type;
@@ -198,7 +199,7 @@ struct StatementBlock: public Node{
 
 
     std::vector<Node *> statements;
-    SymbolTable<DataType> symbols;
+    SymbolTableOrdered<DataType> symbols;
     SymbolTableOrdered<Struct> structs;
     StatementBlock *parent;
 

@@ -183,6 +183,7 @@ struct RegisterAllocator{
             }
         }
         
+        printf("Out of temporary registers.");
         return RV64_Register::REG_A0;
     }
 };

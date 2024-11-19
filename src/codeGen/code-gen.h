@@ -23,6 +23,7 @@ struct CodeGenerator{
     
     // RV64 specific info
     size_t sizeOfType(DataType d, StatementBlock* scope);
+    size_t alignmentOfType(DataType d, StatementBlock* scope);
     
 
 

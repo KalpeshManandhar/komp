@@ -111,13 +111,17 @@ size_t CodeGenerator::allocStackSpace(StatementBlock *scope, ScopeInfo *storage)
     size_t totalSize = 0;
     
     // compute size
-    for (auto &dt: scope->symbols.entries){
-        int size = sizeOfType(dt.second.info, scope);
-        totalSize = alignUpPowerOf2(totalSize, size);
+    for (auto &var: scope->symbols.order){
+        DataType dt = scope->symbols.getInfo(var).info;
+
+        size_t size = sizeOfType(dt, scope);
+        size_t alignment = alignmentOfType(dt, scope);
+
+        totalSize = alignUpPowerOf2(totalSize, alignment);
         totalSize += size;
     }
 
-    // align to 16 bytes
+    // align sp to 16 bytes
     totalSize = alignUpPowerOf2(totalSize, 16);
 
     
@@ -127,16 +131,20 @@ size_t CodeGenerator::allocStackSpace(StatementBlock *scope, ScopeInfo *storage)
         size_t offset = 0;
         
         // assign memory offsets as storage info for each variable 
-        for (auto &dt: scope->symbols.entries){
-            int size = sizeOfType(dt.second.info, scope);
-            offset = alignUpPowerOf2(offset, size);
+        for (auto &var: scope->symbols.order){
+            DataType dt = scope->symbols.getInfo(var).info;
+            
+            size_t size = sizeOfType(dt, scope);
+            size_t alignment = alignmentOfType(dt, scope);
+            
+            offset = alignUpPowerOf2(offset, alignment);
             offset += size;
 
             StorageInfo s;
             s.memAddress = mem + offset;
             s.tag = StorageInfo::STORAGE_MEMORY;
 
-            storage->storage.add(dt.second.identifier, s);
+            storage->storage.add(var, s);
 
         }    
 
@@ -428,14 +436,22 @@ void CodeGenerator::generateExpandedExpr(Exp_Expr *current, Register dest, State
     case Exp_Expr::EXPR_LOAD_ADDRESS:{
         // Loads the destination register with the given address.
         Exp_Expr *base = current->loadAddress.base;
-        const char *destName = RV64_RegisterName[regAlloc.resolveRegister(dest)];
         
-        assert(base->tag == Exp_Expr::EXPR_ADDRESSOF);
-        // resolve variable into address
+        // resolve variable into address/load address into regsister
         generateExpandedExpr(base, dest, scope, storageScope);
         
-        // load address + offset into a register
-        buffer << "    addi " << destName << ", fp, " << base->addressOf.offset + current->loadAddress.offset << "\n";
+        const char *destName = RV64_RegisterName[regAlloc.resolveRegister(dest)];
+        
+        // address is just resolved
+        if(base->tag == Exp_Expr::EXPR_ADDRESSOF){
+            // load address + offset into a register
+            buffer << "    addi " << destName << ", fp, " << base->addressOf.offset + current->loadAddress.offset << "\n";
+        }
+        // address is loaded into register
+        else{
+            // load address + offset into a register
+            buffer << "    addi " << destName << ", " << destName << ", " << current->loadAddress.offset << "\n";
+        }
 
         break;
     }
@@ -443,21 +459,20 @@ void CodeGenerator::generateExpandedExpr(Exp_Expr *current, Register dest, State
     case Exp_Expr::EXPR_DEREF:{
         // Dereference the value at given address + offset and put it into the destination register.
 
+        // load/resolve the address into the register first
+        generateExpandedExpr(current->deref.base, dest, scope, storageScope); 
+        
+        
         const char *destName = RV64_RegisterName[regAlloc.resolveRegister(dest)];
         
         // if the given address is a direct AddressOf node, then the address can be used instead of loading it into a register first.
         if (current->deref.base->tag == Exp_Expr::EXPR_ADDRESSOF){
-            // resolve the base address
-            generateExpandedExpr(current->deref.base, dest, scope, storageScope);
             Exp_Expr *base = current->deref.base;
             
             // dereference the value and load into destination register
             buffer << "    l" << sizeSuffix(current->deref.size) << " " << destName << ", " << base->addressOf.offset + current->deref.offset << "(fp)\n";
             return;
         }
-        
-        // else load the address into the register first
-        generateExpandedExpr(current->deref.base, dest, scope, storageScope); 
 
         // dereference value and load   
         buffer << "    l" << sizeSuffix(current->deref.size) << " " << destName << ", " << current->deref.offset << "(" << destName << ")\n";
@@ -467,11 +482,12 @@ void CodeGenerator::generateExpandedExpr(Exp_Expr *current, Register dest, State
     
     case Exp_Expr::EXPR_STORE:{
         // Store the given rvalue in the address of the lvalue, and also load it into the destination register.
-        
-        const char *destName = RV64_RegisterName[regAlloc.resolveRegister(dest)];
 
         // Load the rvalue into the destination register
         generateExpandedExpr(current->store.right, dest, scope, storageScope);
+        
+
+        const char *destName = RV64_RegisterName[regAlloc.resolveRegister(dest)];
         
         // if the lvalue has a direct address, use that directly instead of loading it to a register first
         if (current->store.left->tag == Exp_Expr::EXPR_ADDRESSOF){
@@ -486,10 +502,13 @@ void CodeGenerator::generateExpandedExpr(Exp_Expr *current, Register dest, State
         
         // else, load the address into a temporary register first 
         Register temp = regAlloc.allocVRegister(REG_TEMPORARY);
-        const char *tempName = RV64_RegisterName[regAlloc.resolveRegister(temp)];
         
+        // get address of lvalue
         generateExpandedExpr(current->store.left, temp, scope, storageScope);    
         
+
+        const char *tempName = RV64_RegisterName[regAlloc.resolveRegister(temp)];
+
         // store the value at (address + offset)
         buffer << "    s" << sizeSuffix(current->store.size) << " " << destName << ", " << current->store.offset << "(" << tempName << ")\n";
         
@@ -500,28 +519,40 @@ void CodeGenerator::generateExpandedExpr(Exp_Expr *current, Register dest, State
     case Exp_Expr::EXPR_INDEX:{
         // Adds a given index to a given address, to get the correct offset.
 
-        const char *destName = RV64_RegisterName[regAlloc.resolveRegister(dest)];
         
         Register temp = regAlloc.allocVRegister(REG_TEMPORARY);
-        const char *tempName = RV64_RegisterName[regAlloc.resolveRegister(temp)];
         
-        // calculate index and load it into register
-        generateExpandedExpr(current->index.index, temp, scope, storageScope);
-        
-        // multiply the index with the size to get correct offset 
-        if (current->index.size > 1){
-            // index x size
-            buffer << "    li " <<  destName << ", " << current->index.size << "\n";
-            buffer << "    mul " << tempName << ", " << tempName << ", " << destName << "\n";
-        }
-
         // load the given base address into register
         generateExpandedExpr(current->index.base, dest, scope, storageScope);
+
+
+        const char *destName = RV64_RegisterName[regAlloc.resolveRegister(dest)];
         
         if (current->index.base->tag == Exp_Expr::EXPR_ADDRESSOF){
             Exp_Expr *address = current->index.base;
             buffer << "    addi " << destName << ", fp, " << address->addressOf.offset << "\n";
         }
+
+
+        // calculate index and load it into register
+        generateExpandedExpr(current->index.index, temp, scope, storageScope);
+        
+
+        const char *tempName = RV64_RegisterName[regAlloc.resolveRegister(temp)];
+        
+        // multiply the index with the size to get correct offset 
+        if (current->index.size > 1){
+            // index x size
+            Register indexSize = regAlloc.allocVRegister(REG_TEMPORARY);
+            const char *indexName = RV64_RegisterName[regAlloc.resolveRegister(indexSize)];
+            
+            buffer << "    li " <<  indexName << ", " << current->index.size << "\n";
+            buffer << "    mul " << tempName << ", " << tempName << ", " << indexName << "\n";
+            
+            regAlloc.freeRegister(indexSize);
+            
+        }
+
         
         // add the offset to get the correct address
         buffer << "    add " << destName << ", " << destName << ", " << tempName << "\n";
@@ -533,10 +564,8 @@ void CodeGenerator::generateExpandedExpr(Exp_Expr *current, Register dest, State
     case Exp_Expr::EXPR_BINARY:{
         // Computes a binary operation and stores the result in the destination register.
 
-        const char *destName = RV64_RegisterName[regAlloc.resolveRegister(dest)];
         
         Register temp = regAlloc.allocVRegister(REG_TEMPORARY);
-        const char *tempName = RV64_RegisterName[regAlloc.resolveRegister(temp)];
         
         int leftDepth = getDepth(current->binary.left);
         int rightDepth = getDepth(current->binary.right);
@@ -551,6 +580,9 @@ void CodeGenerator::generateExpandedExpr(Exp_Expr *current, Register dest, State
             generateExpandedExpr(current->binary.right, temp, scope, storageScope);
         }
 
+        const char *destName = RV64_RegisterName[regAlloc.resolveRegister(dest)];
+        const char *tempName = RV64_RegisterName[regAlloc.resolveRegister(temp)];
+        
         switch (current->binary.op){
             case Exp_Expr::BinaryOp::EXPR_UADD:
             case Exp_Expr::BinaryOp::EXPR_IADD:{
@@ -660,9 +692,7 @@ void CodeGenerator::generateExpandedExpr(Exp_Expr *current, Register dest, State
                 break;
         }
 
-        
-
-
+        regAlloc.freeRegister(temp);
         break;
     }
     
@@ -671,9 +701,10 @@ void CodeGenerator::generateExpandedExpr(Exp_Expr *current, Register dest, State
         break;
     }
     case Exp_Expr::EXPR_UNARY:{
-        const char *destName = RV64_RegisterName[regAlloc.resolveRegister(dest)];
-
+        // load the expr into register
         generateExpandedExpr(current->unary.unarySubexpr, dest, scope, storageScope);
+
+        const char *destName = RV64_RegisterName[regAlloc.resolveRegister(dest)];
         
         switch (current->unary.op){
             case Exp_Expr::UnaryOp::EXPR_INEGATE:{
@@ -924,20 +955,25 @@ void CodeGenerator::calcStructMemberOffsets(StatementBlock *scope){
 
         Struct &structInfo = scope->structs.getInfo(structName).info;
         size_t offset = 0;
+        size_t structAlignment = 0;
         
         for(auto &memberName: structInfo.members.order){
             Struct::MemberInfo &member = structInfo.members.getInfo(memberName).info;
 
             size_t size = sizeOfType(member.type, scope);
-            offset = alignUpPowerOf2(offset, size);
+            size_t alignment = alignmentOfType(member.type, scope);
+
+            offset = alignUpPowerOf2(offset, alignment);
             member.offset = offset;
             
+            structAlignment = max(structAlignment, alignment);
             offset += size;
         }
         
-        offset = alignUpPowerOf2(offset, 8);
+        offset = alignUpPowerOf2(offset, structAlignment);
 
         structInfo.size = offset;
+        structInfo.alignment = structAlignment;
     }
 }
 
@@ -1034,6 +1070,47 @@ Exp_Expr* CodeGenerator::expandSubexpr(const Subexpr *expr, StatementBlock *scop
 
 
         if (_match(expr->op, TOKEN_SQUARE_OPEN)){
+            /*
+                Pointer indexing is expanded into 
+                a[i]
+
+                            DEREF
+                           /     \
+                         /        \
+                offset /           \ base
+                     /              \
+              OFFSET OF a         INDEX    
+             if in struct           |   \
+                                    |    \
+                              base  |     \ index
+                                    |      \
+                                  DEREF   value of   
+                                    |       i
+                                    |       
+                                    |       
+                                ADDRESS     
+                                  of a 
+            
+            
+            Arrays have implicit address on the stack so no dereferencing is required.
+            Array indexing is expanded into 
+                a[i]
+
+                            DEREF
+                           /     \
+                         /        \
+                offset /           \ base
+                     /              \
+              OFFSET OF a         INDEX    
+             if in struct           |   \
+                                    |    \
+                              base  |     \ index
+                                    |      \         
+                                ADDRESS  value of
+                                  of a      i
+            */ 
+
+
             Exp_Expr *left = expandSubexpr(expr->left, scope);
             Exp_Expr *right = expandSubexpr(expr->right, scope);
             
@@ -1041,12 +1118,13 @@ Exp_Expr* CodeGenerator::expandSubexpr(const Subexpr *expr, StatementBlock *scop
                     left->type.tag == DataType::TAG_ARRAY ||
                     left->type.tag == DataType::TAG_ADDRESS);
         
-            // if an array, then the address is implicit, so there is no need to deref the array 
-            // a[i] 
+
             d->tag = Exp_Expr::EXPR_DEREF;
             d->type = *(left->type.ptrTo);
 
             int64_t derefOffset = 0;
+
+            // if an array, then the address is implicit, so there is no need to deref the array 
             if (left->type.tag == DataType::TAG_ARRAY){
                 // remove the deref but save the offset
                 assert(left->tag == Exp_Expr::EXPR_DEREF);
@@ -1058,8 +1136,9 @@ Exp_Expr* CodeGenerator::expandSubexpr(const Subexpr *expr, StatementBlock *scop
             Exp_Expr *index = (Exp_Expr *)arena->alloc(sizeof(Exp_Expr));
             index->tag = Exp_Expr::EXPR_INDEX;
             index->index.index = right;
-            index->type = DataType{.tag = DataType::TAG_ADDRESS};
             index->index.base = left;
+            index->index.size = sizeOfType(d->type, scope);
+            index->type = DataType{.tag = DataType::TAG_ADDRESS};
 
             d->deref.base = index;
             d->deref.offset = derefOffset;
@@ -1527,6 +1606,54 @@ size_t CodeGenerator::sizeOfType(DataType d, StatementBlock* scope){
         assert(structDeclScope != NULL);
 
         return structDeclScope->structs.getInfo(d.structName.string).info.size;
+    }
+
+    default:
+        break;
+    }
+
+    return 8;
+}
+
+/*
+    RV64 specific alignment of types.
+*/
+size_t CodeGenerator::alignmentOfType(DataType d, StatementBlock* scope){
+    switch (d.tag)
+    {
+    case DataType::TAG_ADDRESS:
+    case DataType::TAG_PTR:
+        return 8;
+    case DataType::TAG_ARRAY:
+        return alignmentOfType(*(d.ptrTo), scope);
+    case DataType::TAG_PRIMARY:
+        if (_match(d.type, TOKEN_CHAR))
+            return 1;
+
+        if (_match(d.type, TOKEN_INT)){
+            if (d.isSet(DataType::Specifiers::SHORT))
+                return 2;
+            if (d.isSet(DataType::Specifiers::LONG))
+                return 8;
+            if (d.isSet(DataType::Specifiers::LONG_LONG))
+                return 8;
+
+            return 4;
+        }
+
+        if (_match(d.type, TOKEN_FLOAT))
+            return 4;
+
+        // Note: long double isnt supported currently
+        if (_match(d.type, TOKEN_DOUBLE))
+            return 8;
+
+    case DataType::TAG_STRUCT:{
+
+        StatementBlock *structDeclScope = scope->findStructDeclaration(d.structName);
+        assert(structDeclScope != NULL);
+
+        return structDeclScope->structs.getInfo(d.structName.string).info.alignment;
     }
 
     default:
