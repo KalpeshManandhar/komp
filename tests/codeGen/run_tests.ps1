@@ -1,6 +1,7 @@
 Param(
     [Parameter(Mandatory, HelpMessage = "Usage: <script> <exec>")]
-    [string]$exec_path
+    [string]$exec_path,
+    [string]$test_name
 )
 
 $test_folder = ".\tests\codeGen"
@@ -23,6 +24,11 @@ $found_values = $expected_values.Clone()
 
 
 $files = Get-ChildItem -Path $test_folder"\*" -Include "*.c" 
+if ($PSBoundParameters.ContainsKey('test_name')){
+    $files = $files | Where-Object -Property Name -eq $test_name
+}
+
+
 foreach ($file in $files){  
     Write-Host "Test: " $file.Name -ForegroundColor Cyan  
     
