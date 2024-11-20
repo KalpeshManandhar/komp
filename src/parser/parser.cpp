@@ -1188,11 +1188,11 @@ Subexpr* Parser::parseSubexpr(int precedence, StatementBlock *scope){
         Subexpr *next;
         // for array indexing []
         if (match(s->op,TOKEN_SQUARE_OPEN)){
-            next = (Subexpr*)parseSubexpr(INT32_MAX, scope);
+            next = parseSubexpr(INT32_MAX, scope);
             expect(TOKEN_SQUARE_CLOSE);
         }
         else{
-            next = (Subexpr*)parseSubexpr(getPrecedence(s->op), scope);
+            next = parseSubexpr(getPrecedence(s->op), scope);
         }
         
         s->right  = next;
@@ -1220,7 +1220,7 @@ Subexpr* Parser::parsePrimary(StatementBlock *scope){
     // (subexpr)
     if (match(TOKEN_PARENTHESIS_OPEN)){
         consumeToken();
-        s->inside = (Subexpr*)parseSubexpr(INT32_MAX, scope);
+        s->inside = parseSubexpr(INT32_MAX, scope);
         
         expect(TOKEN_PARENTHESIS_CLOSE);
 
@@ -1230,7 +1230,7 @@ Subexpr* Parser::parsePrimary(StatementBlock *scope){
     else if (matchv(UNARY_OP_TOKENS, ARRAY_COUNT(UNARY_OP_TOKENS))){
         s->unaryOp = consumeToken();
 
-        s->unarySubexpr = (Subexpr *)parseSubexpr(getPrecedence(s->unaryOp, true), scope);
+        s->unarySubexpr = parseSubexpr(getPrecedence(s->unaryOp, true), scope);
         s->subtag = Subexpr::SUBEXPR_UNARY;
     }
     // identifiers
@@ -1533,7 +1533,7 @@ Node* Parser::parseDeclaration(StatementBlock *scope){
             // if there is an initializer value
             if (match(TOKEN_ASSIGNMENT)){
                 consumeToken();
-                var.initValue = (Subexpr *)parseSubexpr(INT32_MAX, scope);
+                var.initValue = parseSubexpr(INT32_MAX, scope);
                 checkSubexprType(var.initValue, scope);
 
             }
@@ -1706,7 +1706,7 @@ Node* Parser::parseIf(StatementBlock *scope){
         expect(TOKEN_PARENTHESIS_OPEN);
         
         if (isExprStart()){
-            ifNode->condition = (Subexpr *)parseSubexpr(INT32_MAX, scope);
+            ifNode->condition = parseSubexpr(INT32_MAX, scope);
         }
         else{
             ifNode->condition = NULL;
@@ -1750,7 +1750,7 @@ Node* Parser::parseWhile(StatementBlock *scope){
     // parse condition
     expect(TOKEN_PARENTHESIS_OPEN);
     if (isExprStart()){
-        whileNode->condition = (Subexpr *)parseSubexpr(INT32_MAX, scope);
+        whileNode->condition = parseSubexpr(INT32_MAX, scope);
     }
     else{
         whileNode->condition = NULL;
@@ -1783,19 +1783,19 @@ Node* Parser::parseFor(StatementBlock *scope){
     // parse init expr
     expect(TOKEN_PARENTHESIS_OPEN);
     if (isExprStart()){
-        forNode->init = (Subexpr *)parseSubexpr(INT32_MAX, scope);
+        forNode->init = parseSubexpr(INT32_MAX, scope);
     }
     expect(TOKEN_SEMI_COLON);
     
     // parse condition expr
     if (isExprStart()){
-        forNode->exitCondition = (Subexpr *)parseSubexpr(INT32_MAX, scope);
+        forNode->exitCondition = parseSubexpr(INT32_MAX, scope);
     }
     expect(TOKEN_SEMI_COLON);
 
     // porse update expr
     if (isExprStart()){
-        forNode->update = (Subexpr *)parseSubexpr(INT32_MAX, scope);
+        forNode->update = parseSubexpr(INT32_MAX, scope);
     }
     expect(TOKEN_PARENTHESIS_CLOSE);
     
