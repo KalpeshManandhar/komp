@@ -6,6 +6,7 @@
 
 
 #include "storage.h"
+#include "label.h"
 
 
 
@@ -16,6 +17,7 @@ struct CodeGenerator{
 
     RegisterAllocator regAlloc;
     StackAllocator stackAlloc;
+    Labeller labeller;
 
     AST *ir;
     Arena *arena;

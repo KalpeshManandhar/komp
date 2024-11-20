@@ -788,7 +788,9 @@ void CodeGenerator::generateNode(const Node *current, StatementBlock *scope, Sco
 
         // allocate stack space for all variables
         size_t totalSize = allocStackSpace(b, &currentStorageScope);
-        buffer << "    addi sp, sp, -" << totalSize << "\n"; 
+        
+        if (totalSize > 0)
+            buffer << "    addi sp, sp, -" << totalSize << "\n"; 
         
         // generate statements
         for (auto &stmt : b->statements){
@@ -796,7 +798,9 @@ void CodeGenerator::generateNode(const Node *current, StatementBlock *scope, Sco
         }
 
         // deallocate stack space
-        buffer << "    addi sp, sp, " << totalSize << "\n"; 
+        if (totalSize > 0)
+            buffer << "    addi sp, sp, " << totalSize << "\n"; 
+        
         stackAlloc.deallocate(totalSize);
 
         break;
@@ -831,6 +835,62 @@ void CodeGenerator::generateNode(const Node *current, StatementBlock *scope, Sco
         regAlloc.freeRegister(temp);
 
         break;
+    }
+
+    case Node::NODE_IF_BLOCK:{
+        // Generate assembly for an if block
+        IfNode *i = (IfNode *)current;
+        
+        size_t endLabel = labeller.label();
+
+        while (i){
+            switch (i->subtag){
+                case IfNode::IF_NODE:{
+                    // For an if node with condition
+
+                    Register condition = regAlloc.allocVRegister(REG_TEMPORARY);
+                    
+                    // load results of condition
+                    generateSubexpr(i->condition, scope, condition, storageScope);
+                
+                    const char *regName = RV64_RegisterName[regAlloc.resolveRegister(condition)];
+                
+                    // if final in chain then use the endLabel as the false label
+                    size_t falseLabel = (i->nextIf)? labeller.label() : endLabel;
+                    // branch if condition is false
+                    buffer << "    beqz " << regName << ", " << ".if_L"<< falseLabel <<"\n";
+
+                    regAlloc.freeRegister(condition);
+                    
+                    // generate the block
+                    generateNode(i->block, scope, storageScope);
+                    
+                    // only jump if there is something between the label and code block
+                    if (i->nextIf){
+                        buffer << "    j " << ".if_L"<< endLabel<<"\n";
+                    }
+                    
+                    // the label for if the condition is false
+                    buffer << ".if_L" << falseLabel << ":\n";
+                    
+                    i = i->nextIf;
+                
+                    break;
+                }    
+                case IfNode::ELSE_NODE:{
+                    generateNode(i->block, scope, storageScope);
+                    
+                    buffer << ".if_L" << endLabel << ":\n";
+
+                    i = i->nextIf;
+                }
+                default:
+                    break;
+            }
+        }
+
+        break;
+
     }
 
     default:

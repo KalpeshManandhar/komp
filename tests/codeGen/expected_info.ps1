@@ -3,5 +3,6 @@ $expected_values = @{
     "test_expr.c" = 1;
     "test_var.c" = 24;
     "test_struct.c" = 114;
-    "test_array.c" = 27;
+    "test_array.c" = 76;
+    "test_if.c" = 12;
 } 
