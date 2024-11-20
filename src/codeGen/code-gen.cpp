@@ -893,6 +893,83 @@ void CodeGenerator::generateNode(const Node *current, StatementBlock *scope, Sco
 
     }
 
+
+    case Node::NODE_WHILE:{
+        WhileNode *w = (WhileNode *)current;
+        
+        Register condition = regAlloc.allocVRegister(REG_TEMPORARY);
+
+        size_t startLabel = labeller.label();
+        size_t falseLabel = labeller.label();
+        
+        // start of while loop 
+        buffer << ".while_L" << startLabel << ":\n";
+        
+        // check condition
+        generateSubexpr(w->condition, scope, condition, storageScope);
+
+        const char *regName = RV64_RegisterName[regAlloc.resolveRegister(condition)];
+                
+        // break out if condition is false
+        buffer << "    beqz " << regName << ", " << ".while_L"<< falseLabel <<"\n";
+
+        regAlloc.freeRegister(condition);
+        
+        // generate the block
+        generateNode(w->block, scope, storageScope);
+        
+        // jump to loop start
+        buffer << "    j " << ".while_L"<< startLabel<<"\n";
+        
+        // out of loop
+        buffer << ".while_L" << falseLabel << ":\n";
+        
+        break;
+    }
+    
+    case Node::NODE_FOR:{
+        ForNode *f = (ForNode *)current;
+        
+        Register temp = regAlloc.allocVRegister(REG_TEMPORARY);
+
+        // generate init statement
+        generateSubexpr(f->init, scope, temp, storageScope);
+
+        
+        size_t startLabel = labeller.label();
+        size_t falseLabel = labeller.label();
+        // start of for loop 
+        buffer << ".for_L" << startLabel << ":\n";
+        
+        // check condition
+        generateSubexpr(f->exitCondition, scope, temp, storageScope);
+
+                
+        const char *regName = RV64_RegisterName[regAlloc.resolveRegister(temp)];
+        // break out if condition is false
+        buffer << "    beqz " << regName << ", " << ".for_L"<< falseLabel <<"\n";
+
+        regAlloc.freeRegister(temp);
+        
+        // generate the block
+        generateNode(f->block, scope, storageScope);
+
+        
+        // update statement
+        Register temp2 = regAlloc.allocVRegister(REG_TEMPORARY);
+        generateSubexpr(f->update, scope, temp2, storageScope);
+        regAlloc.freeRegister(temp2);
+        
+        // jump to loop start
+        buffer << "    j " << ".for_L"<< startLabel<<"\n";
+        
+        // out of loop
+        buffer << ".for_L" << falseLabel << ":\n";
+        
+        break;
+    }
+
+
     default:
         break;
     }
