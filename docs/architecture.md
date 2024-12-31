@@ -15,8 +15,8 @@ Tokenizer -> Parser -> Type checker/Context Analyzer ----> IR transformations/Op
 ### Parser
 - **Input:** Tokens from the tokenizer (Lazily called whenever needed)
 - Recursive descent 
-- Supports a subset of C grammar (can be found in **./docs/grammar.md**)
-- Creates a general parse tree (nodes can be found in **./src/IR/node.h**)
+- Supports a subset of C grammar (can be found in **`./docs/grammar.md`**)
+- Creates a general parse tree (nodes can be found in **`./src/IR/node.h`**)
 - Logs messages for each error/warning found.
 - Also builds up the symbol tables used for context analysis.
     - Variable tables store datatype info in order.
@@ -57,7 +57,7 @@ Parse tree + Symbol tables -------------> LowLevelIR + Storage tables
 - Datatype representations are C-based
 - Symbol tables store info as before.
 
-#### LowLevelIR? (I dont know what to call it yet)
+#### LowLevelIR? (I dont know what to call it yet) + Symbol tables
 - Language independent 
 - Only works with the primitives given by the backend
 - The actual process of converting language specific details into a language independent implementation.
@@ -66,10 +66,12 @@ Parse tree + Symbol tables -------------> LowLevelIR + Storage tables
 - Symbol tables store this newer datatype info along with space for storage info. 
 
 ### Code Generator
-- Provides a few primitives nodes for code generation (the LowLevelIR) (can be found in **./src/IR/expanded-node.h**)
+- **Input:** The LowLevelIR
+- Provides a few primitives nodes for code generation (the LowLevelIR) (can be found in **`./src/IR/expanded-node.h`**)
 - Consumes this IR to generate RV64 assembly.
 - Basic treewalk implementation.
 - Temporary register allocation for expression generation using virtual registers.
+
 
 - Assign storage locations to each variable.
 - Allocate registers before using, and free after use.
