@@ -44,14 +44,18 @@
     
 
 
-## IR 
+## IR / Middleend
 - Convert the C datatypes to a simpler form (tag + size like u32, i64) for simple conversions.
     - The code generator will be working with these only.
 - All defined structs and other complex data types will be changed into the lower level IR. 
     - So there will be no need of the Statement block info while generating code.
 
 
+## Code generator
 
+- Fully support allocation for all registers
+- Call return primitives?
+- Proper support for function calls
 
 
 
