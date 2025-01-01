@@ -1,10 +1,11 @@
 #pragma once
 
 #include "node.h"
+#include "datatype-lower.h"
 #include <arena/arena.h>
 
 
-struct Exp_FunctionCall;
+typedef FunctionCall Exp_FunctionCall;
 
 struct Exp_Expr{
     enum ExprType{
@@ -18,6 +19,8 @@ struct Exp_Expr{
         EXPR_LOAD_IMMEDIATE,
         
         EXPR_STORE,
+
+        EXPR_CALL,
         
         EXPR_CAST,
         EXPR_BINARY,
@@ -77,6 +80,7 @@ struct Exp_Expr{
     
     // the type of the node output
     DataType type;
+    Datatype_Low _type;
     
     union{
         /*
@@ -214,7 +218,3 @@ struct Exp_Expr{
 };
 
 
-struct Exp_FunctionCall{
-    Token funcName; 
-    std::vector<Exp_Expr*> arguments; 
-};

@@ -98,10 +98,11 @@ static const char* RV64_RegisterName[RV64_Register::REG_COUNT] = {
 };
 
 enum RegisterType{
-    REG_CALLEE_SAVED = 0x1,
-    REG_CALLER_SAVED = (0x1 << 1),
-    REG_TEMPORARY = (0x1 << 2), 
-    REG_ANY =  REG_CALLEE_SAVED | REG_CALLER_SAVED | REG_TEMPORARY
+    REG_TEMPORARY = (0x1), 
+    REG_SAVED = (0x1 << 1), 
+    REG_ARGUMENTS = (0x1 << 2), 
+    REG_CALLER_SAVED = REG_TEMPORARY | REG_ARGUMENTS,
+    REG_ANY =  REG_SAVED | REG_CALLER_SAVED
 };
 
 struct Register{
@@ -115,6 +116,10 @@ struct RegisterInfo{
 };
 
 static RegisterInfo x[REG_COUNT];
+
+struct RegisterState{
+    RegisterInfo x[REG_COUNT];
+};
 
 
 struct RegisterAllocator{
@@ -185,6 +190,54 @@ struct RegisterAllocator{
         
         printf("Out of temporary registers.");
         return RV64_Register::REG_A0;
+    }
+
+    RegisterState getRegisterState(RegisterType type){
+        RegisterState state = {0};
+
+        if (type & RegisterType::REG_TEMPORARY){
+            for (int i=RV64_Register::REG_T0; i<=RV64_Register::REG_T2; i++){
+                state.x[i] = x[i];
+            }
+            for (int i=RV64_Register::REG_T3; i<=RV64_Register::REG_T6; i++){
+                state.x[i] = x[i];
+            }
+        }
+        
+        if (type & RegisterType::REG_SAVED){
+            for (int i=RV64_Register::REG_S0; i<=RV64_Register::REG_S1; i++){
+                state.x[i] = x[i];
+            }
+            for (int i=RV64_Register::REG_S2; i<=RV64_Register::REG_S11; i++){
+                state.x[i] = x[i];
+            }
+        }
+        
+        if (type & RegisterType::REG_ARGUMENTS){
+            for (int i=RV64_Register::REG_A0; i<=RV64_Register::REG_A7; i++){
+                state.x[i] = x[i];
+            }
+        }
+        
+        return state;
+    }
+
+    void save(RegisterState state){
+        for (int i=0; i<=RV64_Register::REG_COUNT; i++){
+            if (state.x[i].occupied){
+                x[i].occupied = false;
+                x[i].vRegisterMapping = 0;
+            }
+        }
+    }
+    
+    
+    void restore(RegisterState state){
+        for (int i=0; i<=RV64_Register::REG_COUNT; i++){
+            if (state.x[i].occupied)
+                x[i] = state.x[i];
+        }
+        
     }
 };
 

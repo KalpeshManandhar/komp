@@ -383,6 +383,13 @@ const char* sizeSuffix(size_t size){
 }
 
 
+void CodeGenerator::generateTypeCasts(const Exp_Expr *cast, Register destReg, StatementBlock *scope, ScopeInfo *storageScope){
+    
+}
+
+
+
+
 
 /*
     Generate assembly for the expanded IR.
@@ -418,7 +425,7 @@ void CodeGenerator::generateExpandedExpr(Exp_Expr *current, Register dest, State
                     }
                     current = current->parent;
                 }
-
+ 
                 return 0;
             };
             
@@ -697,6 +704,9 @@ void CodeGenerator::generateExpandedExpr(Exp_Expr *current, Register dest, State
     }
     
     case Exp_Expr::EXPR_CAST:{
+        
+
+
         assert(false && "Casts not implemented yet.");
         break;
     }
@@ -727,13 +737,93 @@ void CodeGenerator::generateExpandedExpr(Exp_Expr *current, Register dest, State
         break;
     }
     case Exp_Expr::EXPR_FUNCTION_CALL:{
-        assert(false && "Function calls not implemented yet.");
+        RegisterState state = regAlloc.getRegisterState(REG_CALLER_SAVED);
+        regAlloc.save(state);
+            
+        // the number of caller saved registers in use
+        int count = 0;
+        for (int i = 0; i<RV64_Register::REG_COUNT; i++){
+            count += (state.x[i].occupied)? 1 : 0;
+        }
+        
+        // save the caller saved registers used in memory
+        int n = count;
+        size_t ptrSize = sizeOfType(DataType{.tag = DataType::TAG_PTR}, scope);
+        int allocSize = count * ptrSize;
+        if (allocSize > 0){
+            buffer << "    addi sp, sp, -" << allocSize << "\n";
+
+            for (int i = 0; i<RV64_Register::REG_COUNT; i++){
+                if(state.x[i].occupied){
+                    buffer << "    s"<< sizeSuffix(ptrSize) << " " << RV64_RegisterName[i] << ", "<< (n-1)*ptrSize << "(sp) \n";
+                    n--;
+                }
+            }
+        }
+
+        
+        // arguments
+        // TODO: currently only int args are supported
+        assert(current->functionCall->arguments.size() <= (REG_A7 - REG_A0 + 1));
+        
+        int argNo = 0;
+        for (auto &arg : current->functionCall->arguments){
+            Exp_Expr *expand = expandSubexpr(arg, scope);
+            
+            size_t size = sizeOfType(expand->type, scope);
+            
+            // pass in registers
+            if (size <= ptrSize){
+                Register argRegister = regAlloc.allocRegister(RV64_Register(REG_A0 + argNo));
+                generateExpandedExpr(expand, argRegister, scope, storageScope);
+
+                regAlloc.freeRegister(argRegister);
+                argNo++;
+            }
+            // pass in stack
+            else{
+                buffer << "    addi sp, sp, " << -size << "\n";
+                
+
+
+            }
+            
+        }
+        
+
+
+
+        buffer << "    call " << current->functionCall->funcName.string << "\n";
+        
+        // move return value into destination register
+        RV64_Register destReg = regAlloc.resolveRegister(dest);
+        const char *destName = RV64_RegisterName[destReg];
+        buffer << "    mv " << destName << ", a0 \n";
+        
+        // load back register values after function call
+        n = count;
+        if (allocSize > 0){
+            for (int i = 0; i<RV64_Register::REG_COUNT; i++){
+                if(state.x[i].occupied){
+                    // only restore the registers except the destination registers since the destination register now contains the return value
+                    if (i != destReg)
+                        buffer << "    l"<< sizeSuffix(ptrSize) << " " << RV64_RegisterName[i] << ", "<< (n-1)*ptrSize << "(sp) \n";
+                    n--;
+                }
+            }
+            buffer << "    addi sp, sp, " << allocSize << "\n";
+        }
+        
+        regAlloc.restore(state);
+
         break;
     }
     default:
         break;
     }
 }
+
+
 
 
 
@@ -792,6 +882,34 @@ void CodeGenerator::generateNode(const Node *current, StatementBlock *scope, Sco
         if (totalSize > 0)
             buffer << "    addi sp, sp, -" << totalSize << "\n"; 
         
+        // move the arguments to their reserved addresses on the stack if is function body
+        if (b->subtag == StatementBlock::BLOCK_FUNCTION_BODY){
+            Function &foo = ir->functions.getInfo(b->funcName.string).info;
+            
+
+            int paramNo = 0;
+            for (auto &param: foo.parameters){
+                size_t size = sizeOfType(param.type, scope);
+                assert(size <= sizeOfType(DataType{.tag = DataType::TAG_PTR}, scope));
+                
+                Register argRegister = regAlloc.allocRegister(RV64_Register(REG_A0 + paramNo));
+                const char *regName = RV64_RegisterName[regAlloc.resolveRegister(argRegister)];
+                
+                StorageInfo sInfo = currentStorageScope.storage.getInfo(param.identifier.string).info;
+                int64_t offset = currentStorageScope.frameBase - sInfo.memAddress;
+
+                buffer << "    s" << sizeSuffix(size) << " " << regName << ", " << offset << "(fp)\n"; 
+
+                regAlloc.freeRegister(argRegister);
+                paramNo++; 
+            }
+
+
+
+        }
+
+
+
         // generate statements
         for (auto &stmt : b->statements){
             generateNode(stmt, scope, &currentStorageScope);
@@ -988,14 +1106,13 @@ void CodeGenerator::generateFunction(Function *foo, ScopeInfo *storageScope){
     buffer << "    sd ra, 8(sp)\n";     // save return address
     buffer << "    sd fp, 0(sp)\n";     // save prev frame pointer
     buffer << "    mv fp, sp\n";        // save current stack pointer 
+    
+    ScopeInfo s;
+    s.frameBase = 0;
+    s.parent = storageScope;
 
-    // Moving the parameters to registers
-    for (int i = 5; auto &param : foo->parameters)
-    {
-        buffer << "mv a" << (i--) << ", a0\n";
-    }
 
-    generateNode(foo->block, foo->block, storageScope);
+    generateNode(foo->block, foo->block, &s);
 
     // function epilogue
     buffer << "."<<foo->funcName.string << "_ep:\n";
@@ -1003,7 +1120,7 @@ void CodeGenerator::generateFunction(Function *foo, ScopeInfo *storageScope){
     buffer << "    ld fp, 0(sp)\n";    // restore previous frame pointer
     buffer << "    ld ra, 8(sp)\n";    // restore return address
     buffer << "    addi sp, sp, 16\n"; // deallocate stack space
-    buffer << "    ret\n";             // return from function
+    buffer << "    ret\n\n\n";             // return from function
 }
 
 
@@ -1684,12 +1801,12 @@ Exp_Expr* CodeGenerator::expandSubexpr(const Subexpr *expr, StatementBlock *scop
     }
     
     case Subexpr::SUBEXPR_FUNCTION_CALL:{
-        // TODO: finish this
         FunctionCall *fooCall = expr->functionCall;
         Function foo = ir->functions.getInfo(fooCall->funcName.string).info;
         
-
+        d->tag = Exp_Expr::EXPR_FUNCTION_CALL;
         d->type = foo.returnType;
+        d->functionCall = expr->functionCall;
         break;
     }
         
@@ -1798,4 +1915,72 @@ size_t CodeGenerator::alignmentOfType(DataType d, StatementBlock* scope){
     }
 
     return 8;
+}
+
+
+
+/*
+    RV-64 specific datatypes
+*/
+Datatype_Low CodeGenerator::convertToLowerLevelType(DataType d, StatementBlock *scope){
+    switch (d.tag){
+    case DataType::TAG_ADDRESS:
+    case DataType::TAG_PTR:
+    case DataType::TAG_ARRAY:
+        return DatatypeLower::_u64;
+    case DataType::TAG_PRIMARY:
+        if (d.isSet(DataType::Specifiers::UNSIGNED)){
+            if (_match(d.type, TOKEN_CHAR))
+                return DatatypeLower::_u8;
+
+            if (_match(d.type, TOKEN_INT)){
+                if (d.isSet(DataType::Specifiers::SHORT))
+                    return DatatypeLower::_u16;
+                if (d.isSet(DataType::Specifiers::LONG))
+                    return DatatypeLower::_u64;
+                if (d.isSet(DataType::Specifiers::LONG_LONG))
+                    return DatatypeLower::_u64;
+
+                return DatatypeLower::_u32;
+            }
+        }
+        
+        if (_match(d.type, TOKEN_CHAR))
+            return DatatypeLower::_i8;
+
+        if (_match(d.type, TOKEN_INT)){
+            if (d.isSet(DataType::Specifiers::SHORT))
+                return DatatypeLower::_i16;
+            if (d.isSet(DataType::Specifiers::LONG))
+                return DatatypeLower::_i64;
+            if (d.isSet(DataType::Specifiers::LONG_LONG))
+                return DatatypeLower::_i64;
+
+            return DatatypeLower::_i32;
+        }
+
+        if (_match(d.type, TOKEN_FLOAT))
+            return DatatypeLower::_f32;
+
+        // Note: long double isnt supported currently
+        if (_match(d.type, TOKEN_DOUBLE))
+            return DatatypeLower::_f64;
+
+    case DataType::TAG_STRUCT:{
+
+        StatementBlock *structDeclScope = scope->findStructDeclaration(d.structName);
+        assert(structDeclScope != NULL);
+        
+        Datatype_Low structType = DatatypeLower::_struct;
+        structType.size = structDeclScope->structs.getInfo(d.structName.string).info.size;
+        structType.alignment = structDeclScope->structs.getInfo(d.structName.string).info.alignment;
+        return structType;
+    }
+
+    default:
+        break;
+    }
+    
+    assert(false && "Some type hasnt been accounted for.");
+    return DatatypeLower::_i32;
 }

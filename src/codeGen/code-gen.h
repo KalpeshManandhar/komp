@@ -33,6 +33,7 @@ struct CodeGenerator{
     Exp_Expr* expandSubexpr(const Subexpr *expr, StatementBlock *scope);
     void insertTypeCast(Exp_Expr *d);
     void calcStructMemberOffsets(StatementBlock *scope);
+    Datatype_Low convertToLowerLevelType(DataType d, StatementBlock *scope);
 
     
 
@@ -41,6 +42,8 @@ struct CodeGenerator{
     void generateFunction(Function *foo, ScopeInfo *storageScope);
     void generateSubexpr(const Subexpr *expr, StatementBlock *scope, Register destReg, ScopeInfo *storageScope);
     void generateExpandedExpr(Exp_Expr *current, Register dest, StatementBlock *scope, ScopeInfo *storageScope);
+    void generateTypeCasts(const Exp_Expr *cast, Register destReg, StatementBlock *scope, ScopeInfo *storageScope);
+    
     size_t allocStackSpace(StatementBlock *scope, ScopeInfo *storage);
     
     // output
