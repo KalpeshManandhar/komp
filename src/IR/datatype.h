@@ -1,3 +1,5 @@
+#pragma once
+
 #include <tokenizer/token.h>
 #include <assert.h>
 #include <stdlib.h>

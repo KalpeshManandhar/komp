@@ -258,10 +258,6 @@ struct StorageInfo{
 };
 
 
-static size_t alignUpPowerOf2(size_t address, size_t align){
-    return((address + (align - 1)) & ~(align -1));
-};
-
 struct StackAllocator{
     size_t sp = 0;
     
@@ -274,6 +270,10 @@ struct StackAllocator{
     
     void deallocate(size_t size){
         sp -= size;
+    }
+
+    size_t getCurrentAddress(){
+        return sp;
     }
 };
 

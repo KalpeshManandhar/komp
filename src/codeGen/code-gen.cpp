@@ -1,14 +1,8 @@
 #include "code-gen.h"
 #include <tokenizer/token.h>
 
+#include <utils/utils.h>
 
-int max(int a, int b){
-    return (a>b)?a:b;
-}
-
-int min(int a, int b){
-    return (a<b)?a:b;
-}
 
 
 // get depth of a Subexpr node
@@ -46,54 +40,54 @@ static int getDepth(const Subexpr *expr){
 
 
 // get depth of an expanded expr node
-static int getDepth(const Exp_Expr *expr){
+static int getDepth(const MIR_Expr *expr){
     if (!expr){
         return 0;
     }
     
     switch (expr->tag){
-    case Exp_Expr::EXPR_ADDRESSOF: {
+    case MIR_Expr::EXPR_ADDRESSOF: {
         return 1;
     }
-    case Exp_Expr::EXPR_DEREF: {
-        int operand = getDepth(expr->deref.base);
+    case MIR_Expr::EXPR_LOAD: {
+        int operand = getDepth(expr->load.base);
         return operand + 1;
     }
-    case Exp_Expr::EXPR_INDEX: {
+    case MIR_Expr::EXPR_INDEX: {
         int base = getDepth(expr->index.base);
         int index = getDepth(expr->index.index);
         return max(base, index) + 1;
     }
-    case Exp_Expr::EXPR_LEAF: {
+    case MIR_Expr::EXPR_LEAF: {
         return 1;
     }
-    case Exp_Expr::EXPR_LOAD_ADDRESS: {
+    case MIR_Expr::EXPR_LOAD_ADDRESS: {
         int address = getDepth(expr->loadAddress.base);
         return address + 1;
     }
-    case Exp_Expr::EXPR_LOAD_IMMEDIATE: {
+    case MIR_Expr::EXPR_LOAD_IMMEDIATE: {
         return 1;
     }
-    case Exp_Expr::EXPR_STORE: {
+    case MIR_Expr::EXPR_STORE: {
         int lval = getDepth(expr->store.left);
         int rval = getDepth(expr->store.right);
         return max(lval, rval) + 1;
     }
-    case Exp_Expr::EXPR_CAST: {
+    case MIR_Expr::EXPR_CAST: {
         int operand = getDepth(expr->cast.expr);
         return operand + 1;
     }
-    case Exp_Expr::EXPR_BINARY: {
+    case MIR_Expr::EXPR_BINARY: {
         int left = getDepth(expr->binary.left);
         int right = getDepth(expr->binary.right);
 
         return max(left, right) + 1;
     }
-    case Exp_Expr::EXPR_UNARY: {
+    case MIR_Expr::EXPR_UNARY: {
         int operand = getDepth(expr->unary.unarySubexpr);
         return operand + 1;
     }
-    case Exp_Expr::EXPR_FUNCTION_CALL: {
+    case MIR_Expr::EXPR_FUNCTION_CALL: {
         return 1;
     }
     default:
@@ -161,7 +155,7 @@ void CodeGenerator::generateSubexpr(const Subexpr *expr, StatementBlock *scope, 
     arena->createFrame();
     
     // expand into a lower level IR
-    Exp_Expr *expanded = expandSubexpr(expr, scope); 
+    MIR_Expr *expanded = expandSubexpr(expr, scope); 
     
     // generate assembly using the lower level IR
     generateExpandedExpr(expanded, dest, scope, storageScope);
@@ -360,7 +354,7 @@ void CodeGenerator::generateSubexpr(const Subexpr *expr, StatementBlock *scope, 
 /*
     The instruction suffix for the size of load/store 
 */
-const char* sizeSuffix(size_t size){
+static const char* sizeSuffix(size_t size){
     /*
         8 bytes = "d"ouble word
         4 bytes = "w"ord
@@ -383,7 +377,7 @@ const char* sizeSuffix(size_t size){
 }
 
 
-void CodeGenerator::generateTypeCasts(const Exp_Expr *cast, Register destReg, StatementBlock *scope, ScopeInfo *storageScope){
+void CodeGenerator::generateTypeCasts(const MIR_Expr *cast, Register destReg, StatementBlock *scope, ScopeInfo *storageScope){
     
 }
 
@@ -397,10 +391,10 @@ void CodeGenerator::generateTypeCasts(const Exp_Expr *cast, Register destReg, St
     dest    : The register to put the result in.    
 
 */
-void CodeGenerator::generateExpandedExpr(Exp_Expr *current, Register dest, StatementBlock *scope, ScopeInfo *storageScope){
+void CodeGenerator::generateExpandedExpr(MIR_Expr *current, Register dest, StatementBlock *scope, ScopeInfo *storageScope){
     switch (current->tag)
     {
-    case Exp_Expr::EXPR_LOAD_IMMEDIATE:{
+    case MIR_Expr::EXPR_LOAD_IMMEDIATE:{
         // Puts the immediate value in the destination register.
         RV64_Register destReg = regAlloc.resolveRegister(dest);
         const char *destName = RV64_RegisterName[destReg];
@@ -410,11 +404,11 @@ void CodeGenerator::generateExpandedExpr(Exp_Expr *current, Register dest, State
         break;
     }
 
-    case Exp_Expr::EXPR_ADDRESSOF:{
+    case MIR_Expr::EXPR_ADDRESSOF:{
         // Resolve the address of the given variable. Doesn't use the destination register.
-        Exp_Expr *of = current->addressOf.of;
+        MIR_Expr *of = current->addressOf.of;
         
-        if (of->tag == Exp_Expr::EXPR_LEAF){
+        if (of->tag == MIR_Expr::EXPR_LEAF){
             // find the scope where the variable is found
             auto getAddressScope = [&](Splice symbol) -> ScopeInfo*{
                 ScopeInfo *current = storageScope;
@@ -440,9 +434,9 @@ void CodeGenerator::generateExpandedExpr(Exp_Expr *current, Register dest, State
         break;
     }
     
-    case Exp_Expr::EXPR_LOAD_ADDRESS:{
+    case MIR_Expr::EXPR_LOAD_ADDRESS:{
         // Loads the destination register with the given address.
-        Exp_Expr *base = current->loadAddress.base;
+        MIR_Expr *base = current->loadAddress.base;
         
         // resolve variable into address/load address into regsister
         generateExpandedExpr(base, dest, scope, storageScope);
@@ -450,7 +444,7 @@ void CodeGenerator::generateExpandedExpr(Exp_Expr *current, Register dest, State
         const char *destName = RV64_RegisterName[regAlloc.resolveRegister(dest)];
         
         // address is just resolved
-        if(base->tag == Exp_Expr::EXPR_ADDRESSOF){
+        if(base->tag == MIR_Expr::EXPR_ADDRESSOF){
             // load address + offset into a register
             buffer << "    addi " << destName << ", fp, " << base->addressOf.offset + current->loadAddress.offset << "\n";
         }
@@ -463,31 +457,31 @@ void CodeGenerator::generateExpandedExpr(Exp_Expr *current, Register dest, State
         break;
     }
     
-    case Exp_Expr::EXPR_DEREF:{
-        // Dereference the value at given address + offset and put it into the destination register.
+    case MIR_Expr::EXPR_LOAD:{
+        // Load the value at given address + offset and put it into the destination register.
 
         // load/resolve the address into the register first
-        generateExpandedExpr(current->deref.base, dest, scope, storageScope); 
+        generateExpandedExpr(current->load.base, dest, scope, storageScope); 
         
         
         const char *destName = RV64_RegisterName[regAlloc.resolveRegister(dest)];
         
         // if the given address is a direct AddressOf node, then the address can be used instead of loading it into a register first.
-        if (current->deref.base->tag == Exp_Expr::EXPR_ADDRESSOF){
-            Exp_Expr *base = current->deref.base;
+        if (current->load.base->tag == MIR_Expr::EXPR_ADDRESSOF){
+            MIR_Expr *base = current->load.base;
             
-            // dereference the value and load into destination register
-            buffer << "    l" << sizeSuffix(current->deref.size) << " " << destName << ", " << base->addressOf.offset + current->deref.offset << "(fp)\n";
+            // load the value and load into destination register
+            buffer << "    l" << sizeSuffix(current->load.size) << " " << destName << ", " << base->addressOf.offset + current->load.offset << "(fp)\n";
             return;
         }
 
-        // dereference value and load   
-        buffer << "    l" << sizeSuffix(current->deref.size) << " " << destName << ", " << current->deref.offset << "(" << destName << ")\n";
+        // load value and load   
+        buffer << "    l" << sizeSuffix(current->load.size) << " " << destName << ", " << current->load.offset << "(" << destName << ")\n";
         
         break;
     }
     
-    case Exp_Expr::EXPR_STORE:{
+    case MIR_Expr::EXPR_STORE:{
         // Store the given rvalue in the address of the lvalue, and also load it into the destination register.
 
         // Load the rvalue into the destination register
@@ -497,10 +491,10 @@ void CodeGenerator::generateExpandedExpr(Exp_Expr *current, Register dest, State
         const char *destName = RV64_RegisterName[regAlloc.resolveRegister(dest)];
         
         // if the lvalue has a direct address, use that directly instead of loading it to a register first
-        if (current->store.left->tag == Exp_Expr::EXPR_ADDRESSOF){
+        if (current->store.left->tag == MIR_Expr::EXPR_ADDRESSOF){
             // resolve the base adddress
             generateExpandedExpr(current->store.left, dest, scope, storageScope);
-            Exp_Expr *base = current->store.left;
+            MIR_Expr *base = current->store.left;
             
             // store the value at (address + offset)
             buffer << "    s" << sizeSuffix(current->store.size) << " " << destName << ", " << base->addressOf.offset + current->store.offset << "(fp)\n";
@@ -523,7 +517,7 @@ void CodeGenerator::generateExpandedExpr(Exp_Expr *current, Register dest, State
         break;
     }
     
-    case Exp_Expr::EXPR_INDEX:{
+    case MIR_Expr::EXPR_INDEX:{
         // Adds a given index to a given address, to get the correct offset.
 
         
@@ -535,8 +529,8 @@ void CodeGenerator::generateExpandedExpr(Exp_Expr *current, Register dest, State
 
         const char *destName = RV64_RegisterName[regAlloc.resolveRegister(dest)];
         
-        if (current->index.base->tag == Exp_Expr::EXPR_ADDRESSOF){
-            Exp_Expr *address = current->index.base;
+        if (current->index.base->tag == MIR_Expr::EXPR_ADDRESSOF){
+            MIR_Expr *address = current->index.base;
             buffer << "    addi " << destName << ", fp, " << address->addressOf.offset << "\n";
         }
 
@@ -568,7 +562,7 @@ void CodeGenerator::generateExpandedExpr(Exp_Expr *current, Register dest, State
         break;
     }
     
-    case Exp_Expr::EXPR_BINARY:{
+    case MIR_Expr::EXPR_BINARY:{
         // Computes a binary operation and stores the result in the destination register.
 
         
@@ -591,108 +585,108 @@ void CodeGenerator::generateExpandedExpr(Exp_Expr *current, Register dest, State
         const char *tempName = RV64_RegisterName[regAlloc.resolveRegister(temp)];
         
         switch (current->binary.op){
-            case Exp_Expr::BinaryOp::EXPR_UADD:
-            case Exp_Expr::BinaryOp::EXPR_IADD:{
+            case MIR_Expr::BinaryOp::EXPR_UADD:
+            case MIR_Expr::BinaryOp::EXPR_IADD:{
                 buffer << "    add " << destName << ", " << destName << ", " << tempName << "\n";
                 break;
             }
-            case Exp_Expr::BinaryOp::EXPR_USUB:
-            case Exp_Expr::BinaryOp::EXPR_ISUB:{
+            case MIR_Expr::BinaryOp::EXPR_USUB:
+            case MIR_Expr::BinaryOp::EXPR_ISUB:{
                 buffer << "    sub " << destName << ", " << destName << ", " << tempName << "\n";
                 break;
             }
-            case Exp_Expr::BinaryOp::EXPR_UMUL:
-            case Exp_Expr::BinaryOp::EXPR_IMUL:{
+            case MIR_Expr::BinaryOp::EXPR_UMUL:
+            case MIR_Expr::BinaryOp::EXPR_IMUL:{
                 buffer << "    mul " << destName << ", " << destName << ", " << tempName << "\n";
                 break;
             }
-            case Exp_Expr::BinaryOp::EXPR_UDIV:
-            case Exp_Expr::BinaryOp::EXPR_IDIV:{
+            case MIR_Expr::BinaryOp::EXPR_UDIV:
+            case MIR_Expr::BinaryOp::EXPR_IDIV:{
                 buffer << "    div " << destName << ", " << destName << ", " << tempName << "\n";
                 break;
             }
 
             
-            case Exp_Expr::BinaryOp::EXPR_IBITWISE_AND:{
+            case MIR_Expr::BinaryOp::EXPR_IBITWISE_AND:{
                 buffer << "    and " << destName << ", " << destName << ", " << tempName << "\n";
                 break;
             }
-            case Exp_Expr::BinaryOp::EXPR_IBITWISE_OR:{
+            case MIR_Expr::BinaryOp::EXPR_IBITWISE_OR:{
                 buffer << "    or " << destName << ", " << destName << ", " << tempName << "\n";
                 break;
             }
-            case Exp_Expr::BinaryOp::EXPR_IBITWISE_XOR:{
+            case MIR_Expr::BinaryOp::EXPR_IBITWISE_XOR:{
                 buffer << "    xor " << destName << ", " << destName << ", " << tempName << "\n";
                 break;
             }
             
 
             // TODO: boolean values are considered to be 0 or 1, the cast would convert all other values into these
-            case Exp_Expr::BinaryOp::EXPR_LOGICAL_AND:{
+            case MIR_Expr::BinaryOp::EXPR_LOGICAL_AND:{
                 buffer << "    and " << destName << ", " << destName << ", " << tempName << "\n";
                 break;
             }
-            case Exp_Expr::BinaryOp::EXPR_LOGICAL_OR:{
+            case MIR_Expr::BinaryOp::EXPR_LOGICAL_OR:{
                 buffer << "    or " << destName << ", " << destName << ", " << tempName << "\n";
                 break;
             }
             
-            case Exp_Expr::BinaryOp::EXPR_IBITWISE_LSHIFT:{
+            case MIR_Expr::BinaryOp::EXPR_IBITWISE_LSHIFT:{
                 buffer << "    sll " << destName << ", " << destName << ", " << tempName << "\n";
                 break;
             }
-            case Exp_Expr::BinaryOp::EXPR_IBITWISE_RSHIFT:{
+            case MIR_Expr::BinaryOp::EXPR_IBITWISE_RSHIFT:{
                 buffer << "    srl " << destName << ", " << destName << ", " << tempName << "\n";
                 break;
             }
             
             
-            case Exp_Expr::BinaryOp::EXPR_ICOMPARE_LT:{
+            case MIR_Expr::BinaryOp::EXPR_ICOMPARE_LT:{
                 // set if less than
                 buffer << "    slt " << destName << ", " << destName << ", " << tempName << "\n";
                 break;
             }
-            case Exp_Expr::BinaryOp::EXPR_ICOMPARE_GT:{
+            case MIR_Expr::BinaryOp::EXPR_ICOMPARE_GT:{
                 // subtract and set if greater than 0
                 buffer << "    sub " << destName << ", " << destName << ", " << tempName << "\n";
                 buffer << "    sgtz " << destName << ", " << destName << "\n";
                 break;
             } 
-            case Exp_Expr::BinaryOp::EXPR_ICOMPARE_LE:{
+            case MIR_Expr::BinaryOp::EXPR_ICOMPARE_LE:{
                 // subtract and set if greater than 0 (aka gt) then xor with 0x1 
                 buffer << "    sub " << destName << ", " << destName << ", " << tempName << "\n";
                 buffer << "    sgtz " << destName << ", " << destName << "\n";
                 buffer << "    xori " << destName << ", " << destName << ", " << "1" << "\n";
                 break;
             }
-            case Exp_Expr::BinaryOp::EXPR_ICOMPARE_GE:{
+            case MIR_Expr::BinaryOp::EXPR_ICOMPARE_GE:{
                 // set if less than with operands swapped
                 buffer << "    slt " << destName << ", " << tempName << ", " << destName << "\n";
                 break;
             }
-            case Exp_Expr::BinaryOp::EXPR_ICOMPARE_EQ:{
+            case MIR_Expr::BinaryOp::EXPR_ICOMPARE_EQ:{
                 // subtract and set if eq to 0
                 buffer << "    sub " << destName << ", " << destName << ", " << tempName << "\n";
                 buffer << "    seqz " << destName << ", " << destName << "\n";
                 break;
             }
-            case Exp_Expr::BinaryOp::EXPR_ICOMPARE_NEQ:{
+            case MIR_Expr::BinaryOp::EXPR_ICOMPARE_NEQ:{
                 // subtract and set if neq to 0
                 buffer << "    sub " << destName << ", " << destName << ", " << tempName << "\n";
                 buffer << "    snez " << destName << ", " << destName << "\n";
                 break;
             }
 
-            case Exp_Expr::BinaryOp::EXPR_FADD:
-            case Exp_Expr::BinaryOp::EXPR_FSUB:
-            case Exp_Expr::BinaryOp::EXPR_FMUL:
-            case Exp_Expr::BinaryOp::EXPR_FDIV:
-            case Exp_Expr::BinaryOp::EXPR_FCOMPARE_LT:
-            case Exp_Expr::BinaryOp::EXPR_FCOMPARE_GT:
-            case Exp_Expr::BinaryOp::EXPR_FCOMPARE_LE:
-            case Exp_Expr::BinaryOp::EXPR_FCOMPARE_GE:
-            case Exp_Expr::BinaryOp::EXPR_FCOMPARE_EQ:
-            case Exp_Expr::BinaryOp::EXPR_FCOMPARE_NEQ:
+            case MIR_Expr::BinaryOp::EXPR_FADD:
+            case MIR_Expr::BinaryOp::EXPR_FSUB:
+            case MIR_Expr::BinaryOp::EXPR_FMUL:
+            case MIR_Expr::BinaryOp::EXPR_FDIV:
+            case MIR_Expr::BinaryOp::EXPR_FCOMPARE_LT:
+            case MIR_Expr::BinaryOp::EXPR_FCOMPARE_GT:
+            case MIR_Expr::BinaryOp::EXPR_FCOMPARE_LE:
+            case MIR_Expr::BinaryOp::EXPR_FCOMPARE_GE:
+            case MIR_Expr::BinaryOp::EXPR_FCOMPARE_EQ:
+            case MIR_Expr::BinaryOp::EXPR_FCOMPARE_NEQ:
                 assert(false && "Floating point operations unimplemented.");
                 break;
             default:
@@ -703,29 +697,29 @@ void CodeGenerator::generateExpandedExpr(Exp_Expr *current, Register dest, State
         break;
     }
     
-    case Exp_Expr::EXPR_CAST:{
+    case MIR_Expr::EXPR_CAST:{
         
 
 
         assert(false && "Casts not implemented yet.");
         break;
     }
-    case Exp_Expr::EXPR_UNARY:{
+    case MIR_Expr::EXPR_UNARY:{
         // load the expr into register
         generateExpandedExpr(current->unary.unarySubexpr, dest, scope, storageScope);
 
         const char *destName = RV64_RegisterName[regAlloc.resolveRegister(dest)];
         
         switch (current->unary.op){
-            case Exp_Expr::UnaryOp::EXPR_INEGATE:{
+            case MIR_Expr::UnaryOp::EXPR_INEGATE:{
                 buffer << "    neg " << destName << ", " << destName << "\n";
                 break;
             }
-            case Exp_Expr::UnaryOp::EXPR_IBITWISE_NOT:{
+            case MIR_Expr::UnaryOp::EXPR_IBITWISE_NOT:{
                 buffer << "    not " << destName << ", " << destName << "\n";
                 break;
             }
-            case Exp_Expr::UnaryOp::EXPR_LOGICAL_NOT:{
+            case MIR_Expr::UnaryOp::EXPR_LOGICAL_NOT:{
                 // set if equal to 0
                 buffer << "    seqz " << destName << ", " << destName << "\n";
                 break;
@@ -736,7 +730,7 @@ void CodeGenerator::generateExpandedExpr(Exp_Expr *current, Register dest, State
 
         break;
     }
-    case Exp_Expr::EXPR_FUNCTION_CALL:{
+    case MIR_Expr::EXPR_FUNCTION_CALL:{
         RegisterState state = regAlloc.getRegisterState(REG_CALLER_SAVED);
         regAlloc.save(state);
             
@@ -768,7 +762,7 @@ void CodeGenerator::generateExpandedExpr(Exp_Expr *current, Register dest, State
         
         int argNo = 0;
         for (auto &arg : current->functionCall->arguments){
-            Exp_Expr *expand = expandSubexpr(arg, scope);
+            MIR_Expr *expand = expandSubexpr(arg, scope);
             
             size_t size = sizeOfType(expand->type, scope);
             
@@ -1176,13 +1170,13 @@ void CodeGenerator::generateAssembly(AST *ir){
     Inserts a typecast node to convert an operand of a binary expression to its resulting type.
     TODO: Add typecasts for stores as well
 */
-void CodeGenerator::insertTypeCast(Exp_Expr *d){
-    Exp_Expr *left = d->binary.left;
-    Exp_Expr *right = d->binary.right;
+void CodeGenerator::insertTypeCast(MIR_Expr *d){
+    MIR_Expr *left = d->binary.left;
+    MIR_Expr *right = d->binary.right;
 
     if (!(left->type == d->type)){
-        Exp_Expr *cast = (Exp_Expr*)arena->alloc(sizeof(Exp_Expr));
-        cast->tag = Exp_Expr::EXPR_CAST;
+        MIR_Expr *cast = (MIR_Expr*)arena->alloc(sizeof(MIR_Expr));
+        cast->tag = MIR_Expr::EXPR_CAST;
         cast->cast.from = left->type; 
         cast->cast.to = d->type; 
         cast->cast.expr = left;
@@ -1190,8 +1184,8 @@ void CodeGenerator::insertTypeCast(Exp_Expr *d){
         d->binary.left = cast;
     }
     if (!(right->type == d->type)){
-        Exp_Expr *cast = (Exp_Expr*)arena->alloc(sizeof(Exp_Expr));
-        cast->tag = Exp_Expr::EXPR_CAST;
+        MIR_Expr *cast = (MIR_Expr*)arena->alloc(sizeof(MIR_Expr));
+        cast->tag = MIR_Expr::EXPR_CAST;
         cast->cast.from = right->type; 
         cast->cast.to = d->type; 
         cast->cast.expr = right;
@@ -1240,17 +1234,17 @@ void CodeGenerator::calcStructMemberOffsets(StatementBlock *scope){
 /*
     Expand subexpr nodes to a lower level IR.
 */
-Exp_Expr* CodeGenerator::expandSubexpr(const Subexpr *expr, StatementBlock *scope){
-    Exp_Expr *d = (Exp_Expr *)arena->alloc(sizeof(Exp_Expr));
+MIR_Expr* CodeGenerator::expandSubexpr(const Subexpr *expr, StatementBlock *scope){
+    MIR_Expr *d = (MIR_Expr *)arena->alloc(sizeof(MIR_Expr));
     
     switch (expr->subtag){
     case Subexpr::SUBEXPR_BINARY_OP :{
         if (_match(expr->op, TOKEN_DOT)){
             /*
-                Struct member dereference is expanded into 
+                Struct member load is expanded into 
                 a.x
 
-                            DEREF
+                            LOAD
                            /     \
                          /        \
                 offset /           \ base
@@ -1276,22 +1270,22 @@ Exp_Expr* CodeGenerator::expandSubexpr(const Subexpr *expr, StatementBlock *scop
             Struct::MemberInfo member = structInfo.members.getInfo(expr->right->leaf.string).info;
             
             d->type = member.type;
-            d->deref.size = sizeOfType(member.type, scope);
-            d->deref.offset += member.offset;
+            d->load.size = sizeOfType(member.type, scope);
+            d->load.offset += member.offset;
             return d;
         }
         
         if (_match(expr->op, TOKEN_ARROW)){
             /*
-                Struct member dereference through pointer is expanded into 
+                Struct member load through pointer is expanded into 
                 a->x
 
-                            DEREF
+                            LOAD
                            /     \
                          /        \
                 offset /           \ base
                      /              \
-              OFFSET OF x         DEREF    
+              OFFSET OF x         LOAD    
                in struct            |   \
                                     |    \
                               base  |     \ offset
@@ -1301,9 +1295,9 @@ Exp_Expr* CodeGenerator::expandSubexpr(const Subexpr *expr, StatementBlock *scop
             */ 
             
             
-            d->deref.base = expandSubexpr(expr->left, scope);
+            d->load.base = expandSubexpr(expr->left, scope);
 
-            DataType structType = d->deref.base->type.getBaseType();
+            DataType structType = d->load.base->type.getBaseType();
             assert(structType.tag == DataType::TAG_STRUCT);
             assert(expr->right->subtag == Subexpr::SUBEXPR_LEAF);
 
@@ -1316,9 +1310,9 @@ Exp_Expr* CodeGenerator::expandSubexpr(const Subexpr *expr, StatementBlock *scop
             Struct::MemberInfo member = structInfo.members.getInfo(expr->right->leaf.string).info;
             
             d->type = member.type;
-            d->deref.size = sizeOfType(member.type, scope);
-            d->deref.offset = member.offset;
-            d->tag = Exp_Expr::EXPR_DEREF;
+            d->load.size = sizeOfType(member.type, scope);
+            d->load.offset = member.offset;
+            d->tag = MIR_Expr::EXPR_LOAD;
             return d;
         }
 
@@ -1328,7 +1322,7 @@ Exp_Expr* CodeGenerator::expandSubexpr(const Subexpr *expr, StatementBlock *scop
                 Pointer indexing is expanded into 
                 a[i]
 
-                            DEREF
+                            LOAD
                            /     \
                          /        \
                 offset /           \ base
@@ -1338,7 +1332,7 @@ Exp_Expr* CodeGenerator::expandSubexpr(const Subexpr *expr, StatementBlock *scop
                                     |    \
                               base  |     \ index
                                     |      \
-                                  DEREF   value of   
+                                  LOAD   value of   
                                     |       i
                                     |       
                                     |       
@@ -1346,11 +1340,11 @@ Exp_Expr* CodeGenerator::expandSubexpr(const Subexpr *expr, StatementBlock *scop
                                   of a 
             
             
-            Arrays have implicit address on the stack so no dereferencing is required.
+            Arrays have implicit address on the stack so no loaderencing is required.
             Array indexing is expanded into 
                 a[i]
 
-                            DEREF
+                            LOAD
                            /     \
                          /        \
                 offset /           \ base
@@ -1365,38 +1359,38 @@ Exp_Expr* CodeGenerator::expandSubexpr(const Subexpr *expr, StatementBlock *scop
             */ 
 
 
-            Exp_Expr *left = expandSubexpr(expr->left, scope);
-            Exp_Expr *right = expandSubexpr(expr->right, scope);
+            MIR_Expr *left = expandSubexpr(expr->left, scope);
+            MIR_Expr *right = expandSubexpr(expr->right, scope);
             
             assert(left->type.tag == DataType::TAG_PTR || 
                     left->type.tag == DataType::TAG_ARRAY ||
                     left->type.tag == DataType::TAG_ADDRESS);
         
 
-            d->tag = Exp_Expr::EXPR_DEREF;
+            d->tag = MIR_Expr::EXPR_LOAD;
             d->type = *(left->type.ptrTo);
 
-            int64_t derefOffset = 0;
+            int64_t loadOffset = 0;
 
-            // if an array, then the address is implicit, so there is no need to deref the array 
+            // if an array, then the address is implicit, so there is no need to load the array 
             if (left->type.tag == DataType::TAG_ARRAY){
-                // remove the deref but save the offset
-                assert(left->tag == Exp_Expr::EXPR_DEREF);
-                derefOffset = left->deref.offset;
-                left = left->deref.base;
+                // remove the load but save the offset
+                assert(left->tag == MIR_Expr::EXPR_LOAD);
+                loadOffset = left->load.offset;
+                left = left->load.base;
             }
 
 
-            Exp_Expr *index = (Exp_Expr *)arena->alloc(sizeof(Exp_Expr));
-            index->tag = Exp_Expr::EXPR_INDEX;
+            MIR_Expr *index = (MIR_Expr *)arena->alloc(sizeof(MIR_Expr));
+            index->tag = MIR_Expr::EXPR_INDEX;
             index->index.index = right;
             index->index.base = left;
             index->index.size = sizeOfType(d->type, scope);
             index->type = DataType{.tag = DataType::TAG_ADDRESS};
 
-            d->deref.base = index;
-            d->deref.offset = derefOffset;
-            d->deref.size = sizeOfType(d->type, scope);
+            d->load.base = index;
+            d->load.offset = loadOffset;
+            d->load.size = sizeOfType(d->type, scope);
 
             return d;
         }
@@ -1434,8 +1428,8 @@ Exp_Expr* CodeGenerator::expandSubexpr(const Subexpr *expr, StatementBlock *scop
 
 
 
-            Exp_Expr *left = expandSubexpr(expr->left, scope);
-            Exp_Expr *right = expandSubexpr(expr->right, scope);
+            MIR_Expr *left = expandSubexpr(expr->left, scope);
+            MIR_Expr *right = expandSubexpr(expr->right, scope);
 
 
             switch (expr->op.type){
@@ -1445,14 +1439,14 @@ Exp_Expr* CodeGenerator::expandSubexpr(const Subexpr *expr, StatementBlock *scop
 
             // something-assign are expanded to a store with that node as rvalue   
             case TOKEN_PLUS_ASSIGN:{
-                Exp_Expr *add = (Exp_Expr*)arena->alloc(sizeof(Exp_Expr));
-                Exp_Expr *addLeft = (Exp_Expr*)arena->alloc(sizeof(Exp_Expr));
+                MIR_Expr *add = (MIR_Expr*)arena->alloc(sizeof(MIR_Expr));
+                MIR_Expr *addLeft = (MIR_Expr*)arena->alloc(sizeof(MIR_Expr));
                 
                 // the new add node
-                add->tag = Exp_Expr::EXPR_BINARY;
+                add->tag = MIR_Expr::EXPR_BINARY;
                 add->binary.left = addLeft;
                 add->binary.right = right;
-                add->binary.op = Exp_Expr::BinaryOp::EXPR_IADD;
+                add->binary.op = MIR_Expr::BinaryOp::EXPR_IADD;
                 add->type = getResultantType(left->type, right->type, expr->op);
                 
                 // the left operand is same as the left node of the store
@@ -1496,20 +1490,20 @@ Exp_Expr* CodeGenerator::expandSubexpr(const Subexpr *expr, StatementBlock *scop
             }
             
             d->type = left->type;
-            d->tag = Exp_Expr::EXPR_STORE;
+            d->tag = MIR_Expr::EXPR_STORE;
             
 
             /* 
-                Any variable node will generate a deref node.
+                Any variable node will generate a load node.
                 For lvalue, we need an address in the left node of the store node.
-                So, remove the deref node: 
-                - set the base address of the deref as the left node. 
-                - set the deref offset as the offset in the store node.
+                So, remove the load node: 
+                - set the base address of the load as the left node. 
+                - set the load offset as the offset in the store node.
             */
-            assert(left->tag == Exp_Expr::EXPR_DEREF);
-            d->store.offset = left->deref.offset;
+            assert(left->tag == MIR_Expr::EXPR_LOAD);
+            d->store.offset = left->load.offset;
             
-            left = left->deref.base;
+            left = left->load.base;
             d->store.left = left;
             d->store.right = right;
             d->store.size = sizeOfType(d->type, scope);
@@ -1528,85 +1522,85 @@ Exp_Expr* CodeGenerator::expandSubexpr(const Subexpr *expr, StatementBlock *scop
         */
         
         // expand left and right 
-        Exp_Expr *left = expandSubexpr(expr->left, scope);
-        Exp_Expr *right = expandSubexpr(expr->right, scope);
+        MIR_Expr *left = expandSubexpr(expr->left, scope);
+        MIR_Expr *right = expandSubexpr(expr->right, scope);
         
         // get resultant type
         d->type = getResultantType(left->type, right->type, expr->op);
-        d->tag = Exp_Expr::EXPR_BINARY;
+        d->tag = MIR_Expr::EXPR_BINARY;
 
         switch (expr->op.type){
         case TOKEN_PLUS:{
-            d->binary.op = Exp_Expr::BinaryOp::EXPR_IADD;
+            d->binary.op = MIR_Expr::BinaryOp::EXPR_IADD;
             break;
         } 
         case TOKEN_MINUS:{
-            d->binary.op = Exp_Expr::BinaryOp::EXPR_ISUB;
+            d->binary.op = MIR_Expr::BinaryOp::EXPR_ISUB;
             break;
         } 
         case TOKEN_STAR:{
-            d->binary.op = Exp_Expr::BinaryOp::EXPR_IMUL;
+            d->binary.op = MIR_Expr::BinaryOp::EXPR_IMUL;
             break;
         } 
         case TOKEN_SLASH:{
-            d->binary.op = Exp_Expr::BinaryOp::EXPR_IDIV;
+            d->binary.op = MIR_Expr::BinaryOp::EXPR_IDIV;
             break;
         } 
         case TOKEN_MODULO:{
             assert(false);
-            d->binary.op = Exp_Expr::BinaryOp::EXPR_IDIV;
+            d->binary.op = MIR_Expr::BinaryOp::EXPR_IDIV;
             break;
         } 
         case TOKEN_AMPERSAND:{
-            d->binary.op = Exp_Expr::BinaryOp::EXPR_IBITWISE_AND;
+            d->binary.op = MIR_Expr::BinaryOp::EXPR_IBITWISE_AND;
             break;
         } 
         case TOKEN_BITWISE_OR:{
-            d->binary.op = Exp_Expr::BinaryOp::EXPR_IBITWISE_OR;
+            d->binary.op = MIR_Expr::BinaryOp::EXPR_IBITWISE_OR;
             break;
         } 
         case TOKEN_BITWISE_XOR:{
-            d->binary.op = Exp_Expr::BinaryOp::EXPR_IBITWISE_XOR;
+            d->binary.op = MIR_Expr::BinaryOp::EXPR_IBITWISE_XOR;
             break;
         } 
         case TOKEN_SHIFT_LEFT:{
-            d->binary.op = Exp_Expr::BinaryOp::EXPR_IBITWISE_LSHIFT;
+            d->binary.op = MIR_Expr::BinaryOp::EXPR_IBITWISE_LSHIFT;
             break;
         } 
         case TOKEN_SHIFT_RIGHT:{
-            d->binary.op = Exp_Expr::BinaryOp::EXPR_IBITWISE_RSHIFT;
+            d->binary.op = MIR_Expr::BinaryOp::EXPR_IBITWISE_RSHIFT;
             break;
         }
         case TOKEN_LOGICAL_AND:{
-            d->binary.op = Exp_Expr::BinaryOp::EXPR_LOGICAL_AND;
+            d->binary.op = MIR_Expr::BinaryOp::EXPR_LOGICAL_AND;
             break;
         }
         case TOKEN_LOGICAL_OR:{
-            d->binary.op = Exp_Expr::BinaryOp::EXPR_LOGICAL_OR;
+            d->binary.op = MIR_Expr::BinaryOp::EXPR_LOGICAL_OR;
             break;
         }
         case TOKEN_EQUALITY_CHECK:{
-            d->binary.op = Exp_Expr::BinaryOp::EXPR_ICOMPARE_EQ;
+            d->binary.op = MIR_Expr::BinaryOp::EXPR_ICOMPARE_EQ;
             break;
         }
         case TOKEN_NOT_EQUALS:{
-            d->binary.op = Exp_Expr::BinaryOp::EXPR_ICOMPARE_NEQ;
+            d->binary.op = MIR_Expr::BinaryOp::EXPR_ICOMPARE_NEQ;
             break;
         }
         case TOKEN_GREATER_EQUALS:{
-            d->binary.op = Exp_Expr::BinaryOp::EXPR_ICOMPARE_GE;
+            d->binary.op = MIR_Expr::BinaryOp::EXPR_ICOMPARE_GE;
             break;
         }
         case TOKEN_GREATER_THAN:{
-            d->binary.op = Exp_Expr::BinaryOp::EXPR_ICOMPARE_GT;
+            d->binary.op = MIR_Expr::BinaryOp::EXPR_ICOMPARE_GT;
             break;
         }
         case TOKEN_LESS_EQUALS:{
-            d->binary.op = Exp_Expr::BinaryOp::EXPR_ICOMPARE_LE;
+            d->binary.op = MIR_Expr::BinaryOp::EXPR_ICOMPARE_LE;
             break;
         }
         case TOKEN_LESS_THAN:{
-            d->binary.op = Exp_Expr::BinaryOp::EXPR_ICOMPARE_LT;
+            d->binary.op = MIR_Expr::BinaryOp::EXPR_ICOMPARE_LT;
             break;
         }
         
@@ -1633,7 +1627,7 @@ Exp_Expr* CodeGenerator::expandSubexpr(const Subexpr *expr, StatementBlock *scop
             /*
                 Expanded into 
                 
-                        DEREF 
+                        LOAD 
                 offset /      \ base
                      /         \
                     0       ADDRESS_OF
@@ -1649,19 +1643,19 @@ Exp_Expr* CodeGenerator::expandSubexpr(const Subexpr *expr, StatementBlock *scop
             assert(varDeclScope != NULL);
             
             d->type = varDeclScope->symbols.getInfo(expr->leaf.string).info;
-            d->tag = Exp_Expr::EXPR_DEREF;
+            d->tag = MIR_Expr::EXPR_LOAD;
             
-            Exp_Expr *leaf = (Exp_Expr*) arena->alloc(sizeof(Exp_Expr));
+            MIR_Expr *leaf = (MIR_Expr*) arena->alloc(sizeof(MIR_Expr));
             leaf->leaf.val = expr->leaf;
-            leaf->tag = Exp_Expr::EXPR_LEAF;
+            leaf->tag = MIR_Expr::EXPR_LEAF;
 
-            Exp_Expr *address = (Exp_Expr*) arena->alloc(sizeof(Exp_Expr));
+            MIR_Expr *address = (MIR_Expr*) arena->alloc(sizeof(MIR_Expr));
             address->addressOf.of = leaf;
-            address->tag = Exp_Expr::EXPR_ADDRESSOF;
+            address->tag = MIR_Expr::EXPR_ADDRESSOF;
 
-            d->deref.base = address;
-            d->deref.offset = 0;
-            d->deref.size = sizeOfType(d->type, scope);
+            d->load.base = address;
+            d->load.offset = 0;
+            d->load.size = sizeOfType(d->type, scope);
         
             return d;
         }
@@ -1701,30 +1695,30 @@ Exp_Expr* CodeGenerator::expandSubexpr(const Subexpr *expr, StatementBlock *scop
                 break;
         }
 
-        d->tag = Exp_Expr::EXPR_LOAD_IMMEDIATE;
+        d->tag = MIR_Expr::EXPR_LOAD_IMMEDIATE;
         d->immediate.val = expr->leaf;
         return d;
     }
 
     case Subexpr::SUBEXPR_UNARY: {
 
-        Exp_Expr *operand = expandSubexpr(expr->unarySubexpr, scope);
+        MIR_Expr *operand = expandSubexpr(expr->unarySubexpr, scope);
         
         if (_match(expr->unaryOp, TOKEN_STAR)){
             /*
                 *x is expanded to
 
-                    DEREF
+                    LOAD
                 base|   \ offset 
                     |    \ 
                     x     0
             */
-            d->tag = Exp_Expr::EXPR_DEREF;
+            d->tag = MIR_Expr::EXPR_LOAD;
             d->type = *(operand->type.ptrTo);
 
-            d->deref.base = operand;
-            d->deref.offset = 0;
-            d->deref.size = sizeOfType(d->type, scope);
+            d->load.base = operand;
+            d->load.offset = 0;
+            d->load.size = sizeOfType(d->type, scope);
 
             return d;
         }
@@ -1739,12 +1733,12 @@ Exp_Expr* CodeGenerator::expandSubexpr(const Subexpr *expr, StatementBlock *scop
                     x
             */
         
-            d->tag = Exp_Expr::EXPR_LOAD_ADDRESS;
+            d->tag = MIR_Expr::EXPR_LOAD_ADDRESS;
 
 
-            assert(operand->tag == Exp_Expr::EXPR_DEREF);
-            d->loadAddress.base = operand->deref.base;
-            d->loadAddress.offset = operand->deref.offset;
+            assert(operand->tag == MIR_Expr::EXPR_LOAD);
+            d->loadAddress.base = operand->load.base;
+            d->loadAddress.offset = operand->load.offset;
 
             
             d->type.tag = DataType::TAG_ADDRESS;
@@ -1763,7 +1757,7 @@ Exp_Expr* CodeGenerator::expandSubexpr(const Subexpr *expr, StatementBlock *scop
               expr
         */
         
-        d->tag = Exp_Expr::EXPR_UNARY;
+        d->tag = MIR_Expr::EXPR_UNARY;
         d->unary.unarySubexpr = operand; 
         d->type = operand->type;
 
@@ -1772,15 +1766,15 @@ Exp_Expr* CodeGenerator::expandSubexpr(const Subexpr *expr, StatementBlock *scop
         case TOKEN_PLUS:
             break;
         case TOKEN_MINUS:
-            d->unary.op = Exp_Expr::UnaryOp::EXPR_INEGATE;
+            d->unary.op = MIR_Expr::UnaryOp::EXPR_INEGATE;
             break;
         case TOKEN_STAR:
             break;
         case TOKEN_LOGICAL_NOT:
-            d->unary.op = Exp_Expr::UnaryOp::EXPR_LOGICAL_NOT;
+            d->unary.op = MIR_Expr::UnaryOp::EXPR_LOGICAL_NOT;
             break;
         case TOKEN_BITWISE_NOT:
-            d->unary.op = Exp_Expr::UnaryOp::EXPR_IBITWISE_NOT;
+            d->unary.op = MIR_Expr::UnaryOp::EXPR_IBITWISE_NOT;
             break;
         case TOKEN_AMPERSAND:
             break;
@@ -1804,7 +1798,7 @@ Exp_Expr* CodeGenerator::expandSubexpr(const Subexpr *expr, StatementBlock *scop
         FunctionCall *fooCall = expr->functionCall;
         Function foo = ir->functions.getInfo(fooCall->funcName.string).info;
         
-        d->tag = Exp_Expr::EXPR_FUNCTION_CALL;
+        d->tag = MIR_Expr::EXPR_FUNCTION_CALL;
         d->type = foo.returnType;
         d->functionCall = expr->functionCall;
         break;
@@ -1917,70 +1911,3 @@ size_t CodeGenerator::alignmentOfType(DataType d, StatementBlock* scope){
     return 8;
 }
 
-
-
-/*
-    RV-64 specific datatypes
-*/
-Datatype_Low CodeGenerator::convertToLowerLevelType(DataType d, StatementBlock *scope){
-    switch (d.tag){
-    case DataType::TAG_ADDRESS:
-    case DataType::TAG_PTR:
-    case DataType::TAG_ARRAY:
-        return DatatypeLower::_u64;
-    case DataType::TAG_PRIMARY:
-        if (d.isSet(DataType::Specifiers::UNSIGNED)){
-            if (_match(d.type, TOKEN_CHAR))
-                return DatatypeLower::_u8;
-
-            if (_match(d.type, TOKEN_INT)){
-                if (d.isSet(DataType::Specifiers::SHORT))
-                    return DatatypeLower::_u16;
-                if (d.isSet(DataType::Specifiers::LONG))
-                    return DatatypeLower::_u64;
-                if (d.isSet(DataType::Specifiers::LONG_LONG))
-                    return DatatypeLower::_u64;
-
-                return DatatypeLower::_u32;
-            }
-        }
-        
-        if (_match(d.type, TOKEN_CHAR))
-            return DatatypeLower::_i8;
-
-        if (_match(d.type, TOKEN_INT)){
-            if (d.isSet(DataType::Specifiers::SHORT))
-                return DatatypeLower::_i16;
-            if (d.isSet(DataType::Specifiers::LONG))
-                return DatatypeLower::_i64;
-            if (d.isSet(DataType::Specifiers::LONG_LONG))
-                return DatatypeLower::_i64;
-
-            return DatatypeLower::_i32;
-        }
-
-        if (_match(d.type, TOKEN_FLOAT))
-            return DatatypeLower::_f32;
-
-        // Note: long double isnt supported currently
-        if (_match(d.type, TOKEN_DOUBLE))
-            return DatatypeLower::_f64;
-
-    case DataType::TAG_STRUCT:{
-
-        StatementBlock *structDeclScope = scope->findStructDeclaration(d.structName);
-        assert(structDeclScope != NULL);
-        
-        Datatype_Low structType = DatatypeLower::_struct;
-        structType.size = structDeclScope->structs.getInfo(d.structName.string).info.size;
-        structType.alignment = structDeclScope->structs.getInfo(d.structName.string).info.alignment;
-        return structType;
-    }
-
-    default:
-        break;
-    }
-    
-    assert(false && "Some type hasnt been accounted for.");
-    return DatatypeLower::_i32;
-}

@@ -1,20 +1,41 @@
 #pragma once
 
 #include "node.h"
-#include "datatype-lower.h"
+#include "datatype.h"
+#include "mir-datatype.h"
 #include <arena/arena.h>
+
+
+struct MIR_Primitive {
+    enum PrimitiveType{
+        PRIM_IF,
+        PRIM_LOOP,
+        
+        PRIM_STACK_ALLOC,
+        PRIM_STACK_FREE,
+        
+        PRIM_RETURN,
+        PRIM_JUMP,
+        PRIM_EXPR,
+        PRIM_SCOPE,
+
+        PRIM_COUNT,
+    }ptag;
+};
+
+
+
 
 
 typedef FunctionCall Exp_FunctionCall;
 
-struct Exp_Expr{
+struct MIR_Expr : public MIR_Primitive{
     enum ExprType{
         EXPR_ADDRESSOF,
-        EXPR_DEREF,
+        EXPR_LOAD,
         EXPR_INDEX,
         EXPR_LEAF,
 
-        EXPR_LOAD,
         EXPR_LOAD_ADDRESS,
         EXPR_LOAD_IMMEDIATE,
         
@@ -80,7 +101,7 @@ struct Exp_Expr{
     
     // the type of the node output
     DataType type;
-    Datatype_Low _type;
+    MIR_Datatype _type;
     
     union{
         /*
@@ -92,8 +113,8 @@ struct Exp_Expr{
             size   : how many bytes to store at given address
         */
         struct {
-            Exp_Expr *left;
-            Exp_Expr *right;
+            MIR_Expr *left;
+            MIR_Expr *right;
             int64_t offset;
             size_t size;
         }store;
@@ -108,7 +129,7 @@ struct Exp_Expr{
         struct {
             DataType from;
             DataType to;
-            Exp_Expr *expr;
+            MIR_Expr *expr;
         }cast;
         
         
@@ -120,7 +141,7 @@ struct Exp_Expr{
             offset : the offset from the frame pointer filled in when the node is resolved during code generation
         */
         struct {
-            Exp_Expr *of;
+            MIR_Expr *of;
             // filled in on generating node
             int64_t offset;
         }addressOf;
@@ -136,18 +157,18 @@ struct Exp_Expr{
 
 
         /*
-            Dereference a value at a given address.
+            Load a value at a given address.
             Used for variable accesses, pointer dereferences. 
             base   : The base address given. Can either be an address node or an address value in a register.
             offset : A compile time constant offset from the base address. Used for struct member accesses.
             size   : Number of bytes from the given address to load.
         */
         struct {
-            Exp_Expr *base;
+            MIR_Expr *base;
             // offset used for structs, for indexing use index
             int64_t offset;
             size_t size;
-        }deref;
+        }load;
 
 
         /*
@@ -158,8 +179,8 @@ struct Exp_Expr{
             size   : Size of the type to be indexed, to be multiplied to get the correct offset. 
         */
         struct {
-            Exp_Expr *base;
-            Exp_Expr *index;
+            MIR_Expr *base;
+            MIR_Expr *index;
             size_t size;
         }index;
 
@@ -171,8 +192,8 @@ struct Exp_Expr{
             op     : The operator.
         */
         struct {        
-            Exp_Expr *left; 
-            Exp_Expr *right; 
+            MIR_Expr *left; 
+            MIR_Expr *right; 
             BinaryOp op;
 
         }binary;
@@ -194,7 +215,7 @@ struct Exp_Expr{
             offset  : A compile time constant offset used for struct members.
         */
         struct {
-            Exp_Expr *base;
+            MIR_Expr *base;
             int64_t offset;
         }loadAddress;
 
@@ -205,7 +226,7 @@ struct Exp_Expr{
         */
         struct {
             UnaryOp op;
-            Exp_Expr *unarySubexpr;
+            MIR_Expr *unarySubexpr;
         }unary;
         
         /*
@@ -216,5 +237,52 @@ struct Exp_Expr{
     };
 
 };
+
+
+
+struct MIR_Scope : public MIR_Primitive{
+    std::vector<MIR_Primitive*> statements;
+    SymbolTableOrdered<MIR_Datatype> symbols;
+
+    MIR_Scope* parent;
+};
+
+
+struct MIR_If : public MIR_Primitive{
+    MIR_Expr* condition;
+    MIR_If* next;
+    MIR_Scope* scope;
+};
+
+struct MIR_Loop : public MIR_Primitive{
+    MIR_Expr* condition;
+    MIR_Scope* scope;
+};
+
+struct MIR_Return : public MIR_Primitive{
+    MIR_Expr* returnValue;
+    Splice funcName;
+};
+
+
+
+
+
+
+
+
+struct MIR_Function {
+    MIR_Datatype returnType;
+    Splice funcName; 
+    MIR_Scope* scope;
+
+    struct Parameter{
+        MIR_Datatype type;
+        Splice identifier;
+    };
+    std::vector<Parameter> parameters;
+
+};
+
 
 

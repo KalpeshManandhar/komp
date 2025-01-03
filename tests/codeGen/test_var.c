@@ -1,9 +1,9 @@
 int main(){
-    long int a = 0, b;
+    int a = 0, b;
     a = 12;
     b = 12/3;
     
-    long int *ap;
+    int *ap;
     ap = &a;
 
     *ap = 20;

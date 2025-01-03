@@ -30,20 +30,30 @@ struct CodeGenerator{
 
 
     // expand Subexpr to lower level
-    Exp_Expr* expandSubexpr(const Subexpr *expr, StatementBlock *scope);
-    void insertTypeCast(Exp_Expr *d);
+    MIR_Expr* expandSubexpr(const Subexpr *expr, StatementBlock *scope);
+    void insertTypeCast(MIR_Expr *d);
     void calcStructMemberOffsets(StatementBlock *scope);
-    Datatype_Low convertToLowerLevelType(DataType d, StatementBlock *scope);
+    MIR_Datatype convertToLowerLevelType(DataType d, StatementBlock *scope);
 
     
 
-    // assembly generation
+    // assembly generation (for AST)
     void generateNode(const Node *current, StatementBlock *scope, ScopeInfo *storageScope);
     void generateFunction(Function *foo, ScopeInfo *storageScope);
     void generateSubexpr(const Subexpr *expr, StatementBlock *scope, Register destReg, ScopeInfo *storageScope);
-    void generateExpandedExpr(Exp_Expr *current, Register dest, StatementBlock *scope, ScopeInfo *storageScope);
-    void generateTypeCasts(const Exp_Expr *cast, Register destReg, StatementBlock *scope, ScopeInfo *storageScope);
+    void generateExpandedExpr(MIR_Expr *current, Register dest, StatementBlock *scope, ScopeInfo *storageScope);
+    void generateTypeCasts(const MIR_Expr *cast, Register destReg, StatementBlock *scope, ScopeInfo *storageScope);
+
+
+    void generateFunctionMIR(MIR_Function *foo, MIR_Scope* global, ScopeInfo *storageScope);
+    void generatePrimitiveMIR(MIR_Primitive* p, MIR_Scope* scope , ScopeInfo *storageScope);
+    void generateExprMIR(MIR_Expr *current, Register dest, MIR_Scope* scope, ScopeInfo *storageScope);
+    size_t allocStackSpaceMIR(MIR_Scope* scope, ScopeInfo* storage);
+
     
+
+
+
     size_t allocStackSpace(StatementBlock *scope, ScopeInfo *storage);
     
     // output
@@ -52,5 +62,7 @@ struct CodeGenerator{
 
 public:
     void generateAssembly(AST *ir);
+    void generateAssemblyFromMIR(MIR *mir);
+
 
 };
