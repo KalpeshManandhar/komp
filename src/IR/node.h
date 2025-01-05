@@ -48,6 +48,7 @@ struct Subexpr: public Node{
         SUBEXPR_LEAF,
         SUBEXPR_UNARY,
         SUBEXPR_FUNCTION_CALL,
+        SUBEXPR_CAST,
     }subtag;
     
     DataType type;
@@ -70,6 +71,12 @@ struct Subexpr: public Node{
         struct {
             Token unaryOp;
             Subexpr *unarySubexpr;
+        };
+        
+        // cast 
+        struct {
+            DataType to;
+            Subexpr* expr;
         };
         
         FunctionCall *functionCall;        

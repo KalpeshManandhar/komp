@@ -165,7 +165,6 @@ static void _recursePrintf(DataType d, char *scratchpad, int *sp){
             for (int i = 0; i<d.type.string.len; i++){
                 scratchpad[(*sp)++] = d.type.string.data[i];
             }
-            scratchpad[(*sp)++] = ' ';
 
             break;
         }

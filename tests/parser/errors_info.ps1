@@ -13,4 +13,5 @@ $errors_expected = @{
     "test_structs.c" = 11;
     "test_syntax_error.c" = 6;
     "test_type_check.c" = 9;
+    "test_casts.c" = 2;
 } 

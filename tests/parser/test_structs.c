@@ -1,3 +1,4 @@
+
 struct A; // only declared
 
 struct A { // struct definition
@@ -5,6 +6,7 @@ struct A { // struct definition
     int b;
     float c;
 };
+
 
 struct B { // struct member of struct
     int b;

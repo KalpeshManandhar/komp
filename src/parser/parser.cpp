@@ -260,6 +260,42 @@ DataType Parser::parseArrayType(StatementBlock *scope, DataType memberType){
 }
 
 
+bool Parser::isTypeDefined(DataType d,  StatementBlock* scope){
+    switch (d.tag) {
+    case DataType::TAG_ADDRESS :
+        return true;
+    case DataType::TAG_ARRAY :
+        return isTypeDefined(*d.ptrTo, scope);
+    case DataType::TAG_PRIMARY :
+        return true;
+    case DataType::TAG_PTR :
+        return true;
+    case DataType::TAG_STRUCT :{
+        StatementBlock* structDefScope = scope->findStructDeclaration(d.structName);
+        if (!structDefScope)
+            return false;
+        
+        if (!structDefScope->structs.getInfo(d.structName.string).info.defined)
+            return false;
+        
+        return true;
+    }
+    case DataType::TAG_VOID :
+        return true;
+    case DataType::TAG_ERROR :
+        return true;
+    
+    default:
+        break;
+    }
+    assert(false && "Some type unaccounted for.");
+    return true;
+}
+
+
+
+
+
 
 /*
     Parse struct definition. 
@@ -279,8 +315,8 @@ Token Parser::parseStructDefinition(StatementBlock *scope){
         logErrorMessage(peekToken(), "Missing struct identifier.");
         errors++;
         s.structName = peekToken();
-        s.structName.string.data = "unnamed-type";
-        s.structName.string.len = strlen("unnamed-type");
+        s.structName.string.data = "unnamed-struct";
+        s.structName.string.len = strlen("unnamed-struct");
     }
     
 
@@ -303,12 +339,6 @@ Token Parser::parseStructDefinition(StatementBlock *scope){
                     consumeToken();
                     continue;
                 }
-                
-                // if the struct type is incomplete
-                if (base.indirectionLevel() == 0 && !scope->findStructDeclaration(base.structName)){
-                    logErrorMessage(member.type.structName, "Struct \"%.*s\" incomplete.", splicePrintf(member.type.structName.string));
-                    errors++;
-                }
             }
 
 
@@ -322,11 +352,18 @@ Token Parser::parseStructDefinition(StatementBlock *scope){
                     member.type = withArray;
                     s.members.add(member.memberName.string, member);   
                     
+                    // if the struct type is incomplete
+                    if (!isTypeDefined(member.type, scope)){
+                        logErrorMessage(member.type.structName, "Struct \"%.*s\" incomplete.", splicePrintf(member.type.structName.string));
+                        errors++;
+                    }
                 }
                 else{
                     logErrorMessage(peekToken(), "Expected an identifier for member name.");
                     errors++;
                 }
+
+                
                 
                 
                 if (!match(TOKEN_COMMA)){
@@ -460,6 +497,7 @@ DataType Parser::parseBaseDataType(StatementBlock *scope){
     // default type is int if there are specifiers but no type
     if (!matchv(DATA_TYPE_TOKENS, ARRAY_COUNT(DATA_TYPE_TOKENS))){
         d.type = DataTypes::Int.type;
+        d.tag = DataType::TAG_PRIMARY;
     }
     // if struct then parse the struct type or struct definition as well
     else if (match(TOKEN_STRUCT)){
@@ -544,6 +582,9 @@ Token Parser::getSubexprToken(Subexpr *expr) {
         case Subexpr::SUBEXPR_UNARY:
             return expr->unaryOp;
 
+        case Subexpr::SUBEXPR_CAST:
+            return getSubexprToken(expr->expr);
+
         case Subexpr::SUBEXPR_FUNCTION_CALL:
             return expr->functionCall->funcName;
 
@@ -556,12 +597,13 @@ Token Parser::getSubexprToken(Subexpr *expr) {
 };
 
 
+
 /*
     Check if a datatype can be converted to another.
 */
 bool Parser::canBeConverted(Subexpr *from, DataType fromType, DataType toType){
     if (fromType.tag == DataType::TAG_ERROR || toType.tag == DataType::TAG_ERROR){
-        return false;
+        return true;
     }
     if (fromType.tag == DataType::TAG_VOID && toType.tag == DataType::TAG_VOID){
         return true;
@@ -578,19 +620,49 @@ bool Parser::canBeConverted(Subexpr *from, DataType fromType, DataType toType){
     if (fromType.indirectionLevel() > 0){
         if (toType.indirectionLevel() > 0){
             // dont log an error with void pointers?
-            if (fromType.tag == DataType::TAG_VOID || toType.tag == DataType::TAG_VOID){
+            if (fromType.getBaseType().tag == DataType::TAG_VOID || 
+                toType.getBaseType().tag == DataType::TAG_VOID){
                 return true;
             }
-            else if (fromType.indirectionLevel() != toType.indirectionLevel() || fromType.tag != toType.tag){
+            else if (fromType.indirectionLevel() != toType.indirectionLevel() || !(*fromType.ptrTo == *toType.ptrTo)){
                 logWarningMessage(subexprToken, "Conversion from pointer of type \"%s\" to \"%s\".",
-                                dataTypePrintf(fromType), dataTypePrintf(toType));
+                    dataTypePrintf(fromType), dataTypePrintf(toType)
+                );
+            }
+            else {
+                auto willDiscardConst = [&](DataType from, DataType to) -> bool{
+                    while (from.indirectionLevel() > 0 && to.indirectionLevel() > 0){
+                        if(from.isSet(DataType::Specifiers::CONST) && !to.isSet(DataType::Specifiers::CONST)){
+                            return true;
+                        }
+                        from = *from.ptrTo;
+                        to = *to.ptrTo;
+                    }
+
+                    return from.isSet(DataType::Specifiers::CONST) && !to.isSet(DataType::Specifiers::CONST);
+                };
+
+
+                if (willDiscardConst(*fromType.ptrTo, *toType.ptrTo)){
+                    logWarningMessage(subexprToken, "Conversion of a const pointer type \"%s\" to non-const pointer type \"%s\". May discard const qualifier.", 
+                        dataTypePrintf(fromType), dataTypePrintf(toType)
+                    );
+                }
             }
             return true;
         }
 
         if (toType.tag == DataType::TAG_PRIMARY){
             if (match(toType.type, TOKEN_INT) || match(toType.type, TOKEN_CHAR)){
-                logWarningMessage(subexprToken, "Conversion from pointer of type \"%s\" to integer type \"%s\".",
+                logWarningMessage(subexprToken, "Conversion from pointer type \"%s\" to integer type \"%s\".",
+                                dataTypePrintf(fromType), dataTypePrintf(toType));
+                return true;
+            }
+        }
+        
+        if (fromType.tag == DataType::TAG_PRIMARY){
+            if (match(fromType.type, TOKEN_INT) || match(fromType.type, TOKEN_CHAR)){
+                logWarningMessage(subexprToken, "Conversion from pointer type \"%s\" to integer type \"%s\".",
                                 dataTypePrintf(fromType), dataTypePrintf(toType));
                 return true;
             }
@@ -606,8 +678,9 @@ bool Parser::canBeConverted(Subexpr *from, DataType fromType, DataType toType){
         }
         return false;
     }
- 
+    
     if (fromType.tag == DataType::TAG_PRIMARY){
+        
         // floating point numbers cannot be converted to pointers
         if ((match(fromType.type, TOKEN_FLOAT) || match(fromType.type, TOKEN_DOUBLE))
             && toType.indirectionLevel() > 0){
@@ -617,6 +690,15 @@ bool Parser::canBeConverted(Subexpr *from, DataType fromType, DataType toType){
         if (fromType.tag == DataType::TAG_PRIMARY && toType.tag == DataType::TAG_PRIMARY){
             return true;
         }
+        
+        // integers can be converted to pointers but with warning
+        if ((match(fromType.type, TOKEN_INT) || match(fromType.type, TOKEN_CHAR))
+            && toType.indirectionLevel() > 0){
+            logWarningMessage(subexprToken, "Conversion from integer type \"%s\" to pointer type \"%s\".",
+                                dataTypePrintf(fromType), dataTypePrintf(toType));
+                return true;
+        }
+        
         // primary cannot be converted to structs
         return false;
     }
@@ -625,6 +707,38 @@ bool Parser::canBeConverted(Subexpr *from, DataType fromType, DataType toType){
 
 
 }
+
+
+
+bool Parser::isValidLvalue(DataType leftOperandType, Subexpr *leftOperand){
+    // const type
+    if (leftOperandType.isSet(DataType::Specifiers::CONST)){
+        return false;
+    }
+    // const type
+    if (leftOperandType.tag == DataType::TAG_ARRAY){
+        return false;
+    }
+    
+    TokenType lvalueOp[] = {
+        TOKEN_ARROW,
+        TOKEN_DOT,
+        TOKEN_SQUARE_OPEN,
+    };
+
+    if (leftOperand->subtag == Subexpr::SUBEXPR_BINARY_OP){
+        return matchv(leftOperand->op, lvalueOp, ARRAY_COUNT(lvalueOp));
+    }
+    
+    // single variable identifier
+    if (leftOperand->subtag == Subexpr::SUBEXPR_LEAF 
+        && matchv(leftOperand->leaf, LITERAL_TOKEN_TYPES, ARRAY_COUNT(LITERAL_TOKEN_TYPES))){
+        return false;
+    }
+
+    return true;
+
+};
 
 
 
@@ -638,515 +752,513 @@ DataType Parser::checkSubexprType(Subexpr *expr, StatementBlock *scope){
     if (!expr){
         return DataTypes::Void;
     }
-
-
-    switch (expr->subtag){
-    case Subexpr::SUBEXPR_BINARY_OP:{
         
-        DataType left = checkSubexprType(expr->left, scope);
 
-        // okay this is a pain in the ass cause the right operand (member name) will not have a type from the identifier itself
-        // that member name should not be checked for declaration by itself. 
-        // so a valid memberName right operand will require to not be checked and hence, only left operand is checked at first for struct accesses 
+    auto checkType = [&]() -> DataType{
         
-        // struct accesses: struct.member and struct_ptr->member
-        if (matchv(expr->op, STRUCT_ACCESS_OP, ARRAY_COUNT(STRUCT_ACCESS_OP))){
-            if (left.tag == DataType::TAG_ERROR){
-                return DataTypes::Error;
-            }
+        switch (expr->subtag){
+        
+        case Subexpr::SUBEXPR_CAST: {
+            DataType from = checkSubexprType(expr->expr, scope);
             
-            // left must be of type struct
-            if (left.getBaseType().tag != DataType::TAG_STRUCT){
-                logErrorMessage(expr->op, "Not a valid struct.");
+            if (!canBeConverted(expr->expr, from, expr->to)){
+                logErrorMessage(getSubexprToken(expr->expr), "Cannot convert expression of type \"%s\" to type \"%s\".", 
+                    dataTypePrintf(from), dataTypePrintf(expr->to)
+                );
                 errors++;
                 return DataTypes::Error;
             }
+
+            return expr->to;
+        }
+
+
+        case Subexpr::SUBEXPR_BINARY_OP:{
             
-            // left must be struct if .
-            if (match(expr->op, TOKEN_DOT)){
-                if (left.indirectionLevel() != 0){
+            DataType left = checkSubexprType(expr->left, scope);
+
+            // okay this is a pain in the ass cause the right operand (member name) will not have a type from the identifier itself
+            // that member name should not be checked for declaration by itself. 
+            // so a valid memberName right operand will require to not be checked and hence, only left operand is checked at first for struct accesses 
+            
+            // struct accesses: struct.member and struct_ptr->member
+            if (matchv(expr->op, STRUCT_ACCESS_OP, ARRAY_COUNT(STRUCT_ACCESS_OP))){
+                if (left.tag == DataType::TAG_ERROR){
+                    return DataTypes::Error;
+                }
+                
+                // left must be of type struct
+                if (left.getBaseType().tag != DataType::TAG_STRUCT){
                     logErrorMessage(expr->op, "Not a valid struct.");
                     errors++;
                     return DataTypes::Error;
                 }
+                
+                // left must be struct if .
+                if (match(expr->op, TOKEN_DOT)){
+                    if (left.indirectionLevel() != 0){
+                        logErrorMessage(expr->op, "Not a valid struct.");
+                        errors++;
+                        return DataTypes::Error;
+                    }
+                }
+                // left must be struct * if ->
+                if (match(expr->op, TOKEN_ARROW)){
+                    if (left.indirectionLevel() != 1){
+                        logErrorMessage(expr->op, "Not a valid struct pointer.");
+                        errors++;
+                        return DataTypes::Error;
+                    }
+                }
+                
+                DataType baseStructType = left.getBaseType();
+                StatementBlock *structDeclScope = scope->findStructDeclaration(baseStructType.structName);
+
+                if (!structDeclScope){
+                    logErrorMessage(expr->op, "Not a valid struct.");
+                    errors++;
+                    return DataTypes::Error;
+                }
+                
+                // the right operand must be valid member name, ie, identifier
+                if (!(expr->right->subtag == Subexpr::SUBEXPR_LEAF && expr->right->leaf.type == TOKEN_IDENTIFIER)){
+                    logErrorMessage(expr->op, "Not a valid member identifier.");
+                    errors++;
+                    return DataTypes::Error;
+                }
+                
+                Splice memberName = expr->right->leaf.string;
+                Struct st = structDeclScope->structs.getInfo(baseStructType.structName.string).info;
+                
+                // the right identifier must be a valid member name in the struct
+                if (!st.members.existKey(memberName)){
+                    logErrorMessage(expr->right->leaf, "No \"%.*s\" member exists in struct \"%.*s\".",
+                                    splicePrintf(memberName), splicePrintf(st.structName.string));
+                    errors++;
+                    return DataTypes::Error;
+                }
+
+                DataType memberType = st.members.getInfo(memberName).info.type;
+
+                return memberType;
+                
             }
-            // left must be struct * if ->
-            if (match(expr->op, TOKEN_ARROW)){
-                if (left.indirectionLevel() != 1){
-                    logErrorMessage(expr->op, "Not a valid struct pointer.");
+
+
+
+            DataType right = checkSubexprType(expr->right, scope);
+            
+            
+            // if error, just return; dont log any errors
+            if (left.tag == DataType::TAG_ERROR || right.tag == DataType::TAG_ERROR){
+                return DataTypes::Error;
+            }
+            // void types cannot be used in operations
+            if ((left.tag == DataType::TAG_VOID && left.indirectionLevel() == 0)
+                || right.tag == DataType::TAG_VOID && right.indirectionLevel() == 0){
+                logErrorMessage(expr->op, "Cannot perform operation \"%.*s\" with void type.", 
+                                    splicePrintf(expr->op.string));
+                errors++;
+                return DataTypes::Error;
+            }
+
+
+            // indexing only works with integers
+            if (match(expr->op, TOKEN_SQUARE_OPEN)){
+                if (!match(right.type,TOKEN_INT)){
+                    logErrorMessage(expr->op, "Indexing only works with integer type.");
+                    errors++;
+                    return DataTypes::Error;
+                }
+                
+                return *(left.ptrTo);
+            }
+
+
+            // check for lvalue validity
+            else if (matchv(expr->op, ASSIGNMENT_OP, ARRAY_COUNT(ASSIGNMENT_OP))){
+                
+
+                if (!isValidLvalue(left, expr->left)){
+                    logErrorMessage(expr->op, "Not a valid lvalue.");
+                    errors++;
+                }
+                
+            }
+
+            
+
+
+            // bitwise and modulo operations dont work with floating point types
+            if (match(left.type, TOKEN_FLOAT) || match(left.type, TOKEN_DOUBLE) ||
+                match(right.type, TOKEN_FLOAT) || match(right.type, TOKEN_DOUBLE)){
+                
+                TokenType invalidOpForFloatingTypes[] = {
+                    TOKEN_MODULO,
+                    TOKEN_AMPERSAND,
+                    TOKEN_BITWISE_AND_ASSIGN,
+                    TOKEN_BITWISE_OR_ASSIGN,
+                    TOKEN_BITWISE_OR,
+                    TOKEN_BITWISE_XOR_ASSIGN,
+                    TOKEN_BITWISE_XOR,
+                    TOKEN_BITWISE_NOT,
+                };
+
+                if (matchv(expr->op, invalidOpForFloatingTypes, ARRAY_COUNT(invalidOpForFloatingTypes))){
+                    logErrorMessage(expr->op, "The operation \"%.*s\" cannot be used with floating point types.", splicePrintf(expr->op.string));
                     errors++;
                     return DataTypes::Error;
                 }
             }
-            
-            DataType baseStructType = left.getBaseType();
-            StatementBlock *structDeclScope = scope->findStructDeclaration(baseStructType.structName);
 
-            if (!structDeclScope){
-                logErrorMessage(expr->op, "Not a valid struct.");
-                errors++;
-                return DataTypes::Error;
-            }
-            
-            // the right operand must be valid member name, ie, identifier
-            if (!(expr->right->subtag == Subexpr::SUBEXPR_LEAF && expr->right->leaf.type == TOKEN_IDENTIFIER)){
-                logErrorMessage(expr->op, "Not a valid member identifier.");
-                errors++;
-                return DataTypes::Error;
-            }
-            
-            Splice memberName = expr->right->leaf.string;
-            Struct st = structDeclScope->structs.getInfo(baseStructType.structName.string).info;
-            
-            // the right identifier must be a valid member name in the struct
-            if (!st.members.existKey(memberName)){
-                logErrorMessage(expr->right->leaf, "No \"%.*s\" member exists in struct \"%.*s\".",
-                                splicePrintf(memberName), splicePrintf(st.structName.string));
-                errors++;
-                return DataTypes::Error;
-            }
-
-            DataType memberType = st.members.getInfo(memberName).info.type;
-
-            return memberType;
-            
-        }
-
-
-
-        DataType right = checkSubexprType(expr->right, scope);
         
-        
-        // if error, just return; dont log any errors
-        if (left.tag == DataType::TAG_ERROR || right.tag == DataType::TAG_ERROR){
-            return DataTypes::Error;
-        }
-        // void types cannot be used in operations
-        if ((left.tag == DataType::TAG_VOID && left.indirectionLevel() == 0)
-            || right.tag == DataType::TAG_VOID && right.indirectionLevel() == 0){
-            logErrorMessage(expr->op, "Cannot perform operation \"%.*s\" with void type.", 
-                                splicePrintf(expr->op.string));
-            errors++;
-            return DataTypes::Error;
-        }
 
-
-        // indexing only works with integers
-        if (match(expr->op, TOKEN_SQUARE_OPEN)){
-            if (!match(right.type,TOKEN_INT)){
-                logErrorMessage(expr->op, "Indexing only works with integer type.");
-                errors++;
-                return DataTypes::Error;
-            }
-            
-            return *(left.ptrTo);
-        }
-
-
-        // check for lvalue validity
-        else if (matchv(expr->op, ASSIGNMENT_OP, ARRAY_COUNT(ASSIGNMENT_OP))){
-            auto isValidLvalue = [&](DataType leftOperandType, Subexpr *leftOperand) -> bool{
-                // const type
-                if (leftOperandType.isSet(DataType::Specifiers::CONST)){
-                    return false;
-                }
+            auto getResultantType = [&](DataType left, DataType right) -> DataType{
+                bool didError = false;
                 
-                TokenType lvalueOp[] = {
-                    TOKEN_ARROW,
-                    TOKEN_DOT,
-                    TOKEN_SQUARE_OPEN,
-                };
-
-                if (leftOperand->subtag == Subexpr::SUBEXPR_BINARY_OP){
-                    return matchv(leftOperand->op, lvalueOp, ARRAY_COUNT(lvalueOp));
-                }
-                
-                // single variable identifier
-                if (leftOperand->subtag == Subexpr::SUBEXPR_LEAF 
-                    && matchv(leftOperand->leaf, LITERAL_TOKEN_TYPES, ARRAY_COUNT(LITERAL_TOKEN_TYPES))){
-                    return false;
-                }
-
-                return true;
-
-            };
-
-            if (!isValidLvalue(left, expr->left)){
-                logErrorMessage(expr->op, "Not a valid lvalue.");
-                errors++;
-            }
-            
-        }
-
-        
-
-
-        // bitwise and modulo operations dont work with floating point types
-        if (match(left.type, TOKEN_FLOAT) || match(left.type, TOKEN_DOUBLE) ||
-            match(right.type, TOKEN_FLOAT) || match(right.type, TOKEN_DOUBLE)){
-            
-            TokenType invalidOpForFloatingTypes[] = {
-                TOKEN_MODULO,
-                TOKEN_AMPERSAND,
-                TOKEN_BITWISE_AND_ASSIGN,
-                TOKEN_BITWISE_OR_ASSIGN,
-                TOKEN_BITWISE_OR,
-                TOKEN_BITWISE_XOR_ASSIGN,
-                TOKEN_BITWISE_XOR,
-                TOKEN_BITWISE_NOT,
-            };
-
-            if (matchv(expr->op, invalidOpForFloatingTypes, ARRAY_COUNT(invalidOpForFloatingTypes))){
-                logErrorMessage(expr->op, "The operation \"%.*s\" cannot be used with floating point types.", splicePrintf(expr->op.string));
-                errors++;
-                return DataTypes::Error;
-            }
-        }
-
-    
-
-        auto getResultantType = [&](DataType left, DataType right) -> DataType{
-            bool didError = false;
-            
-            // diff level of indirection
-            if (left.indirectionLevel() != right.indirectionLevel()){
-                // pointer arithmetic 
-                // (ptr + int)/(ptr - int)/(ptr += int)/(ptr -= int)
-                if (left.indirectionLevel() > 0 && (match(right.type, TOKEN_INT) || match(right.type, TOKEN_CHAR))){ 
-                    if (match(expr->op, TOKEN_PLUS) || match(expr->op, TOKEN_MINUS) 
-                    || match(expr->op, TOKEN_PLUS_ASSIGN) || match(expr->op, TOKEN_MINUS_ASSIGN) ){
-                        return left;
-                    }
-                    else if (match(expr->op, TOKEN_ASSIGNMENT)){
-                        logWarningMessage(expr->op, "Incompatible conversion from integer to pointer.");
-                        return left;
-                    }
-                }
-                // (int + ptr) 
-                else if (right.indirectionLevel() > 0 && (match(left.type, TOKEN_INT) || match(left.type, TOKEN_CHAR))){
-                    if (match(expr->op, TOKEN_PLUS)){
-                        return right;
-                    }
-                    if (match(expr->op, TOKEN_ASSIGNMENT)){
-                        logWarningMessage(expr->op, "Incompatible conversion from pointer to integer.");
-                        return right;
-                    }
-                }
-                // both pointers of different level of indirection
-                // can only assign but log a warning
-                else if (left.indirectionLevel() > 0 && right.indirectionLevel() > 0){
-                    if (match(expr->op, TOKEN_ASSIGNMENT)){
-                        logWarningMessage(expr->op, "Assignment of pointer type \"%s\" to type \"%s\".",
-                                            dataTypePrintf(right), dataTypePrintf(left));
-                        return left;
-                    }
-                }
-
-                didError = true;
-            }
-            // same level of indirection
-            else{
-                // both are pointers
-                if (left.indirectionLevel() > 0){
-                    // can assign, but log error if of different types
-                    if (match(expr->op, TOKEN_ASSIGNMENT)){
-                        if (!(left == right)){
-                            logWarningMessage(expr->op, "Assignment of pointer type \"%s\" to type \"%s\".",
-                                            dataTypePrintf(right), dataTypePrintf(left));
+                // diff level of indirection
+                if (left.indirectionLevel() != right.indirectionLevel()){
+                    // pointer arithmetic 
+                    // (ptr + int)/(ptr - int)/(ptr += int)/(ptr -= int)
+                    if (left.indirectionLevel() > 0 && (match(right.type, TOKEN_INT) || match(right.type, TOKEN_CHAR))){ 
+                        if (match(expr->op, TOKEN_PLUS) || match(expr->op, TOKEN_MINUS) 
+                        || match(expr->op, TOKEN_PLUS_ASSIGN) || match(expr->op, TOKEN_MINUS_ASSIGN) ){
+                            return left;
                         }
-                        return left;
+                        else if (match(expr->op, TOKEN_ASSIGNMENT)){
+                            logWarningMessage(expr->op, "Incompatible conversion from integer to pointer.");
+                            return left;
+                        }
                     }
+                    // (int + ptr) 
+                    else if (right.indirectionLevel() > 0 && (match(left.type, TOKEN_INT) || match(left.type, TOKEN_CHAR))){
+                        if (match(expr->op, TOKEN_PLUS)){
+                            return right;
+                        }
+                        if (match(expr->op, TOKEN_ASSIGNMENT)){
+                            logWarningMessage(expr->op, "Incompatible conversion from pointer to integer.");
+                            return right;
+                        }
+                    }
+                    // both pointers of different level of indirection
+                    // can only assign but log a warning
+                    else if (left.indirectionLevel() > 0 && right.indirectionLevel() > 0){
+                        if (match(expr->op, TOKEN_ASSIGNMENT)){
+                            if (canBeConverted(expr->right, right, left)){}
 
-                    if (left == right){
-                        // ptr difference: (ptr - ptr)
-                        if (match(expr->op, TOKEN_MINUS)){
-                            return DataTypes::Long_Long;
+                            return left;
                         }
                     }
 
                     didError = true;
                 }
-                // same type but not pointers
-                else if (left == right){
-                    // assignment is defined for all operands of the same type  
-                    if (match(expr->op, TOKEN_ASSIGNMENT)){
-                        return left;
-                    }
-                    
-                    // all other primary operands work with all other operators 
-                    // (floating point exceptions have been handled at the start)
-                    if (left.tag == DataType::TAG_PRIMARY){
-                        return left;
-                    }
-
-                    // if struct, only assignment between same structs is allowed 
-                    if (match(left.type, TOKEN_STRUCT)){
-                        if (match(TOKEN_ASSIGNMENT) && compare(left.structName.string, right.structName.string)){
-                            return left;
-                        }
-                    }
-                    didError = true;
-
-                }
-                
-                // different types of primary types
-                else if (left.tag == DataType::TAG_PRIMARY && right.tag == DataType::TAG_PRIMARY){
-                    
-                    // for valid assignment operations, the resultant type is the type of the left operand
-                    if (matchv(expr->op, ASSIGNMENT_OP, ARRAY_COUNT(ASSIGNMENT_OP))){
-                        return left;
-                    }
-
-                    // if any is double or float, convert to that
-                    if (match(left.type, TOKEN_DOUBLE) || match(right.type, TOKEN_DOUBLE)){
-                        return DataTypes::Double;
-                    }   
-                    else if (match(left.type, TOKEN_FLOAT) || match(right.type, TOKEN_FLOAT)){
-                        return DataTypes::Float;
-                    }   
-
-                    // same signedness, conversion to greater conversion rank
-                    else if ((left.isSet(DataType::Specifiers::SIGNED) && right.isSet(DataType::Specifiers::SIGNED))
-                            || (left.isSet(DataType::Specifiers::UNSIGNED) && right.isSet(DataType::Specifiers::UNSIGNED))){
-                        
-                        if (getIntegerConversionRank(left) > getIntegerConversionRank(right)){
-                            return left;
-                        }
-                        
-                        return right;
-                        
-                    }   
-                    
-                    // different signedness
-                    else {
-                        // if unsigned has higher or equal rank, then unsigned
-                        // else, if signed can accomodate full range of unsigned then convert to signed, 
-                        // else convert to unsigned counterpart of the signed types
-                        
-                        auto signedUnsignedConversion = [&](DataType unsignedType, DataType signedType){
-                            if (getIntegerConversionRank(unsignedType) >= getIntegerConversionRank(signedType)){
-                                return unsignedType;
-                            }
-                            else if (signedType.isSet(DataType::Specifiers::LONG_LONG)){
-                                return signedType;
-                            }
-                            else if (signedType.isSet(DataType::Specifiers::LONG)){
-                                // signed long cannot accomodate unsigned int
-                                if (!unsignedType.isSet(DataType::Specifiers::LONG)){
-                                    return signedType;
-                                }
-                            }
-                            else if (!signedType.isSet(DataType::Specifiers::SHORT)){
-                                // signed int can accomodate unsigned short and char
-                                if (unsignedType.isSet(DataType::Specifiers::SHORT) || match(unsignedType.type, TOKEN_CHAR)){
-                                    return signedType;
-                                }
-                            }
-                            else if (signedType.isSet(DataType::Specifiers::SHORT)){
-                                // signed short can accomodate unsigneds char
-                                if (match(unsignedType.type, TOKEN_CHAR)){
-                                    return signedType;
-                                }
-                            }
-                            // unsigned counterpart of the signed types
-                            signedType.flags |= DataType::Specifiers::UNSIGNED;
-                            signedType.flags ^= DataType::Specifiers::SIGNED;
-                            return signedType;
-                        };
-                        
-                        
-                        if (left.isSet(DataType::Specifiers::UNSIGNED)){
-                            return signedUnsignedConversion(left, right);
-                        }
-                        else {
-                            return signedUnsignedConversion(right, left);
-                        }
-                    }
-                    
-                
-                }
-
-                // different types that are not primary: no operators are defined
+                // same level of indirection
                 else{
-                    didError = true;
-                }
-            }
+                    // both are pointers
+                    if (left.indirectionLevel() > 0){
+                        // can assign, but log error if of different types
+                        if (match(expr->op, TOKEN_ASSIGNMENT)){
+                            if (canBeConverted(expr->right, right, left)){}
+                            
+                            return left;
+                        }
 
-            if (didError){
-                logErrorMessage(expr->op, "No \"%.*s\" operator defined for type \"%s\" and \"%s\".", 
-                                splicePrintf(expr->op.string),
-                                dataTypePrintf(left), dataTypePrintf(right));
-                errors++;
-                return DataTypes::Error;
-            }
+                        if (left == right){
+                            // ptr difference: (ptr - ptr)
+                            if (match(expr->op, TOKEN_MINUS)){
+                                return DataTypes::Long_Long;
+                            }
+                        }
 
+                        didError = true;
+                    }
+                    // same type but not pointers
+                    else if (left == right){
+                        // assignment is defined for all operands of the same type  
+                        if (match(expr->op, TOKEN_ASSIGNMENT)){
+                            return left;
+                        }
+                        
+                        // all other primary operands work with all other operators 
+                        // (floating point exceptions have been handled at the start)
+                        if (left.tag == DataType::TAG_PRIMARY){
+                            return left;
+                        }
 
-            return DataTypes::Int;
-        };
+                        // if struct, only assignment between same structs is allowed 
+                        if (match(left.type, TOKEN_STRUCT)){
+                            if (match(TOKEN_ASSIGNMENT) && compare(left.structName.string, right.structName.string)){
+                                return left;
+                            }
+                        }
+                        didError = true;
 
-        return getResultantType(left, right);
-        break;
-    }
-        
-    case Subexpr::SUBEXPR_UNARY:{
-
-        DataType operand = checkSubexprType(expr->unarySubexpr, scope);
-        // *ptr
-        if (match(expr->unaryOp, TOKEN_STAR)){
-            if (operand.indirectionLevel() > 0){
-                return *(operand.ptrTo);
-            }
-            else{
-                logErrorMessage(expr->unaryOp, "Cannot be dereferenced. Not a valid pointer.");
-                errors++;
-                return DataTypes::Error;
-            }
-        }
-        // &var
-        else if (match(expr->unaryOp, TOKEN_AMPERSAND)){
-            // cannot get the address of an address
-            if (operand.tag == DataType::TAG_ADDRESS){
-                logErrorMessage(expr->unaryOp, "Cannot get the address of an address literal.");
-                errors++;
-                return DataTypes::Error;
-            }
-            
-            // cannot get the address of a literal
-            if (expr->unarySubexpr->subtag == Subexpr::SUBEXPR_LEAF && 
-                matchv(expr->unarySubexpr->leaf, LITERAL_TOKEN_TYPES, ARRAY_COUNT(LITERAL_TOKEN_TYPES))){
-                
-                logErrorMessage(expr->unaryOp, "\"%.*s\" is not a valid identifier. Cannot get the address of a literal.",
-                                splicePrintf(expr->unarySubexpr->leaf.string));
-                errors++;
-                return DataTypes::Error;
-            }
-            
-            // &val is valid only if &identifier, &struct.member, &array[i]
-            bool isValid = false;
-            
-            if (expr->unarySubexpr->subtag == Subexpr::SUBEXPR_LEAF && match(expr->unarySubexpr->leaf, TOKEN_IDENTIFIER)){
-                isValid = true;
-            }
-            else if (expr->unarySubexpr->subtag == Subexpr::SUBEXPR_BINARY_OP){
-                TokenType VALID_OP[] = {
-                    TOKEN_SQUARE_OPEN,
-                    TOKEN_DOT,
-                    TOKEN_ARROW,
-                };
-                
-                isValid = isValid || matchv(expr->unarySubexpr->op, VALID_OP, ARRAY_COUNT(VALID_OP));
-            }
-            
-            if (isValid){
-                DataType d;
-                d.tag = DataType::TAG_ADDRESS;
-                d.ptrTo =  (DataType*) arena->alloc(sizeof(DataType));
-                *(d.ptrTo) = operand;
-
-                return d;
-            }
-            else{
-                logErrorMessage(expr->unaryOp, "Not a valid identifier.");
-                errors++;
-                return DataTypes::Error;
-            }
-        }
-        // if struct then, no other unary operator other than & are defined
-        else if (operand.tag == DataType::TAG_STRUCT){
-            return DataTypes::Error;
-        }
-
-        return operand;
-        break;
-    }
-
-    case Subexpr::SUBEXPR_LEAF:{
-        // check if identifier has been declared
-        if (match(expr->leaf, TOKEN_IDENTIFIER)){
-            StatementBlock *varDeclScope = scope->findVarDeclaration(expr->leaf.string);
-            
-            if (!varDeclScope){
-                logErrorMessage(expr->leaf, "Undeclared identifier \"%.*s\"", splicePrintf(expr->leaf.string));
-                errors++;
-
-                return DataTypes::Error;
-            }
-
-            DataType type = varDeclScope->symbols.getInfo(expr->leaf.string).info;
-            return type;
-        }
-        
-        // e;se is an immediate value
-        switch (expr->leaf.type){
-            case TOKEN_CHARACTER_LITERAL:
-                return DataTypes::Char;
-            case TOKEN_NUMERIC_FLOAT:
-                return DataTypes::Float;
-            case TOKEN_NUMERIC_DOUBLE:
-                return DataTypes::Double;
-            case TOKEN_NUMERIC_DEC:
-            case TOKEN_NUMERIC_BIN:
-            case TOKEN_NUMERIC_HEX:
-            case TOKEN_NUMERIC_OCT:
-                return DataTypes::Int;
-            case TOKEN_STRING_LITERAL:
-                return DataTypes::String;
-            default:
-                return DataTypes::Error;
-        }
-
-        break;
-    }
-
-    
-    case Subexpr::SUBEXPR_FUNCTION_CALL:{
-
-        FunctionCall *fooCall = expr->functionCall;
-
-        // check if function has been declared
-        if (!ir->functions.existKey(fooCall->funcName.string)){
-            logErrorMessage(fooCall->funcName, "Invalid implicit declaration of function \"%.*s\"", 
-                            splicePrintf(fooCall->funcName.string));
-            errors++;
-            return DataTypes::Error;
-        }
-
-        Function foo = ir->functions.getInfo(fooCall->funcName.string).info;
-        // check for number of arguments
-        if (foo.parameters.size() != fooCall->arguments.size()){
-            logErrorMessage(fooCall->funcName, "In function \"%.*s\", required %llu but found %llu arguments.", 
-                        splicePrintf(fooCall->funcName.string), foo.parameters.size(), fooCall->arguments.size());
-            errors++;
-        }
-        else{
-            // check if arguments are of correct type/can be implicitly converted to the correct type
-            auto matchArgType = [&](Function *foo, FunctionCall *fooCall){
-                for (int i=0; i<foo->parameters.size(); i++){
-                    DataType fromType = checkSubexprType(fooCall->arguments[i], scope);
+                    }
                     
-                    if (!canBeConverted(fooCall->arguments[i], fromType, foo->parameters[i].type)){
-                        logErrorMessage(getSubexprToken(fooCall->arguments[i]), "Cannot convert argument of type \"%s\" to \"%s\"",
-                                        dataTypePrintf(fromType), dataTypePrintf(foo->parameters[i].type));
-                        errors++;
+                    // different types of primary types
+                    else if (left.tag == DataType::TAG_PRIMARY && right.tag == DataType::TAG_PRIMARY){
+                        
+                        // for valid assignment operations, the resultant type is the type of the left operand
+                        if (matchv(expr->op, ASSIGNMENT_OP, ARRAY_COUNT(ASSIGNMENT_OP))){
+                            return left;
+                        }
+
+                        // if any is double or float, convert to that
+                        if (match(left.type, TOKEN_DOUBLE) || match(right.type, TOKEN_DOUBLE)){
+                            return DataTypes::Double;
+                        }   
+                        else if (match(left.type, TOKEN_FLOAT) || match(right.type, TOKEN_FLOAT)){
+                            return DataTypes::Float;
+                        }   
+
+                        // same signedness, conversion to greater conversion rank
+                        else if ((left.isSet(DataType::Specifiers::SIGNED) && right.isSet(DataType::Specifiers::SIGNED))
+                                || (left.isSet(DataType::Specifiers::UNSIGNED) && right.isSet(DataType::Specifiers::UNSIGNED))){
+                            
+                            if (getIntegerConversionRank(left) > getIntegerConversionRank(right)){
+                                return left;
+                            }
+                            
+                            return right;
+                            
+                        }   
+                        
+                        // different signedness
+                        else {
+                            // if unsigned has higher or equal rank, then unsigned
+                            // else, if signed can accomodate full range of unsigned then convert to signed, 
+                            // else convert to unsigned counterpart of the signed types
+                            
+                            auto signedUnsignedConversion = [&](DataType unsignedType, DataType signedType){
+                                if (getIntegerConversionRank(unsignedType) >= getIntegerConversionRank(signedType)){
+                                    return unsignedType;
+                                }
+                                else if (signedType.isSet(DataType::Specifiers::LONG_LONG)){
+                                    return signedType;
+                                }
+                                else if (signedType.isSet(DataType::Specifiers::LONG)){
+                                    // signed long cannot accomodate unsigned int
+                                    if (!unsignedType.isSet(DataType::Specifiers::LONG)){
+                                        return signedType;
+                                    }
+                                }
+                                else if (!signedType.isSet(DataType::Specifiers::SHORT)){
+                                    // signed int can accomodate unsigned short and char
+                                    if (unsignedType.isSet(DataType::Specifiers::SHORT) || match(unsignedType.type, TOKEN_CHAR)){
+                                        return signedType;
+                                    }
+                                }
+                                else if (signedType.isSet(DataType::Specifiers::SHORT)){
+                                    // signed short can accomodate unsigneds char
+                                    if (match(unsignedType.type, TOKEN_CHAR)){
+                                        return signedType;
+                                    }
+                                }
+                                // unsigned counterpart of the signed types
+                                signedType.flags |= DataType::Specifiers::UNSIGNED;
+                                signedType.flags ^= DataType::Specifiers::SIGNED;
+                                return signedType;
+                            };
+                            
+                            
+                            if (left.isSet(DataType::Specifiers::UNSIGNED)){
+                                return signedUnsignedConversion(left, right);
+                            }
+                            else {
+                                return signedUnsignedConversion(right, left);
+                            }
+                        }
+                        
+                    
+                    }
+
+                    // different types that are not primary: no operators are defined
+                    else{
+                        didError = true;
                     }
                 }
+
+                if (didError){
+                    logErrorMessage(expr->op, "No \"%.*s\" operator defined for type \"%s\" and \"%s\".", 
+                                    splicePrintf(expr->op.string),
+                                    dataTypePrintf(left), dataTypePrintf(right));
+                    errors++;
+                    return DataTypes::Error;
+                }
+
+
+                return DataTypes::Int;
             };
 
-            matchArgType(&foo, fooCall);
+            return getResultantType(left, right);
+            break;
+        }
+            
+        case Subexpr::SUBEXPR_UNARY:{
 
+            DataType operand = checkSubexprType(expr->unarySubexpr, scope);
+            // *ptr
+            if (match(expr->unaryOp, TOKEN_STAR)){
+                if (operand.indirectionLevel() > 0){
+                    return *(operand.ptrTo);
+                }
+                else{
+                    logErrorMessage(expr->unaryOp, "Cannot be dereferenced. Not a valid pointer.");
+                    errors++;
+                    return DataTypes::Error;
+                }
+            }
+            // &var
+            else if (match(expr->unaryOp, TOKEN_AMPERSAND)){
+                // cannot get the address of an address
+                if (operand.tag == DataType::TAG_ADDRESS){
+                    logErrorMessage(expr->unaryOp, "Cannot get the address of an address literal.");
+                    errors++;
+                    return DataTypes::Error;
+                }
+                
+                // cannot get the address of a literal
+                if (expr->unarySubexpr->subtag == Subexpr::SUBEXPR_LEAF && 
+                    matchv(expr->unarySubexpr->leaf, LITERAL_TOKEN_TYPES, ARRAY_COUNT(LITERAL_TOKEN_TYPES))){
+                    
+                    logErrorMessage(expr->unaryOp, "\"%.*s\" is not a valid identifier. Cannot get the address of a literal.",
+                                    splicePrintf(expr->unarySubexpr->leaf.string));
+                    errors++;
+                    return DataTypes::Error;
+                }
+                
+                // &val is valid only if &identifier, &struct.member, &array[i]
+                bool isValid = false;
+                
+                if (expr->unarySubexpr->subtag == Subexpr::SUBEXPR_LEAF && match(expr->unarySubexpr->leaf, TOKEN_IDENTIFIER)){
+                    isValid = true;
+                }
+                else if (expr->unarySubexpr->subtag == Subexpr::SUBEXPR_BINARY_OP){
+                    TokenType VALID_OP[] = {
+                        TOKEN_SQUARE_OPEN,
+                        TOKEN_DOT,
+                        TOKEN_ARROW,
+                    };
+                    
+                    isValid = isValid || matchv(expr->unarySubexpr->op, VALID_OP, ARRAY_COUNT(VALID_OP));
+                }
+                
+                if (isValid){
+                    DataType d;
+                    d.tag = DataType::TAG_ADDRESS;
+                    d.ptrTo =  (DataType*) arena->alloc(sizeof(DataType));
+                    *(d.ptrTo) = operand;
+
+                    return d;
+                }
+                else{
+                    logErrorMessage(expr->unaryOp, "Not a valid identifier.");
+                    errors++;
+                    return DataTypes::Error;
+                }
+            }
+            // if struct then, no other unary operator other than & are defined
+            else if (operand.tag == DataType::TAG_STRUCT){
+                return DataTypes::Error;
+            }
+
+            return operand;
+            break;
         }
 
+        case Subexpr::SUBEXPR_LEAF:{
+            // check if identifier has been declared
+            if (match(expr->leaf, TOKEN_IDENTIFIER)){
+                StatementBlock *varDeclScope = scope->findVarDeclaration(expr->leaf.string);
+                
+                if (!varDeclScope){
+                    logErrorMessage(expr->leaf, "Undeclared identifier \"%.*s\"", splicePrintf(expr->leaf.string));
+                    errors++;
 
-        return foo.returnType;
-    }
-    
-    case Subexpr::SUBEXPR_RECURSE_PARENTHESIS:
-        return checkSubexprType(expr->inside, scope);
-    
-    default:
-        return DataTypes::Error;
-    }
+                    return DataTypes::Error;
+                }
 
+                DataType type = varDeclScope->symbols.getInfo(expr->leaf.string).info;
+                return type;
+            }
+            
+            // e;se is an immediate value
+            switch (expr->leaf.type){
+                case TOKEN_CHARACTER_LITERAL:
+                    return DataTypes::Char;
+                case TOKEN_NUMERIC_FLOAT:
+                    return DataTypes::Float;
+                case TOKEN_NUMERIC_DOUBLE:
+                    return DataTypes::Double;
+                case TOKEN_NUMERIC_DEC:
+                case TOKEN_NUMERIC_BIN:
+                case TOKEN_NUMERIC_HEX:
+                case TOKEN_NUMERIC_OCT:
+                    return DataTypes::Int;
+                case TOKEN_STRING_LITERAL:
+                    return DataTypes::String;
+                default:
+                    return DataTypes::Error;
+            }
+
+            break;
+        }
+
+        
+        case Subexpr::SUBEXPR_FUNCTION_CALL:{
+
+            FunctionCall *fooCall = expr->functionCall;
+
+            // check if function has been declared
+            if (!ir->functions.existKey(fooCall->funcName.string)){
+                logErrorMessage(fooCall->funcName, "Invalid implicit declaration of function \"%.*s\"", 
+                                splicePrintf(fooCall->funcName.string));
+                errors++;
+                return DataTypes::Error;
+            }
+
+            Function foo = ir->functions.getInfo(fooCall->funcName.string).info;
+            // check for number of arguments
+            if (foo.parameters.size() != fooCall->arguments.size()){
+                logErrorMessage(fooCall->funcName, "In function \"%.*s\", required %llu but found %llu arguments.", 
+                            splicePrintf(fooCall->funcName.string), foo.parameters.size(), fooCall->arguments.size());
+                errors++;
+            }
+            else{
+                // check if arguments are of correct type/can be implicitly converted to the correct type
+                auto matchArgType = [&](Function *foo, FunctionCall *fooCall){
+                    for (int i=0; i<foo->parameters.size(); i++){
+                        DataType fromType = checkSubexprType(fooCall->arguments[i], scope);
+                        
+                        if (!canBeConverted(fooCall->arguments[i], fromType, foo->parameters[i].type)){
+                            logErrorMessage(getSubexprToken(fooCall->arguments[i]), "Cannot convert argument of type \"%s\" to \"%s\"",
+                                            dataTypePrintf(fromType), dataTypePrintf(foo->parameters[i].type));
+                            errors++;
+                        }
+                    }
+                };
+
+                matchArgType(&foo, fooCall);
+
+            }
+
+
+            return foo.returnType;
+        }
+        
+        case Subexpr::SUBEXPR_RECURSE_PARENTHESIS:
+            return checkSubexprType(expr->inside, scope);
+        
+        default:
+            return DataTypes::Error;
+        }
+    };
+
+    
+    DataType dt = checkType();
+    expr->type = dt;
+    
+    return dt;
 }
 
 
@@ -1220,11 +1332,28 @@ Subexpr* Parser::parsePrimary(StatementBlock *scope){
     // (subexpr)
     if (match(TOKEN_PARENTHESIS_OPEN)){
         consumeToken();
-        s->inside = parseSubexpr(INT32_MAX, scope);
-        
-        expect(TOKEN_PARENTHESIS_CLOSE);
 
-        s->subtag = Subexpr::SUBEXPR_RECURSE_PARENTHESIS;
+        if (matchv(DATA_TYPE_TOKENS, ARRAY_COUNT(DATA_TYPE_TOKENS))
+            || matchv(TYPE_MODIFIER_TOKENS, ARRAY_COUNT(TYPE_MODIFIER_TOKENS))
+            || matchv(TYPE_QUALIFIER_TOKENS, ARRAY_COUNT(TYPE_QUALIFIER_TOKENS))){
+            
+            s->to = parseDataType(scope);
+            s->subtag = Subexpr::SUBEXPR_CAST;
+            expect(TOKEN_PARENTHESIS_CLOSE);
+            
+            s->expr = parsePrimary(scope);
+        }
+        else {
+            s->inside = parseSubexpr(INT32_MAX, scope);
+            s->subtag = Subexpr::SUBEXPR_RECURSE_PARENTHESIS;
+            expect(TOKEN_PARENTHESIS_CLOSE);
+
+        }
+
+
+
+        
+
     }
     // unary 
     else if (matchv(UNARY_OP_TOKENS, ARRAY_COUNT(UNARY_OP_TOKENS))){
@@ -1335,6 +1464,9 @@ bool Parser::canResolveToConstant(Subexpr *s, StatementBlock *scope){
     case Subexpr::SUBEXPR_RECURSE_PARENTHESIS:{
         return canResolveToConstant(s->inside, scope);
     }
+    case Subexpr::SUBEXPR_CAST:{
+        return canResolveToConstant(s->expr, scope);
+    }
     default:
         break;
     }
@@ -1367,12 +1499,9 @@ Node* Parser::parseDeclaration(StatementBlock *scope){
     }
 
     // check if struct has been defined: only defined structs can be used for declaration
-    if (type.tag == DataType::TAG_STRUCT){
-        
-        if (!scope->findStructDeclaration(type.structName)){
-            logErrorMessage(type.structName, "Struct \"%.*s\" incomplete.", splicePrintf(type.structName.string));
-            errors++;
-        }
+    if (!isTypeDefined(type, scope)){
+        logErrorMessage(type.structName, "Struct \"%.*s\" incomplete.", splicePrintf(type.structName.string));
+        errors++;
     }
 
 
@@ -1389,7 +1518,9 @@ Node* Parser::parseDeclaration(StatementBlock *scope){
         foo.block = NULL;
         
         // parse parameters
-        while (matchv(DATA_TYPE_TOKENS, ARRAY_COUNT(DATA_TYPE_TOKENS))){
+        while (matchv(DATA_TYPE_TOKENS, ARRAY_COUNT(DATA_TYPE_TOKENS))
+            || matchv(TYPE_MODIFIER_TOKENS, ARRAY_COUNT(TYPE_MODIFIER_TOKENS))
+            || matchv(TYPE_QUALIFIER_TOKENS, ARRAY_COUNT(TYPE_QUALIFIER_TOKENS))){
             Function::Parameter p;
             p.type = parseDataType(scope);
             
@@ -1534,8 +1665,6 @@ Node* Parser::parseDeclaration(StatementBlock *scope){
             if (match(TOKEN_ASSIGNMENT)){
                 consumeToken();
                 var.initValue = parseSubexpr(INT32_MAX, scope);
-                checkSubexprType(var.initValue, scope);
-
             }
 
 
@@ -1553,11 +1682,6 @@ Node* Parser::parseDeclaration(StatementBlock *scope){
                 }
             }
 
-            // void type not allowed
-            if (type.tag == DataType::TAG_VOID && type.indirectionLevel() == 0){
-                errors++;
-                logErrorMessage(type.type, "void type is not allowed.");
-            }
             
             type = base;
         }while (match(TOKEN_COMMA) && expect(TOKEN_COMMA));
@@ -2008,8 +2132,24 @@ bool Parser::checkContext(Node *n, StatementBlock *scope){
         Declaration *d = (Declaration*)n;
         
         for (auto &decln: d->decln){
+            
+            // void type not allowed
+            if (decln.type.tag == DataType::TAG_VOID && decln.type.indirectionLevel() == 0){
+                logErrorMessage(decln.type.type, "void type is not allowed.");
+                errors++;
+                continue;
+            }
 
-            checkSubexprType(decln.initValue, scope);
+
+            if (decln.initValue){
+                DataType initType = checkSubexprType(decln.initValue, scope);
+                if (!canBeConverted(decln.initValue, initType, decln.type)){
+                    logErrorMessage(getSubexprToken(decln.initValue), "Cannot initialize variable of type \"%s\" with value of type \"%s\".", 
+                        dataTypePrintf(decln.type), dataTypePrintf(initType)
+                    );
+                    errors++;
+                }   
+            }
             
             // DataType type = checkSubexprType(decln.count, scope);
             
@@ -2102,6 +2242,12 @@ void printParseTree(Node *const current, int depth){
                 printParseTree(arg, depth + 1);
             }
 
+            break;
+        }
+        case Subexpr::SUBEXPR_CAST : {
+            printTabs(depth + 1);
+            std::cout<<"CAST TO: " <<dataTypePrintf(s->to) << "\n";
+            printParseTree(s->expr, depth + 1);
             break;
         }
         default:

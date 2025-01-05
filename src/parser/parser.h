@@ -39,6 +39,9 @@ struct Parser{
     DataType checkSubexprType(Subexpr *operation, StatementBlock *scope);
     bool checkContext(Node *n, StatementBlock *scope);
     bool canResolveToConstant(Subexpr *s, StatementBlock *scope);
+    bool isTypeDefined(DataType d,  StatementBlock* scope);
+    bool isValidLvalue(DataType leftType, Subexpr* leftOperand);
+
 
     // parsing
     Node* parseDeclaration(StatementBlock *scope);
