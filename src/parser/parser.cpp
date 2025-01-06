@@ -1958,6 +1958,11 @@ AST *Parser::parseProgram(){
         }
 
     }
+
+    for (auto &fooInfo : ir->functions.entries){
+        Function &foo = fooInfo.second.info;
+        checkContext(foo.block, &ir->global);
+    }
     
     fprintf(stdout, "[Parser] %llu errors generated.\n", errors);
     return (errors == 0)? ir : NULL;
@@ -1981,18 +1986,23 @@ bool Parser::checkContext(Node *n, StatementBlock *scope){
     case Node::NODE_IF_BLOCK:{
         IfNode *i = (IfNode *)n;
         
-        // check if condition expression can be converted to a boolean/arithmetic value
-        DataType conditionType = checkSubexprType(i->condition, scope);
+        while (i){
+            if (i->condition){    
+                // check if condition expression can be converted to a boolean/arithmetic value
+                DataType conditionType = checkSubexprType(i->condition, scope);
 
-        if (!canBeConverted(i->condition, conditionType, DataTypes::Int)){
-            Token subexprToken = getSubexprToken(i->condition);
+                if (!canBeConverted(i->condition, conditionType, DataTypes::Int)){
+                    Token subexprToken = getSubexprToken(i->condition);
+                    
+                    logErrorMessage(subexprToken, "Cannot convert from expression of type \"%s\" to an integer/arithmetic type",
+                                    dataTypePrintf(conditionType));
+                    errors++;
+                }
+            }
+            checkContext(i->block, scope);
             
-            logErrorMessage(subexprToken, "Cannot convert from expression of type \"%s\" to an integer/arithmetic type",
-                            dataTypePrintf(conditionType));
-            errors++;
+            i = i->nextIf;
         }
-
-        checkContext(i->block, scope);
 
         break;
     }
