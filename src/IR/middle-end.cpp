@@ -3,43 +3,15 @@
 #include <utils/utils.h>
 
 /*
-    Inserts a typecast node to convert an operand of a binary expression to its resulting type.
-    TODO: Add typecasts for stores as well
-*/
-void insertTypeCast(MIR_Expr *d, Arena* arena){
-    MIR_Expr *left = d->binary.left;
-    MIR_Expr *right = d->binary.right;
-
-    if (!(left->type == d->type)){
-        MIR_Expr *cast = (MIR_Expr*)arena->alloc(sizeof(MIR_Expr));
-        cast->tag = MIR_Expr::EXPR_CAST;
-        cast->cast.from = left->type; 
-        cast->cast.to = d->type; 
-        cast->cast.expr = left;
-
-        d->binary.left = cast;
-    }
-    if (!(right->type == d->type)){
-        MIR_Expr *cast = (MIR_Expr*)arena->alloc(sizeof(MIR_Expr));
-        cast->tag = MIR_Expr::EXPR_CAST;
-        cast->cast.from = right->type; 
-        cast->cast.to = d->type; 
-        cast->cast.expr = right;
-        
-        d->binary.right = cast;
-    }
-}
-
-/*
     Convert an expression to a given type.
 */
-MIR_Expr* typeCastTo(MIR_Expr* expr, DataType to, Arena* arena){
+MIR_Expr* typeCastTo(MIR_Expr* expr, MIR_Datatype to, Arena* arena){
     MIR_Expr* e = expr;
-    if (!(expr->type == to)){
+    if (expr->_type.tag != to.tag){
         MIR_Expr *cast = (MIR_Expr*)arena->alloc(sizeof(MIR_Expr));
         cast->tag = MIR_Expr::EXPR_CAST;
-        cast->cast.from = expr->type; 
-        cast->cast.to = to; 
+        cast->cast._from = expr->_type; 
+        cast->cast._to = to; 
         cast->cast.expr = expr;
         
         e = cast;
@@ -163,6 +135,7 @@ MIR_Datatype convertToLowerLevelType(DataType d, StatementBlock *scope){
             .tag = MIR_Datatype::TYPE_ARRAY,
             .size = d.arrayCount * arrayOf.size,
             .alignment = arrayOf.alignment, 
+            .name = "_array"
         };
     }
     case DataType::TAG_PRIMARY:
@@ -255,7 +228,7 @@ MIR_Expr* transformSubexpr(const Subexpr* expr, StatementBlock* scope, Arena* ar
 
             d = transformSubexpr(expr->left, scope, arena);
 
-            DataType structType = d->type;
+            DataType structType = expr->left->type;
             assert(structType.tag == DataType::TAG_STRUCT);
             assert(expr->right->subtag == Subexpr::SUBEXPR_LEAF);
 
@@ -267,10 +240,10 @@ MIR_Expr* transformSubexpr(const Subexpr* expr, StatementBlock* scope, Arena* ar
             assert(structInfo.members.existKey(expr->right->leaf.string));
             Struct::MemberInfo member = structInfo.members.getInfo(expr->right->leaf.string).info;
             
-            d->type = member.type;
-            d->_type = convertToLowerLevelType(d->type, scope);
+            // d->type = member.type;
+            d->_type = convertToLowerLevelType(member.type, scope);
 
-            d->load.size = sizeOfType(d->type, scope);
+            d->load.size = sizeOfType(member.type, scope);
             d->load.offset += member.offset;
             d->ptag = MIR_Primitive::PRIM_EXPR;
             
@@ -298,8 +271,10 @@ MIR_Expr* transformSubexpr(const Subexpr* expr, StatementBlock* scope, Arena* ar
             
             
             d->load.base = transformSubexpr(expr->left, scope, arena);
+            
+            DataType structType = expr->left->type.getBaseType();
 
-            DataType structType = d->load.base->type.getBaseType();
+            // DataType structType = d->load.base->type.getBaseType();
             assert(structType.tag == DataType::TAG_STRUCT);
             assert(expr->right->subtag == Subexpr::SUBEXPR_LEAF);
 
@@ -312,7 +287,7 @@ MIR_Expr* transformSubexpr(const Subexpr* expr, StatementBlock* scope, Arena* ar
             Struct::MemberInfo member = structInfo.members.getInfo(expr->right->leaf.string).info;
             
             d->type = member.type;
-            d->_type = convertToLowerLevelType(d->type, scope);
+            d->_type = convertToLowerLevelType(member.type, scope);
 
             d->load.size = sizeOfType(member.type, scope);
             d->load.offset = member.offset;
@@ -368,20 +343,22 @@ MIR_Expr* transformSubexpr(const Subexpr* expr, StatementBlock* scope, Arena* ar
             MIR_Expr *left = transformSubexpr(expr->left, scope, arena);
             MIR_Expr *right = transformSubexpr(expr->right, scope, arena);
             
-            assert(left->type.tag == DataType::TAG_PTR || 
-                    left->type.tag == DataType::TAG_ARRAY ||
-                    left->type.tag == DataType::TAG_ADDRESS);
+            assert(expr->left->type.tag == DataType::TAG_PTR || 
+                    expr->left->type.tag == DataType::TAG_ARRAY ||
+                    expr->left->type.tag == DataType::TAG_ADDRESS);
         
 
             d->tag = MIR_Expr::EXPR_LOAD;
-            d->type = *(left->type.ptrTo);
-            d->_type = convertToLowerLevelType(d->type, scope);
+            
+            DataType dt = *(expr->left->type.ptrTo);
+            d->type = dt;
+            d->_type = convertToLowerLevelType(dt, scope);
 
 
             int64_t loadOffset = 0;
 
             // if an array, then the address is implicit, so there is no need to load the array 
-            if (left->type.tag == DataType::TAG_ARRAY){
+            if (expr->left->type.tag == DataType::TAG_ARRAY){
                 // remove the load but save the offset
                 assert(left->tag == MIR_Expr::EXPR_LOAD);
                 loadOffset = left->load.offset;
@@ -393,12 +370,15 @@ MIR_Expr* transformSubexpr(const Subexpr* expr, StatementBlock* scope, Arena* ar
             index->tag = MIR_Expr::EXPR_INDEX;
             index->index.index = right;
             index->index.base = left;
-            index->index.size = sizeOfType(d->type, scope);
+            index->index.size = sizeOfType(dt, scope);
             index->type = DataType{.tag = DataType::TAG_ADDRESS};
+            index->_type = convertToLowerLevelType(index->type, scope);
+            index->ptag = MIR_Primitive::PRIM_EXPR;
+
 
             d->load.base = index;
             d->load.offset = loadOffset;
-            d->load.size = sizeOfType(d->type, scope);
+            d->load.size = sizeOfType(dt, scope);
             d->ptag = MIR_Primitive::PRIM_EXPR;
 
             return d;
@@ -451,18 +431,21 @@ MIR_Expr* transformSubexpr(const Subexpr* expr, StatementBlock* scope, Arena* ar
                 MIR_Expr *add = (MIR_Expr*)arena->alloc(sizeof(MIR_Expr));
                 MIR_Expr *addLeft = (MIR_Expr*)arena->alloc(sizeof(MIR_Expr));
                 
-                // the new add node
-                add->tag = MIR_Expr::EXPR_BINARY;
-                add->binary.left = addLeft;
-                add->binary.right = right;
-                add->binary.op = MIR_Expr::BinaryOp::EXPR_IADD;
-                add->type = getResultantType(left->type, right->type, expr->op);
+                
+                DataType addType = getResultantType(expr->left->type, expr->right->type, expr->op);
+                
+                add->type = addType;
+                add->_type = convertToLowerLevelType(add->type, scope);
                 
                 // the left operand is same as the left node of the store
                 *addLeft = *left;
                 
-                // insert typecast if the add operands need to be typecasted
-                insertTypeCast(add, arena);
+                // the new add node
+                add->tag = MIR_Expr::EXPR_BINARY;
+                add->binary.left = typeCastTo(addLeft, add->_type, arena);
+                add->binary.right = typeCastTo(right, add->_type, arena);
+                add->binary.op = MIR_Expr::BinaryOp::EXPR_IADD;
+                
                 
                 right = add;
                 break;
@@ -498,8 +481,8 @@ MIR_Expr* transformSubexpr(const Subexpr* expr, StatementBlock* scope, Arena* ar
                 break;
             }
             
-            d->type = left->type;
-            d->_type = convertToLowerLevelType(d->type, scope);
+            d->type = expr->left->type;
+            d->_type = convertToLowerLevelType(expr->left->type, scope);
             d->tag = MIR_Expr::EXPR_STORE;
 
             
@@ -516,8 +499,8 @@ MIR_Expr* transformSubexpr(const Subexpr* expr, StatementBlock* scope, Arena* ar
             
             left = left->load.base;
             d->store.left = left;
-            d->store.right = right;
-            d->store.size = sizeOfType(d->type, scope);
+            d->store.right = typeCastTo(right, d->_type, arena);
+            d->store.size = sizeOfType(expr->left->type, scope);
             d->ptag = MIR_Primitive::PRIM_EXPR;
 
             return d;
@@ -538,8 +521,9 @@ MIR_Expr* transformSubexpr(const Subexpr* expr, StatementBlock* scope, Arena* ar
         MIR_Expr *right = transformSubexpr(expr->right, scope, arena);
         
         // get resultant type
-        d->type = getResultantType(left->type, right->type, expr->op);
-        d->_type = convertToLowerLevelType(d->type, scope);
+        DataType dt = getResultantType(expr->left->type, expr->right->type, expr->op);
+        d->type = dt;
+        d->_type = convertToLowerLevelType(dt, scope);
         d->tag = MIR_Expr::EXPR_BINARY;
 
         switch (expr->op.type){
@@ -625,13 +609,10 @@ MIR_Expr* transformSubexpr(const Subexpr* expr, StatementBlock* scope, Arena* ar
         }
 
         
-        d->binary.left = left;
-        d->binary.right = right;
+        d->binary.left = typeCastTo(left, d->_type, arena);
+        d->binary.right = typeCastTo(right, d->_type, arena);
         d->ptag = MIR_Primitive::PRIM_EXPR;
         
-        // insert type cast if needed
-        insertTypeCast(d, arena);
-
         break;
     }
     
@@ -656,21 +637,24 @@ MIR_Expr* transformSubexpr(const Subexpr* expr, StatementBlock* scope, Arena* ar
             StatementBlock *varDeclScope = scope->findVarDeclaration(expr->leaf.string);
             assert(varDeclScope != NULL);
             
-            d->type = varDeclScope->symbols.getInfo(expr->leaf.string).info;
-            d->_type = convertToLowerLevelType(d->type, scope);
+            DataType loadType = varDeclScope->symbols.getInfo(expr->leaf.string).info;
+            d->type = loadType;
+            d->_type = convertToLowerLevelType(loadType, scope);
             d->tag = MIR_Expr::EXPR_LOAD;
             
             MIR_Expr *leaf = (MIR_Expr*) arena->alloc(sizeof(MIR_Expr));
             leaf->leaf.val = expr->leaf;
             leaf->tag = MIR_Expr::EXPR_LEAF;
+            leaf->ptag = MIR_Primitive::PRIM_EXPR;
 
             MIR_Expr *address = (MIR_Expr*) arena->alloc(sizeof(MIR_Expr));
             address->addressOf.of = leaf;
             address->tag = MIR_Expr::EXPR_ADDRESSOF;
+            address->ptag = MIR_Primitive::PRIM_EXPR;
 
             d->load.base = address;
             d->load.offset = 0;
-            d->load.size = sizeOfType(d->type, scope);
+            d->load.size = sizeOfType(loadType, scope);
             d->ptag = MIR_Primitive::PRIM_EXPR;
         
             return d;
@@ -687,31 +671,32 @@ MIR_Expr* transformSubexpr(const Subexpr* expr, StatementBlock* scope, Arena* ar
 
         */ 
 
-
+        DataType dt;
         switch (expr->leaf.type){
             case TOKEN_CHARACTER_LITERAL:
-                d->type = DataTypes::Char;
+                dt = DataTypes::Char;
                 break;
             case TOKEN_NUMERIC_FLOAT:
-                d->type = DataTypes::Float;
+                dt = DataTypes::Float;
                 break;
             case TOKEN_NUMERIC_DOUBLE:
-                d->type = DataTypes::Double;
+                dt = DataTypes::Double;
                 break;
             case TOKEN_NUMERIC_DEC:
             case TOKEN_NUMERIC_BIN:
             case TOKEN_NUMERIC_HEX:
             case TOKEN_NUMERIC_OCT:
-                d->type = DataTypes::Int;
+                dt = DataTypes::Int;
                 break;
             case TOKEN_STRING_LITERAL:
-                d->type = DataTypes::String;
+                dt = DataTypes::String;
                 break;
             default:
                 break;
         }
-
-        d->_type = convertToLowerLevelType(d->type, scope);
+        
+        d->type = dt;
+        d->_type = convertToLowerLevelType(dt, scope);
 
         d->tag = MIR_Expr::EXPR_LOAD_IMMEDIATE;
         d->immediate.val = expr->leaf;
@@ -734,12 +719,15 @@ MIR_Expr* transformSubexpr(const Subexpr* expr, StatementBlock* scope, Arena* ar
                     x     0
             */
             d->tag = MIR_Expr::EXPR_LOAD;
-            d->type = *(operand->type.ptrTo);
-            d->_type = convertToLowerLevelType(d->type, scope);
+
+            DataType dt = *(expr->unarySubexpr->type.ptrTo);
+
+            d->type = dt;
+            d->_type = convertToLowerLevelType(dt, scope);
 
             d->load.base = operand;
             d->load.offset = 0;
-            d->load.size = sizeOfType(d->type, scope);
+            d->load.size = sizeOfType(dt, scope);
             d->ptag = MIR_Primitive::PRIM_EXPR;
 
             return d;
@@ -761,12 +749,14 @@ MIR_Expr* transformSubexpr(const Subexpr* expr, StatementBlock* scope, Arena* ar
             assert(operand->tag == MIR_Expr::EXPR_LOAD);
             d->loadAddress.base = operand->load.base;
             d->loadAddress.offset = operand->load.offset;
-
             
-            d->type.tag = DataType::TAG_ADDRESS;
-            d->type.ptrTo = (DataType*) arena->alloc(sizeof(DataType));
-            *(d->type.ptrTo) = operand->type;
-            d->_type = convertToLowerLevelType(d->type, scope);
+            DataType dt;
+            
+            dt.tag = DataType::TAG_ADDRESS;
+            dt.ptrTo = (DataType*) arena->alloc(sizeof(DataType));
+            *(dt.ptrTo) = expr->unarySubexpr->type;
+            d->type = dt;
+            d->_type = convertToLowerLevelType(dt, scope);
 
             d->ptag = MIR_Primitive::PRIM_EXPR;
 
@@ -784,8 +774,11 @@ MIR_Expr* transformSubexpr(const Subexpr* expr, StatementBlock* scope, Arena* ar
         
         d->tag = MIR_Expr::EXPR_UNARY;
         d->unary.unarySubexpr = operand; 
-        d->type = operand->type;
-        d->_type = convertToLowerLevelType(d->type, scope);
+        
+        DataType dt = expr->unarySubexpr->type;
+        
+        d->type = dt;
+        d->_type = convertToLowerLevelType(dt, scope);
         d->ptag = MIR_Primitive::PRIM_EXPR;
 
 
@@ -923,8 +916,9 @@ MIR_Primitives transformNode(const Node* current, StatementBlock *scope, Arena* 
                 declnAssignment->store.right = transformSubexpr(decln.initValue, scope, arena);
                 declnAssignment->store.size = sizeOfType(decln.type, scope);
                 declnAssignment->store.offset = 0;
+                declnAssignment->_type = convertToLowerLevelType(decln.type, scope);
                 
-                declnAssignment->store.right = typeCastTo(declnAssignment->store.right, decln.type, arena);
+                declnAssignment->store.right = typeCastTo(declnAssignment->store.right, declnAssignment->_type, arena);
                 
                 return MIR_Primitives{.primitives = {declnAssignment}, .n = 1};
             }
@@ -1089,6 +1083,10 @@ MIR* transform(AST *ast, Arena *arena){
 
     return mir;
 }
+
+
+
+
 
 
 

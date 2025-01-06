@@ -129,6 +129,8 @@ struct MIR_Expr : public MIR_Primitive{
         struct {
             DataType from;
             DataType to;
+            MIR_Datatype _from;
+            MIR_Datatype _to;
             MIR_Expr *expr;
         }cast;
         
@@ -283,6 +285,5 @@ struct MIR_Function {
     std::vector<Parameter> parameters;
 
 };
-
 
 

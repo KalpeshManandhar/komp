@@ -1,5 +1,5 @@
 #include "parser.h"
-
+#include <debug/debug-print.h>
 
 
 int main(int argc, char **argv){

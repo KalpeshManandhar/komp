@@ -107,6 +107,3 @@ public:
         return (errors == 0)? ir : NULL;
     }
 };
-
-
-void printParseTree(Node *const root, int depth = 0);

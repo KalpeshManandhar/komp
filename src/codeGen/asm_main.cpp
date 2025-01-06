@@ -1,5 +1,6 @@
 #include "code-gen.h"
 #include <parser/parser.h>
+#include <debug/debug-print.h>
 
 
 int main(int argc, char **argv){
@@ -42,8 +43,10 @@ int main(int argc, char **argv){
         
         MIR* mir = transform(ir, &b);
 
+        printMIR(mir);
+
         gen.generateAssemblyFromMIR(mir);
-        gen.printAssembly();
+        // gen.printAssembly();
         gen.writeAssemblyToFile("./codegen_output.s");
 
     }
