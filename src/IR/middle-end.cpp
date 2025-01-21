@@ -2,13 +2,41 @@
 
 #include <utils/utils.h>
 
+
+struct MIR_Primitives {
+    MIR_Primitive* primitives[8];
+    int n;
+};
+
+
+
+
+struct MiddleEnd {
+    AST* ast;
+    MIR* mir;
+
+    MIR_Expr* typeCastTo(MIR_Expr* expr, MIR_Datatype to, Arena* arena);
+    size_t sizeOfType(DataType d, StatementBlock* scope);
+    size_t alignmentOfType(DataType d, StatementBlock* scope);
+    MIR_Datatype convertToLowerLevelType(DataType d, StatementBlock *scope);
+    MIR_Expr* transformSubexpr(const Subexpr* expr, StatementBlock* scope, Arena* arena);
+    void calcStructMemberOffsets(StatementBlock *scope);
+    MIR_Primitives transformNode(const Node* current, StatementBlock *scope, Arena* arena, MIR_Scope* mScope);    
+
+};
+
+
+
+
+
 /*
     Convert an expression to a given type.
 */
-MIR_Expr* typeCastTo(MIR_Expr* expr, MIR_Datatype to, Arena* arena){
+MIR_Expr* MiddleEnd :: typeCastTo(MIR_Expr* expr, MIR_Datatype to, Arena* arena){
     MIR_Expr* e = expr;
     if (expr->_type.tag != to.tag){
         MIR_Expr *cast = (MIR_Expr*)arena->alloc(sizeof(MIR_Expr));
+        cast->ptag = MIR_Primitive::PRIM_EXPR;
         cast->tag = MIR_Expr::EXPR_CAST;
         cast->cast._from = expr->_type; 
         cast->cast._to = to; 
@@ -22,10 +50,11 @@ MIR_Expr* typeCastTo(MIR_Expr* expr, MIR_Datatype to, Arena* arena){
 
 
 
+// TODO: These should be removed
 /*
     RV64 specific sizes of types.
 */
-size_t sizeOfType(DataType d, StatementBlock* scope){
+size_t MiddleEnd :: sizeOfType(DataType d, StatementBlock* scope){
     switch (d.tag)
     {
     case DataType::TAG_ADDRESS:
@@ -70,10 +99,12 @@ size_t sizeOfType(DataType d, StatementBlock* scope){
     return 8;
 }
 
+
+// TODO: These should be removed
 /*
     RV64 specific alignment of types.
 */
-size_t alignmentOfType(DataType d, StatementBlock* scope){
+size_t MiddleEnd :: alignmentOfType(DataType d, StatementBlock* scope){
     switch (d.tag)
     {
     case DataType::TAG_ADDRESS:
@@ -123,7 +154,7 @@ size_t alignmentOfType(DataType d, StatementBlock* scope){
 /*
     RV-64 specific datatypes
 */
-MIR_Datatype convertToLowerLevelType(DataType d, StatementBlock *scope){
+MIR_Datatype MiddleEnd :: convertToLowerLevelType(DataType d, StatementBlock *scope){
     switch (d.tag){
     case DataType::TAG_ADDRESS:
     case DataType::TAG_PTR:
@@ -186,12 +217,15 @@ MIR_Datatype convertToLowerLevelType(DataType d, StatementBlock *scope){
         structType.alignment = structDeclScope->structs.getInfo(d.structName.string).info.alignment;
         return structType;
     }
+    case DataType::TAG_VOID:{
+        return MIR_Datatypes::_void;
+    }
 
     default:
         break;
     }
     
-    assert(false && "Some type hasnt been accounted for.");
+    assertFalse(printf("Some type hasnt been accounted for: %d\n", d.tag));
     return MIR_Datatypes::_i32;
 }
 
@@ -200,7 +234,7 @@ MIR_Datatype convertToLowerLevelType(DataType d, StatementBlock *scope){
 /*
     Expand subexpr nodes to a lower level IR.
 */
-MIR_Expr* transformSubexpr(const Subexpr* expr, StatementBlock* scope, Arena* arena){
+MIR_Expr* MiddleEnd :: transformSubexpr(const Subexpr* expr, StatementBlock* scope, Arena* arena){
     if (!expr){
         return NULL;
     }
@@ -818,7 +852,7 @@ MIR_Expr* transformSubexpr(const Subexpr* expr, StatementBlock* scope, Arena* ar
     
     case Subexpr::SUBEXPR_FUNCTION_CALL:{
         FunctionCall *fooCall = expr->functionCall;
-        assert(false && "Function calls not supported huhu");
+        assert(false && "Function calls not supported yet huhu");
         // Function foo = ir->functions.getInfo(fooCall->funcName.string).info;
         
         // d->tag = MIR_Expr::EXPR_FUNCTION_CALL;
@@ -844,7 +878,7 @@ MIR_Expr* transformSubexpr(const Subexpr* expr, StatementBlock* scope, Arena* ar
 /*
     Fill in the offsets of each member of each struct within a scope.
 */
-void calcStructMemberOffsets(StatementBlock *scope){
+void MiddleEnd :: calcStructMemberOffsets(StatementBlock *scope){
     for (auto &structName: scope->structs.order){
 
         Struct &structInfo = scope->structs.getInfo(structName).info;
@@ -875,16 +909,7 @@ void calcStructMemberOffsets(StatementBlock *scope){
 
 
 
-struct MIR_Primitives {
-    MIR_Primitive* primitives[8];
-    int n;
-};
-
-
-
-
-
-MIR_Primitives transformNode(const Node* current, StatementBlock *scope, Arena* arena, MIR_Scope* mScope){
+MIR_Primitives MiddleEnd :: transformNode(const Node* current, StatementBlock *scope, Arena* arena, MIR_Scope* mScope){
     
     if (!current){
         return MIR_Primitives{.n = 0};
@@ -962,9 +987,15 @@ MIR_Primitives transformNode(const Node* current, StatementBlock *scope, Arena* 
         ReturnNode* AST_rnode = (ReturnNode*) current;
         MIR_Return* rnode = (MIR_Return*) arena->alloc(sizeof(MIR_Return));
         
+        StatementBlock* parentFunc = scope->getParentFunction();
+
         rnode->ptag = MIR_Primitive::PRIM_RETURN;
         rnode->returnValue = transformSubexpr(AST_rnode->returnVal, scope, arena);
-        rnode->funcName = scope->getParentFunction()->funcName.string;
+        rnode->funcName = parentFunc->funcName.string;
+
+        // type cast to the return type
+        MIR_Datatype retType = convertToLowerLevelType(ast->functions.getInfo(parentFunc->funcName.string).info.returnType, scope);
+        rnode->returnValue = typeCastTo(rnode->returnValue, retType, arena);
         
         return MIR_Primitives{.primitives = {rnode}, .n = 1};
         break;
@@ -1060,11 +1091,14 @@ MIR_Primitives transformNode(const Node* current, StatementBlock *scope, Arena* 
 
 
 MIR* transform(AST *ast, Arena *arena){
-    MIR* mir = new MIR;
+
+    MiddleEnd middleEnd;
+    middleEnd.ast = ast;
+    middleEnd.mir = new MIR;
     
-    MIR_Primitives global = transformNode(&ast->global, NULL, arena, NULL);
+    MIR_Primitives global = middleEnd.transformNode(&ast->global, NULL, arena, NULL);
     assert(global.n == 1 && global.primitives[0]->ptag == MIR_Primitive::PRIM_SCOPE);
-    mir->global = (MIR_Scope*) global.primitives[0];
+    middleEnd.mir->global = (MIR_Scope*) global.primitives[0];
 
 
     for (auto &func: ast->functions.entries){
@@ -1072,16 +1106,16 @@ MIR* transform(AST *ast, Arena *arena){
 
         MIR_Function f;
         f.funcName = foo.funcName.string;
-        f.returnType = convertToLowerLevelType(foo.returnType, &ast->global);
+        f.returnType = middleEnd.convertToLowerLevelType(foo.returnType, &ast->global);
         
-        MIR_Primitives scopeNode = transformNode(foo.block, &ast->global, arena, mir->global);
+        MIR_Primitives scopeNode = middleEnd.transformNode(foo.block, &ast->global, arena, middleEnd.mir->global);
         assert(scopeNode.n == 1 && scopeNode.primitives[0]->ptag == MIR_Primitive::PRIM_SCOPE);
         f.scope = (MIR_Scope*) scopeNode.primitives[0];
 
-        mir->functions.add(f.funcName, f);
+        middleEnd.mir->functions.add(f.funcName, f);
     }
 
-    return mir;
+    return middleEnd.mir;
 }
 
 

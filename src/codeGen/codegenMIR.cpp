@@ -81,6 +81,7 @@ static int getDepth(const MIR_Expr *expr){
         return 1;
     }
     default:
+        assert(false && "Some stuff is not accounted for.");
         return 0;
     }
 
@@ -157,7 +158,7 @@ MIR_Datatype CodeGenerator::convertToLowerLevelType(DataType d, StatementBlock *
         break;
     }
     
-    assert(false && "Some type hasnt been accounted for.");
+    assertFalse(printf("Some type hasnt been accounted for: %d", d.tag));
     return MIR_Datatypes::_i32;
 }
 
@@ -741,9 +742,45 @@ void CodeGenerator::generateExprMIR(MIR_Expr *current, Register dest, MIR_Scope*
     
     case MIR_Expr::EXPR_CAST:{
         
+        // generate the expr to be cast
+        generateExprMIR(current->cast.expr, dest, scope, storageScope);
+        
+        // since sign is extended by default, there is no need for explicit asm for converting between integer types
+        if (isIntegerType(current->cast._from) && isIntegerType(current->cast._to)){
+            return;
+        }
+
+        switch (current->cast._from.tag){
+        case MIR_Datatype::TYPE_I8:
+        case MIR_Datatype::TYPE_I16:
+        case MIR_Datatype::TYPE_I32:
+        case MIR_Datatype::TYPE_I64:
+        case MIR_Datatype::TYPE_U8:
+        case MIR_Datatype::TYPE_U16:
+        case MIR_Datatype::TYPE_U32:
+        case MIR_Datatype::TYPE_U64:
+
+            
+            
 
 
-        assert(false && "Casts not implemented yet.");
+            /* code */
+        case MIR_Datatype::TYPE_I128:
+        case MIR_Datatype::TYPE_U128:
+            break;
+        
+        default:
+            break;
+        }
+
+
+
+
+
+        
+
+
+        assert(false && "Support for casts not implemented fully yet.");
         break;
     }
     case MIR_Expr::EXPR_UNARY:{
@@ -855,6 +892,7 @@ void CodeGenerator::generateExprMIR(MIR_Expr *current, Register dest, MIR_Scope*
         break;
     }
     default:
+        assert(false && "Some stuff is not accounted for.");
         break;
     }
 }

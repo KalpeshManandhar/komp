@@ -7,5 +7,6 @@ $expected_values = @{
     "test_if.c" = 12;
     "test_while.c" = 55;
     "test_for.c" = 55;
+    "test_cast.c" = 13;
     "test_call.c" = 44;
 } 

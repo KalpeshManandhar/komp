@@ -231,6 +231,7 @@ static void printMIRPrimitive(MIR_Primitive* p, int depth){
             break;
         }
         default:
+            assert(false && "something is not supported");
             break;
         }
         

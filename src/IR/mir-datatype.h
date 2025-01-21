@@ -19,6 +19,7 @@ struct MIR_Datatype {
         TYPE_STRUCT,
         TYPE_PTR,
         TYPE_ARRAY,
+        TYPE_VOID,
     }tag;
 
     size_t size;
@@ -29,6 +30,7 @@ struct MIR_Datatype {
 
 namespace MIR_Datatypes{
 
+    inline MIR_Datatype _void = MIR_Datatype {.tag = MIR_Datatype::TYPE_VOID, .size = 0, .alignment = 0, .name = "_void"};
     inline MIR_Datatype _u8 = MIR_Datatype {.tag = MIR_Datatype::TYPE_U8, .size = 1, .alignment = 1, .name = "_u8"};
     inline MIR_Datatype _u16 = MIR_Datatype {.tag = MIR_Datatype::TYPE_U16, .size = 2, .alignment = 2, .name = "_u16"};
     inline MIR_Datatype _u32 = MIR_Datatype {.tag = MIR_Datatype::TYPE_U32, .size = 4, .alignment = 4, .name = "_u32"};
@@ -48,3 +50,6 @@ namespace MIR_Datatypes{
     inline MIR_Datatype _struct = MIR_Datatype {.tag = MIR_Datatype::TYPE_STRUCT, .name = "_struct"};
 };
 
+static bool isIntegerType(MIR_Datatype type){
+    return type.tag >= MIR_Datatype::TYPE_U8 && type.tag <= MIR_Datatype::TYPE_I128;
+}
