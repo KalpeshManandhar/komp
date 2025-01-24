@@ -56,6 +56,7 @@
 - Fully support allocation for all registers
 - Call return primitives?
 - Proper support for function calls
+- Type casts
 
 
 

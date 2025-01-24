@@ -14,6 +14,11 @@ clang++ -g --std=c++20 -I.\src\ .\src\tokenizer\tokenizer.cpp .\src\tokenizer\to
 clang++ -g --std=c++20 -I.\src\ .\src\tokenizer\tokenizer.cpp .\src\parser\*.cpp .\src\arena\arena.cpp -o parser.exe
 ```
 #### Code Generator
+For the current code, after the middle end refactor.
+```powershell
+clang++ -g --std=c++20 -I.\src\ .\src\tokenizer\tokenizer.cpp .\src\parser\parser.cpp .\src\arena\arena.cpp .\src\IR\middle-end.cpp .\src\codeGen\*.cpp -o codegen.exe
+```
+For the previous code, before the middle end. WARNING: May or may not work.
 ```powershell
 clang++ -g --std=c++20 -I.\src\ .\src\tokenizer\tokenizer.cpp .\src\parser\parser.cpp .\src\arena\arena.cpp .\src\codeGen\*.cpp -o codegen.exe
 ```
