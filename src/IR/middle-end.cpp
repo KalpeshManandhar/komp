@@ -688,9 +688,19 @@ MIR_Expr* MiddleEnd :: transformSubexpr(const Subexpr* expr, StatementBlock* sco
 
             d->load.base = address;
             d->load.offset = 0;
-            d->load.size = sizeOfType(loadType, scope);
+            d->load.size = d->_type.size;
             d->ptag = MIR_Primitive::PRIM_EXPR;
-        
+
+            if (isIntegerType(d->_type)){
+                d->load.type = MIR_Expr::LoadType::EXPR_ILOAD;
+            }
+            else if (isFloatType(d->_type)){
+                d->load.type = MIR_Expr::LoadType::EXPR_FLOAD;
+            }
+            else{
+                d->load.type = MIR_Expr::LoadType::EXPR_MEMLOAD;
+            }
+
             return d;
         }
         

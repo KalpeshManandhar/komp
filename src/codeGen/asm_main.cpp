@@ -46,7 +46,7 @@ int main(int argc, char **argv){
         printMIR(mir);
 
         gen.generateAssemblyFromMIR(mir);
-        // gen.printAssembly();
+        gen.printAssembly();
         gen.writeAssemblyToFile("./codegen_output.s");
 
     }

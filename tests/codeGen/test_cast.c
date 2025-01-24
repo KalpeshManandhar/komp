@@ -5,5 +5,6 @@ int main(){
 
     unsigned long long d = b; // i8 to u64: no asm generated
     
-    return d + c; // 1 + 12 = 13
+    // 1 + 12 = 13
+    return d + c; // i32(u64 + u64(u32))
 }

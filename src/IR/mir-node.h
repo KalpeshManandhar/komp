@@ -97,7 +97,12 @@ struct MIR_Expr : public MIR_Primitive{
         EXPR_IBITWISE_NOT,
         EXPR_LOGICAL_NOT,
     };
-
+    
+    enum class LoadType{
+        EXPR_ILOAD, // integer load
+        EXPR_FLOAD, // float load
+        EXPR_MEMLOAD, // general load
+    };
     
     // the type of the node output
     DataType type;
@@ -170,6 +175,7 @@ struct MIR_Expr : public MIR_Primitive{
             // offset used for structs, for indexing use index
             int64_t offset;
             size_t size;
+            LoadType type;
         }load;
 
 
