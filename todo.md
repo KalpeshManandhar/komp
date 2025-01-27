@@ -19,17 +19,14 @@
 
 
 ## Parser:
- - Explicit type casts
  - Unions
  - Typedefs
  - Externs/Statics/Volatiles
  - Array/Struct initialization
 
- - Change declaration initializers to be an assignment
+ - Explicit type casts - done
+ - Change declaration initializers to be an assignment - done
 
-
-
-#### Done 
 
  - function params into symbols table - done
  - function parsing only in global - done

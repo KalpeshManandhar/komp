@@ -57,7 +57,7 @@ Parse tree + Symbol tables -------------> LowLevelIR + Storage tables
 - Datatype representations are C-based
 - Symbol tables store info as before.
 
-#### LowLevelIR? (I dont know what to call it yet) + Symbol tables
+#### MiddleIR (MIR) + Symbol tables
 - Language independent 
 - Only works with the primitives given by the backend
 - The actual process of converting language specific details into a language independent implementation.
