@@ -335,6 +335,7 @@ struct RegisterAllocator{
         
         Register r;
         r.id = reg;
+        r.type = RegisterType(RV64Registers[reg].type | RegisterType::REG_ANY);
         return r;
     }
     

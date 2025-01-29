@@ -94,6 +94,7 @@ struct MIR_Expr : public MIR_Primitive{
 
     enum class UnaryOp{
         EXPR_INEGATE,
+        EXPR_FNEGATE,
         EXPR_IBITWISE_NOT,
         EXPR_LOGICAL_NOT,
     };
@@ -159,7 +160,7 @@ struct MIR_Expr : public MIR_Primitive{
             val : the variable name token
         */
         struct {
-            Token val;
+            Splice val;
         }leaf;
 
 
@@ -203,7 +204,7 @@ struct MIR_Expr : public MIR_Primitive{
             MIR_Expr *left; 
             MIR_Expr *right; 
             BinaryOp op;
-
+            size_t size;
         }binary;
         
 
@@ -212,7 +213,7 @@ struct MIR_Expr : public MIR_Primitive{
             val    : The immediate value. 
         */
         struct {
-            Token val;
+            Splice val;
         }immediate;
         
 

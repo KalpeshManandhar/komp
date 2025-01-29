@@ -9,4 +9,5 @@ $expected_values = @{
     "test_for.c" = 55;
     "test_cast.c" = 13;
     "test_call.c" = 44;
+    "test_fp.c" = 255;
 } 

@@ -1,11 +1,11 @@
 #include "code-gen.h"
 #include <utils/utils.h>
-
+#include <IR/number.h>
 
 /*
-    The instruction suffix for the size of load/store 
+    The instruction suffix for the size of integer load/store 
 */
-static const char* sizeSuffix(size_t size){
+static const char* iInsIntegerSuffix(size_t size){
     /*
         8 bytes = "d"ouble word
         4 bytes = "w"ord
@@ -26,6 +26,41 @@ static const char* sizeSuffix(size_t size){
     }
     return "d";
 }
+
+/*
+    The instruction suffix for the size of load/store of floats.
+*/
+static const char* fInsFloatSuffix(size_t size){
+    /*
+        8 bytes = "d"ouble precision
+        4 bytes = "s"ingle precision
+    */
+    if (size == 8){
+        return "d";
+    }
+    if (size == 4){
+        return "s";
+    }
+    return "d";
+}
+
+/*
+    The instruction suffix for the size of integer in float conversion instructions. 
+*/
+static const char* fInsIntegerSuffix(size_t size){
+    /*
+        8 bytes = "l"ong 
+        4 bytes = "w"ord
+    */
+    if (size == 8){
+        return "l";
+    }
+    if (size == 4){
+        return "w";
+    }
+    return "l";
+}
+
 
 
 
@@ -323,8 +358,11 @@ void CodeGenerator :: generatePrimitiveMIR(MIR_Primitive* p, MIR_Scope* scope, S
         }
         case MIR_Primitive::PRIM_EXPR:{
             MIR_Expr* enode = (MIR_Expr*) p;
-            
-            Register rtmp = regAlloc.allocVRegister(REG_TEMPORARY);
+
+            bool isFloatExpr = isFloatType(enode->_type);
+            int mask = isFloatExpr? REG_FLOATING_POINT : 0; 
+
+            Register rtmp = regAlloc.allocVRegister(RegisterType(REG_TEMPORARY | mask));
 
             generateExprMIR(enode, rtmp, scope, storageScope);
             
@@ -408,19 +446,50 @@ void CodeGenerator :: generateAssemblyFromMIR(MIR *mir){
     ScopeInfo s;
     s.frameBase = 0;
     s.parent = 0;
-
-    outputBuffer << "    .text\n";
+    
+    textSection << "    .section     .text\n";
 
     for (auto &pair : mir->functions.entries){
         generateFunctionMIR(&pair.second.info, mir->global, &s);
 
         MIR_Function *foo = &pair.second.info;
 
-        // Appending the function assembly to outputBuffer
-        outputBuffer << buffer.str();
+        // Appending the function assembly to textSection
+        textSection << buffer.str();
         buffer.str("");
         buffer.clear();
             
+    }
+
+    rodataSection << "    .section     .rodata\n";
+    dataSection << "    .section     .data\n";
+    
+
+    for (auto &rodataSymbol : rodata.entries){
+        SymbolInfo symbol = rodataSymbol.second.info;
+        
+        rodataSection << ".symbol" << symbol.label << ":\n";
+        
+        switch (symbol.type.tag) {
+        case MIR_Datatype::TYPE_F32:{
+            Number value = f32FromString(symbol.value.data);
+    
+            rodataSection << "    .word "  << value.u32[0] << "\n";
+            break;
+        }
+        case MIR_Datatype::TYPE_F64:{
+            Number value = f64FromString(symbol.value.data);
+    
+            rodataSection << "    .word "  << value.u32[0] << "\n";
+            rodataSection << "    .word "  << value.u32[1] << "\n";
+            break;
+        }
+        default:
+            break;
+        }
+
+
+        
     }
 
 }
@@ -443,7 +512,26 @@ void CodeGenerator::generateExprMIR(MIR_Expr *current, Register dest, MIR_Scope*
         const char *destName = RV64_RegisterName[destReg];
         
         // load immediate value into a register
-        buffer << "    li " << destName << ", " << current->immediate.val.string << "\n";
+        if (isIntegerType(current->_type)){
+            buffer << "    li " << destName << ", " << current->immediate.val << "\n";
+        }
+        else if (isFloatType(current->_type)){
+            
+            if (!rodata.existKey(current->immediate.val)){
+                rodata.add(current->immediate.val, SymbolInfo{.label = labeller.label(), .value = current->immediate.val, .type = current->_type});
+            }
+            
+            SymbolInfo fpLiteralInfo = rodata.getInfo(current->immediate.val).info;
+
+            Register fpLiteralAddress = regAlloc.allocVRegister(RegisterType::REG_ANY);
+            const char* fpLiteralAddressName = RV64_RegisterName[regAlloc.resolveRegister(fpLiteralAddress)];
+
+            buffer << "    lui " << fpLiteralAddressName << ", \%hi(.symbol" << fpLiteralInfo.label << ")" << "\n";
+            buffer << "    fl" << iInsIntegerSuffix(current->_type.size) << " " << destName << ", \%lo(.symbol" << fpLiteralInfo.label << ")(" << fpLiteralAddressName << ")\n";
+        
+            regAlloc.freeRegister(fpLiteralAddress);
+        }
+        
         break;
     }
 
@@ -467,9 +555,9 @@ void CodeGenerator::generateExprMIR(MIR_Expr *current, Register dest, MIR_Scope*
             };
             
             // resolve the variable into an address
-            ScopeInfo *storage = getAddressScope(of->leaf.val.string);
+            ScopeInfo *storage = getAddressScope(of->leaf.val);
             assert(storage != NULL);
-            StorageInfo sInfo = storage->storage.getInfo(of->leaf.val.string).info;
+            StorageInfo sInfo = storage->storage.getInfo(of->leaf.val).info;
             current->addressOf.offset = storage->frameBase - sInfo.memAddress;
             break;
         }
@@ -506,20 +594,23 @@ void CodeGenerator::generateExprMIR(MIR_Expr *current, Register dest, MIR_Scope*
         // load/resolve the address into the register first
         generateExprMIR(current->load.base, dest, scope, storageScope); 
         
-        
         const char *destName = RV64_RegisterName[regAlloc.resolveRegister(dest)];
+        bool isFloatExpr = isFloatType(current->_type);
         
+        const char* prefix = isFloatExpr? "f" : "";
+
+
         // if the given address is a direct AddressOf node, then the address can be used instead of loading it into a register first.
         if (current->load.base->tag == MIR_Expr::EXPR_ADDRESSOF){
             MIR_Expr *base = current->load.base;
             
             // load the value and load into destination register
-            buffer << "    l" << sizeSuffix(current->load.size) << " " << destName << ", " << base->addressOf.offset + current->load.offset << "(fp)\n";
+            buffer << "    " << prefix << "l" << iInsIntegerSuffix(current->load.size) << " " << destName << ", " << base->addressOf.offset + current->load.offset << "(fp)\n";
             return;
         }
 
         // load value and load   
-        buffer << "    l" << sizeSuffix(current->load.size) << " " << destName << ", " << current->load.offset << "(" << destName << ")\n";
+        buffer << "    " << prefix << "l" << iInsIntegerSuffix(current->load.size) << " " << destName << ", " << current->load.offset << "(" << destName << ")\n";
         
         break;
     }
@@ -532,6 +623,9 @@ void CodeGenerator::generateExprMIR(MIR_Expr *current, Register dest, MIR_Scope*
         
 
         const char *destName = RV64_RegisterName[regAlloc.resolveRegister(dest)];
+        bool isFloatExpr = isFloatType(current->_type);
+        
+        const char* prefix = isFloatExpr? "f" : "";
         
         // if the lvalue has a direct address, use that directly instead of loading it to a register first
         if (current->store.left->tag == MIR_Expr::EXPR_ADDRESSOF){
@@ -540,7 +634,7 @@ void CodeGenerator::generateExprMIR(MIR_Expr *current, Register dest, MIR_Scope*
             MIR_Expr *base = current->store.left;
             
             // store the value at (address + offset)
-            buffer << "    s" << sizeSuffix(current->store.size) << " " << destName << ", " << base->addressOf.offset + current->store.offset << "(fp)\n";
+            buffer << "    " << prefix << "s" << iInsIntegerSuffix(current->store.size) << " " << destName << ", " << base->addressOf.offset + current->store.offset << "(fp)\n";
             return;
         }
         
@@ -554,7 +648,7 @@ void CodeGenerator::generateExprMIR(MIR_Expr *current, Register dest, MIR_Scope*
         const char *tempName = RV64_RegisterName[regAlloc.resolveRegister(temp)];
 
         // store the value at (address + offset)
-        buffer << "    s" << sizeSuffix(current->store.size) << " " << destName << ", " << current->store.offset << "(" << tempName << ")\n";
+        buffer << "    " << prefix << "s" << iInsIntegerSuffix(current->store.size) << " " << destName << ", " << current->store.offset << "(" << tempName << ")\n";
         
         regAlloc.freeRegister(temp);
         break;
@@ -607,149 +701,208 @@ void CodeGenerator::generateExprMIR(MIR_Expr *current, Register dest, MIR_Scope*
     
     case MIR_Expr::EXPR_BINARY:{
         // Computes a binary operation and stores the result in the destination register.
+        
+        Register left = {0}, right = {0};
+        
+        bool canDestBeUsed = (isIntegerType(current->binary.left->_type) && (dest.type & REG_FLOATING_POINT) == 0)
+                              || (isFloatType(current->binary.left->_type) && (dest.type & REG_FLOATING_POINT));
 
-        
-        Register temp = regAlloc.allocVRegister(REG_TEMPORARY);
-        
+        // check if the destination register can be used for one of the operands
+        // if can be, then left uses the dest register
+        // else, left allocates a temporary register of the opposite register file
+        left = canDestBeUsed? dest : regAlloc.allocVRegister(RegisterType(((dest.type & REG_FLOATING_POINT) ^ REG_FLOATING_POINT) | REG_TEMPORARY));
+        // right allocates of the same type as left 
+        right = regAlloc.allocVRegister(RegisterType((left.type & REG_FLOATING_POINT) | REG_TEMPORARY));
+
+
         int leftDepth = getDepth(current->binary.left);
         int rightDepth = getDepth(current->binary.right);
 
         // Generate the one with the greatest depth first so that intermediate values need not be stored.
         if (leftDepth < rightDepth){
-            generateExprMIR(current->binary.right, temp, scope, storageScope);
-            generateExprMIR(current->binary.left, dest, scope, storageScope);
+            generateExprMIR(current->binary.right, right, scope, storageScope);
+            generateExprMIR(current->binary.left, left, scope, storageScope);
         }
         else{
-            generateExprMIR(current->binary.left, dest, scope, storageScope);
-            generateExprMIR(current->binary.right, temp, scope, storageScope);
+            generateExprMIR(current->binary.left, left, scope, storageScope);
+            generateExprMIR(current->binary.right, right, scope, storageScope);
         }
 
         const char *destName = RV64_RegisterName[regAlloc.resolveRegister(dest)];
-        const char *tempName = RV64_RegisterName[regAlloc.resolveRegister(temp)];
+        const char *leftName = RV64_RegisterName[regAlloc.resolveRegister(left)];
+        const char *rightName = RV64_RegisterName[regAlloc.resolveRegister(right)];
         
         switch (current->binary.op){
             case MIR_Expr::BinaryOp::EXPR_UADD:
             case MIR_Expr::BinaryOp::EXPR_IADD:{
-                buffer << "    add " << destName << ", " << destName << ", " << tempName << "\n";
+                buffer << "    add " << destName << ", " << leftName << ", " << rightName << "\n";
                 break;
             }
             case MIR_Expr::BinaryOp::EXPR_USUB:
             case MIR_Expr::BinaryOp::EXPR_ISUB:{
-                buffer << "    sub " << destName << ", " << destName << ", " << tempName << "\n";
+                buffer << "    sub " << destName << ", " << leftName << ", " << rightName << "\n";
                 break;
             }
             case MIR_Expr::BinaryOp::EXPR_UMUL:
             case MIR_Expr::BinaryOp::EXPR_IMUL:{
-                buffer << "    mul " << destName << ", " << destName << ", " << tempName << "\n";
+                buffer << "    mul " << destName << ", " << leftName << ", " << rightName << "\n";
                 break;
             }
             case MIR_Expr::BinaryOp::EXPR_UDIV:
             case MIR_Expr::BinaryOp::EXPR_IDIV:{
-                buffer << "    div " << destName << ", " << destName << ", " << tempName << "\n";
+                buffer << "    div " << destName << ", " << leftName << ", " << rightName << "\n";
                 break;
             }
 
             
             case MIR_Expr::BinaryOp::EXPR_IBITWISE_AND:{
-                buffer << "    and " << destName << ", " << destName << ", " << tempName << "\n";
+                buffer << "    and " << destName << ", " << leftName << ", " << rightName << "\n";
                 break;
             }
             case MIR_Expr::BinaryOp::EXPR_IBITWISE_OR:{
-                buffer << "    or " << destName << ", " << destName << ", " << tempName << "\n";
+                buffer << "    or " << destName << ", " << leftName << ", " << rightName << "\n";
                 break;
             }
             case MIR_Expr::BinaryOp::EXPR_IBITWISE_XOR:{
-                buffer << "    xor " << destName << ", " << destName << ", " << tempName << "\n";
+                buffer << "    xor " << destName << ", " << leftName << ", " << rightName << "\n";
                 break;
             }
             
 
             // TODO: boolean values are considered to be 0 or 1, the cast would convert all other values into these
             case MIR_Expr::BinaryOp::EXPR_LOGICAL_AND:{
-                buffer << "    and " << destName << ", " << destName << ", " << tempName << "\n";
+                buffer << "    and " << destName << ", " << leftName << ", " << rightName << "\n";
                 break;
             }
             case MIR_Expr::BinaryOp::EXPR_LOGICAL_OR:{
-                buffer << "    or " << destName << ", " << destName << ", " << tempName << "\n";
+                buffer << "    or " << destName << ", " << leftName << ", " << rightName << "\n";
                 break;
             }
             
             case MIR_Expr::BinaryOp::EXPR_IBITWISE_LSHIFT:{
-                buffer << "    sll " << destName << ", " << destName << ", " << tempName << "\n";
+                buffer << "    sll " << destName << ", " << leftName << ", " << rightName << "\n";
                 break;
             }
             case MIR_Expr::BinaryOp::EXPR_IBITWISE_RSHIFT:{
-                buffer << "    srl " << destName << ", " << destName << ", " << tempName << "\n";
+                buffer << "    srl " << destName << ", " << leftName << ", " << rightName << "\n";
                 break;
             }
             
             
             case MIR_Expr::BinaryOp::EXPR_ICOMPARE_LT:{
                 // set if less than
-                buffer << "    slt " << destName << ", " << destName << ", " << tempName << "\n";
+                buffer << "    slt " << destName << ", " << leftName << ", " << rightName << "\n";
                 break;
             }
             case MIR_Expr::BinaryOp::EXPR_ICOMPARE_GT:{
                 // subtract and set if greater than 0
-                buffer << "    sub " << destName << ", " << destName << ", " << tempName << "\n";
+                buffer << "    sub " << destName << ", " << leftName << ", " << rightName << "\n";
                 buffer << "    sgtz " << destName << ", " << destName << "\n";
                 break;
             } 
             case MIR_Expr::BinaryOp::EXPR_ICOMPARE_LE:{
                 // subtract and set if greater than 0 (aka gt) then xor with 0x1 
-                buffer << "    sub " << destName << ", " << destName << ", " << tempName << "\n";
+                buffer << "    sub " << destName << ", " << leftName << ", " << rightName << "\n";
                 buffer << "    sgtz " << destName << ", " << destName << "\n";
                 buffer << "    xori " << destName << ", " << destName << ", " << "1" << "\n";
                 break;
             }
             case MIR_Expr::BinaryOp::EXPR_ICOMPARE_GE:{
                 // set if less than with operands swapped
-                buffer << "    slt " << destName << ", " << tempName << ", " << destName << "\n";
+                buffer << "    slt " << destName << ", " << rightName << ", " << leftName << "\n";
                 break;
             }
             case MIR_Expr::BinaryOp::EXPR_ICOMPARE_EQ:{
                 // subtract and set if eq to 0
-                buffer << "    sub " << destName << ", " << destName << ", " << tempName << "\n";
+                buffer << "    sub " << destName << ", " << leftName << ", " << rightName << "\n";
                 buffer << "    seqz " << destName << ", " << destName << "\n";
                 break;
             }
             case MIR_Expr::BinaryOp::EXPR_ICOMPARE_NEQ:{
                 // subtract and set if neq to 0
-                buffer << "    sub " << destName << ", " << destName << ", " << tempName << "\n";
+                buffer << "    sub " << destName << ", " << leftName << ", " << rightName << "\n";
                 buffer << "    snez " << destName << ", " << destName << "\n";
                 break;
             }
 
-            case MIR_Expr::BinaryOp::EXPR_FADD:
-            case MIR_Expr::BinaryOp::EXPR_FSUB:
-            case MIR_Expr::BinaryOp::EXPR_FMUL:
-            case MIR_Expr::BinaryOp::EXPR_FDIV:
-            case MIR_Expr::BinaryOp::EXPR_FCOMPARE_LT:
-            case MIR_Expr::BinaryOp::EXPR_FCOMPARE_GT:
-            case MIR_Expr::BinaryOp::EXPR_FCOMPARE_LE:
-            case MIR_Expr::BinaryOp::EXPR_FCOMPARE_GE:
-            case MIR_Expr::BinaryOp::EXPR_FCOMPARE_EQ:
-            case MIR_Expr::BinaryOp::EXPR_FCOMPARE_NEQ:
-                assert(false && "Floating point operations unimplemented.");
+            case MIR_Expr::BinaryOp::EXPR_FADD:{
+                buffer << "    fadd." << fInsFloatSuffix(current->binary.size) << " " << destName << ", " << leftName << ", " << rightName << "\n";
                 break;
+            }
+            case MIR_Expr::BinaryOp::EXPR_FSUB:{
+                buffer << "    fsub." << fInsFloatSuffix(current->binary.size) << " " << destName << ", " << leftName << ", " << rightName << "\n";
+                break;
+            }
+            case MIR_Expr::BinaryOp::EXPR_FMUL:{
+                buffer << "    fmul." << fInsFloatSuffix(current->binary.size) << " " << destName << ", " << leftName << ", " << rightName << "\n";
+                break;
+            }
+            case MIR_Expr::BinaryOp::EXPR_FDIV:{
+                buffer << "    fdiv." << fInsFloatSuffix(current->binary.size) << " " << destName << ", " << leftName << ", " << rightName << "\n";
+                break;
+            }
+
+
+            
+
+
+            // these instructions get an integer destination register, and require two fp temporary registers
+            case MIR_Expr::BinaryOp::EXPR_FCOMPARE_LT:{
+                buffer << "    flt." << fInsFloatSuffix(current->binary.size) << " " << destName << ", " << leftName << ", " << rightName << "\n";
+                break;
+            }
+            case MIR_Expr::BinaryOp::EXPR_FCOMPARE_GT:{
+                buffer << "    fle." << fInsFloatSuffix(current->binary.size) << " " << destName << ", " << leftName << ", " << rightName << "\n";
+                buffer << "    xori " << destName << ", " << destName << ", " << "1" << "\n";
+                break;
+            }
+            case MIR_Expr::BinaryOp::EXPR_FCOMPARE_LE:{
+                buffer << "    fle." << fInsFloatSuffix(current->binary.size) << " " << destName << ", " << leftName << ", " << rightName << "\n";
+                break;
+            }
+            case MIR_Expr::BinaryOp::EXPR_FCOMPARE_GE:{
+                buffer << "    flt." << fInsFloatSuffix(current->binary.size) << " " << destName << ", " << leftName << ", " << rightName << "\n";
+                buffer << "    xori " << destName << ", " << destName << ", " << "1" << "\n";
+                break;
+            }
+            case MIR_Expr::BinaryOp::EXPR_FCOMPARE_EQ:{
+                buffer << "    feq." << fInsFloatSuffix(current->binary.size) << " " << destName << ", " << leftName << ", " << rightName << "\n";
+                break;
+            }
+            case MIR_Expr::BinaryOp::EXPR_FCOMPARE_NEQ:{
+                buffer << "    feq." << fInsFloatSuffix(current->binary.size) << " " << destName << ", " << leftName << ", " << rightName << "\n";
+                buffer << "    xori " << destName << ", " << destName << ", " << "1" << "\n";
+                break;
+            }
             default:
+                assert(false && "Some operation hasn't been accounted for.");
                 break;
         }
 
-        regAlloc.freeRegister(temp);
+        if (!canDestBeUsed) {
+            regAlloc.freeRegister(left);
+        }
+        regAlloc.freeRegister(right);
         break;
     }
     
     case MIR_Expr::EXPR_CAST:{
+        bool canSameRegBeUsed = isIntegerType(current->cast._from) && isIntegerType(current->cast._to);
+        canSameRegBeUsed = canSameRegBeUsed || (isFloatType(current->cast._from) && isFloatType(current->cast._to));
         
-        // generate the expr to be cast
-        generateExprMIR(current->cast.expr, dest, scope, storageScope);
-        
-        // since sign is extended by default, there is no need for explicit asm for converting between integer types
-        if (isIntegerType(current->cast._from) && isIntegerType(current->cast._to)){
-            return;
+        Register exprIn = dest;
+        // same register cannot be used, then allocate another register of the other type 
+        if (!canSameRegBeUsed){
+            exprIn = regAlloc.allocVRegister(RegisterType(dest.type ^ REG_FLOATING_POINT));
         }
 
+        // generate the expr to be cast
+        generateExprMIR(current->cast.expr, exprIn, scope, storageScope);
+
+        const char* exprInName = RV64_RegisterName[regAlloc.resolveRegister(exprIn)];
+        const char* exprDestName = RV64_RegisterName[regAlloc.resolveRegister(dest)];
+
+        
         switch (current->cast._from.tag){
         case MIR_Datatype::TYPE_I8:
         case MIR_Datatype::TYPE_I16:
@@ -758,18 +911,76 @@ void CodeGenerator::generateExprMIR(MIR_Expr *current, Register dest, MIR_Scope*
         case MIR_Datatype::TYPE_U8:
         case MIR_Datatype::TYPE_U16:
         case MIR_Datatype::TYPE_U32:
-        case MIR_Datatype::TYPE_U64:
-
+        case MIR_Datatype::TYPE_U64:{
             
+            // since sign is extended by default, there is no need for explicit asm for converting between integer types
+            if (isIntegerType(current->cast._to)){
+                break;
+            }
             
+            switch (current->cast._to.tag) {
+                case MIR_Datatype::TYPE_F32 : 
+                case MIR_Datatype::TYPE_F64 :
+                    buffer  << "    fcvt." << fInsFloatSuffix(current->cast._to.size) << "." << iInsIntegerSuffix(current->cast._from.size) 
+                            << ((isUnsigned(current->cast._from))?"u":"") << " " << exprDestName << ", " << exprInName << "\n";
+                    break;
+
+                case MIR_Datatype::TYPE_F16 :
+                case MIR_Datatype::TYPE_F128 :
+                    assert(false && "f16 and f128 are not supported.");
+                default:
+                    break;
+            }
+            
+            break;
+        }
+        
+        case MIR_Datatype::TYPE_F32:
+        case MIR_Datatype::TYPE_F64:{
+            switch (current->cast._to.tag) {
+                case MIR_Datatype::TYPE_I8:
+                case MIR_Datatype::TYPE_I16:
+                case MIR_Datatype::TYPE_I32:
+                case MIR_Datatype::TYPE_I64:
+                case MIR_Datatype::TYPE_U8:
+                case MIR_Datatype::TYPE_U16:
+                case MIR_Datatype::TYPE_U32:
+                case MIR_Datatype::TYPE_U64:{
+                    buffer  << "    fcvt." << iInsIntegerSuffix(current->cast._to.size) << ((isUnsigned(current->cast._from))?"u":"") << "."
+                            << fInsFloatSuffix(current->cast._from.size)   << " " << exprDestName << ", " << exprInName << "\n";
+                    break;
+                }
+
+                case MIR_Datatype::TYPE_F32:
+                case MIR_Datatype::TYPE_F64:{
+                    assert((current->cast._from.tag != current->cast._to.tag) && "Casts shouldn't have the same type on both ends.");
+                    buffer  << "    fcvt." << fInsFloatSuffix(current->cast._to.size) << "."
+                            << fInsFloatSuffix(current->cast._from.size)   << " " << exprDestName << ", " << exprInName << "\n";
+                    break;
+                }
 
 
-            /* code */
+                case MIR_Datatype::TYPE_F16 :
+                case MIR_Datatype::TYPE_F128 :
+                    assert(false && "f16 and f128 are not supported.");
+                default:
+                    break;
+            }
+            break;
+        }
+
         case MIR_Datatype::TYPE_I128:
         case MIR_Datatype::TYPE_U128:
+            assert(false && "128 bit integers aren't supported.");
             break;
+        case MIR_Datatype::TYPE_F16:
+        case MIR_Datatype::TYPE_F128:
+            assert(false && "16 and 128 bit floating point numbers aren't supported.");
+            break;
+
         
         default:
+            assert(false && "Support for casts not implemented fully yet.");
             break;
         }
 
@@ -778,9 +989,10 @@ void CodeGenerator::generateExprMIR(MIR_Expr *current, Register dest, MIR_Scope*
 
 
         
+        if (!canSameRegBeUsed){
+            regAlloc.freeRegister(exprIn);
+        }
 
-
-        assert(false && "Support for casts not implemented fully yet.");
         break;
     }
     case MIR_Expr::EXPR_UNARY:{
@@ -792,6 +1004,17 @@ void CodeGenerator::generateExprMIR(MIR_Expr *current, Register dest, MIR_Scope*
         switch (current->unary.op){
             case MIR_Expr::UnaryOp::EXPR_INEGATE:{
                 buffer << "    neg " << destName << ", " << destName << "\n";
+                break;
+            }
+            case MIR_Expr::UnaryOp::EXPR_FNEGATE:{
+                Register fpZero = regAlloc.allocVRegister(RegisterType(REG_FLOATING_POINT | REG_TEMPORARY));
+                const char* fpZeroName = RV64_RegisterName[regAlloc.resolveRegister(fpZero)];
+                
+
+                buffer << "    fcvt." << fInsFloatSuffix(current->_type.size) << "." << fInsIntegerSuffix(XLEN) << " " << fpZeroName << ", zero\n";
+                buffer << "    fsub." << fInsFloatSuffix(current->_type.size) << " " << destName << ", " << fpZeroName << ", " << destName << "\n";
+
+                regAlloc.freeRegister(fpZero);
                 break;
             }
             case MIR_Expr::UnaryOp::EXPR_IBITWISE_NOT:{
@@ -828,7 +1051,7 @@ void CodeGenerator::generateExprMIR(MIR_Expr *current, Register dest, MIR_Scope*
 
             for (int i = 0; i<RV64_Register::REG_COUNT; i++){
                 if(state.x[i].occupied){
-                    buffer << "    s"<< sizeSuffix(ptrSize) << " " << RV64_RegisterName[i] << ", "<< (n-1)*ptrSize << "(sp) \n";
+                    buffer << "    s"<< iInsIntegerSuffix(ptrSize) << " " << RV64_RegisterName[i] << ", "<< (n-1)*ptrSize << "(sp) \n";
                     n--;
                 }
             }
@@ -880,7 +1103,7 @@ void CodeGenerator::generateExprMIR(MIR_Expr *current, Register dest, MIR_Scope*
                 if(state.x[i].occupied){
                     // only restore the registers except the destination registers since the destination register now contains the return value
                     if (i != destReg)
-                        buffer << "    l"<< sizeSuffix(ptrSize) << " " << RV64_RegisterName[i] << ", "<< (n-1)*ptrSize << "(sp) \n";
+                        buffer << "    l"<< iInsIntegerSuffix(ptrSize) << " " << RV64_RegisterName[i] << ", "<< (n-1)*ptrSize << "(sp) \n";
                     n--;
                 }
             }

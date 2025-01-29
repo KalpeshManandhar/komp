@@ -9,10 +9,20 @@
 #include "label.h"
 
 
+struct SymbolInfo {
+    size_t label;
+    Splice value;
+    MIR_Datatype type;
+};
 
 struct CodeGenerator{
+    
+    SymbolTable<SymbolInfo> rodata;
+
+    std::stringstream rodataSection;
+    std::stringstream dataSection;
     std::stringstream buffer;
-    std::stringstream outputBuffer;
+    std::stringstream textSection;
     const std::string assemblyFilePath="out.s" ;
 
     RegisterAllocator regAlloc;
@@ -22,8 +32,11 @@ struct CodeGenerator{
     AST *ir;
     Arena *arena;
     
-    
     // RV64 specific info
+    const size_t XLEN = 8;
+    const size_t FLEN = 8;
+
+    
     size_t sizeOfType(DataType d, StatementBlock* scope);
     size_t alignmentOfType(DataType d, StatementBlock* scope);
     

@@ -400,7 +400,7 @@ void CodeGenerator::generateExpandedExpr(MIR_Expr *current, Register dest, State
         const char *destName = RV64_RegisterName[destReg];
         
         // load immediate value into a register
-        buffer << "    li " << destName << ", " << current->immediate.val.string << "\n";
+        buffer << "    li " << destName << ", " << current->immediate.val << "\n";
         break;
     }
 
@@ -424,9 +424,9 @@ void CodeGenerator::generateExpandedExpr(MIR_Expr *current, Register dest, State
             };
             
             // resolve the variable into an address
-            ScopeInfo *storage = getAddressScope(of->leaf.val.string);
+            ScopeInfo *storage = getAddressScope(of->leaf.val);
             assert(storage != NULL);
-            StorageInfo sInfo = storage->storage.getInfo(of->leaf.val.string).info;
+            StorageInfo sInfo = storage->storage.getInfo(of->leaf.val).info;
             current->addressOf.offset = storage->frameBase - sInfo.memAddress;
             break;
         }
@@ -1125,7 +1125,9 @@ void CodeGenerator::writeAssemblyToFile(const char *filename){
     std::ofstream outFile(filename);
     if (outFile.is_open())
     {
-        outFile << outputBuffer.str(); // Write the combined assembly to file
+        outFile << rodataSection.str(); // Write the combined assembly to file
+        outFile << dataSection.str(); // Write the combined assembly to file
+        outFile << textSection.str(); // Write the combined assembly to file
         outFile.close();
         std::cout << "Assembly written to " << filename << std::endl;
     }
@@ -1136,7 +1138,9 @@ void CodeGenerator::writeAssemblyToFile(const char *filename){
 }
 
 void CodeGenerator::printAssembly(){
-    std::cout << outputBuffer.str() << std::endl;
+    std::cout << rodataSection.str() << std::endl;
+    std::cout << dataSection.str() << std::endl;
+    std::cout << textSection.str() << std::endl;
 }
 
 
@@ -1149,7 +1153,7 @@ void CodeGenerator::generateAssembly(AST *ir){
     s.frameBase = 0;
     s.parent = 0;
 
-    outputBuffer << "    .text\n";
+    textSection << "    .text\n";
 
 
     for (auto &pair: ir->functions.entries){
@@ -1157,8 +1161,8 @@ void CodeGenerator::generateAssembly(AST *ir){
 
         Function *foo = &pair.second.info;
 
-        // Appending the function assembly to outputBuffer
-        outputBuffer << buffer.str();
+        // Appending the function assembly to textSection
+        textSection << buffer.str();
         buffer.str("");
         buffer.clear();
         
@@ -1646,7 +1650,7 @@ MIR_Expr* CodeGenerator::expandSubexpr(const Subexpr *expr, StatementBlock *scop
             d->tag = MIR_Expr::EXPR_LOAD;
             
             MIR_Expr *leaf = (MIR_Expr*) arena->alloc(sizeof(MIR_Expr));
-            leaf->leaf.val = expr->leaf;
+            leaf->leaf.val = expr->leaf.string;
             leaf->tag = MIR_Expr::EXPR_LEAF;
 
             MIR_Expr *address = (MIR_Expr*) arena->alloc(sizeof(MIR_Expr));
@@ -1696,7 +1700,7 @@ MIR_Expr* CodeGenerator::expandSubexpr(const Subexpr *expr, StatementBlock *scop
         }
 
         d->tag = MIR_Expr::EXPR_LOAD_IMMEDIATE;
-        d->immediate.val = expr->leaf;
+        d->immediate.val = expr->leaf.string;
         return d;
     }
 

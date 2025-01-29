@@ -16,15 +16,21 @@ struct MiddleEnd {
     MIR* mir;
 
     MIR_Expr* typeCastTo(MIR_Expr* expr, MIR_Datatype to, Arena* arena);
-    size_t sizeOfType(DataType d, StatementBlock* scope);
-    size_t alignmentOfType(DataType d, StatementBlock* scope);
     MIR_Datatype convertToLowerLevelType(DataType d, StatementBlock *scope);
     MIR_Expr* transformSubexpr(const Subexpr* expr, StatementBlock* scope, Arena* arena);
     void calcStructMemberOffsets(StatementBlock *scope);
     MIR_Primitives transformNode(const Node* current, StatementBlock *scope, Arena* arena, MIR_Scope* mScope);    
+    Splice copySplice(Splice s, Arena* arena);
 
 };
 
+
+Splice MiddleEnd :: copySplice(Splice s, Arena* arena){
+    char* str = (char*) arena->alloc(s.len + 1);
+    memcpy_s(str, s.len, s.data, s.len);
+    str[s.len] = 0;
+    return Splice{.data = str, .len = s.len};
+}
 
 
 
@@ -46,109 +52,6 @@ MIR_Expr* MiddleEnd :: typeCastTo(MIR_Expr* expr, MIR_Datatype to, Arena* arena)
     }
     return e;
 }
-
-
-
-
-// TODO: These should be removed
-/*
-    RV64 specific sizes of types.
-*/
-size_t MiddleEnd :: sizeOfType(DataType d, StatementBlock* scope){
-    switch (d.tag)
-    {
-    case DataType::TAG_ADDRESS:
-    case DataType::TAG_PTR:
-        return 8;
-    case DataType::TAG_ARRAY:
-        return d.arrayCount * sizeOfType(*(d.ptrTo), scope);
-    case DataType::TAG_PRIMARY:
-        if (_match(d.type, TOKEN_CHAR))
-            return 1;
-
-        if (_match(d.type, TOKEN_INT)){
-            if (d.isSet(DataType::Specifiers::SHORT))
-                return 2;
-            if (d.isSet(DataType::Specifiers::LONG))
-                return 8;
-            if (d.isSet(DataType::Specifiers::LONG_LONG))
-                return 8;
-
-            return 4;
-        }
-
-        if (_match(d.type, TOKEN_FLOAT))
-            return 4;
-
-        // Note: long double isnt supported currently
-        if (_match(d.type, TOKEN_DOUBLE))
-            return 8;
-
-    case DataType::TAG_STRUCT:{
-
-        StatementBlock *structDeclScope = scope->findStructDeclaration(d.structName);
-        assert(structDeclScope != NULL);
-
-        return structDeclScope->structs.getInfo(d.structName.string).info.size;
-    }
-
-    default:
-        break;
-    }
-
-    return 8;
-}
-
-
-// TODO: These should be removed
-/*
-    RV64 specific alignment of types.
-*/
-size_t MiddleEnd :: alignmentOfType(DataType d, StatementBlock* scope){
-    switch (d.tag)
-    {
-    case DataType::TAG_ADDRESS:
-    case DataType::TAG_PTR:
-        return 8;
-    case DataType::TAG_ARRAY:
-        return alignmentOfType(*(d.ptrTo), scope);
-    case DataType::TAG_PRIMARY:
-        if (_match(d.type, TOKEN_CHAR))
-            return 1;
-
-        if (_match(d.type, TOKEN_INT)){
-            if (d.isSet(DataType::Specifiers::SHORT))
-                return 2;
-            if (d.isSet(DataType::Specifiers::LONG))
-                return 8;
-            if (d.isSet(DataType::Specifiers::LONG_LONG))
-                return 8;
-
-            return 4;
-        }
-
-        if (_match(d.type, TOKEN_FLOAT))
-            return 4;
-
-        // Note: long double isnt supported currently
-        if (_match(d.type, TOKEN_DOUBLE))
-            return 8;
-
-    case DataType::TAG_STRUCT:{
-
-        StatementBlock *structDeclScope = scope->findStructDeclaration(d.structName);
-        assert(structDeclScope != NULL);
-
-        return structDeclScope->structs.getInfo(d.structName.string).info.alignment;
-    }
-
-    default:
-        break;
-    }
-
-    return 8;
-}
-
 
 
 /*
@@ -277,7 +180,7 @@ MIR_Expr* MiddleEnd :: transformSubexpr(const Subexpr* expr, StatementBlock* sco
             // d->type = member.type;
             d->_type = convertToLowerLevelType(member.type, scope);
 
-            d->load.size = sizeOfType(member.type, scope);
+            d->load.size = d->_type.size;
             d->load.offset += member.offset;
             d->ptag = MIR_Primitive::PRIM_EXPR;
             
@@ -323,7 +226,7 @@ MIR_Expr* MiddleEnd :: transformSubexpr(const Subexpr* expr, StatementBlock* sco
             d->type = member.type;
             d->_type = convertToLowerLevelType(member.type, scope);
 
-            d->load.size = sizeOfType(member.type, scope);
+            d->load.size = d->_type.size;
             d->load.offset = member.offset;
             d->tag = MIR_Expr::EXPR_LOAD;
             d->ptag = MIR_Primitive::PRIM_EXPR;
@@ -404,7 +307,7 @@ MIR_Expr* MiddleEnd :: transformSubexpr(const Subexpr* expr, StatementBlock* sco
             index->tag = MIR_Expr::EXPR_INDEX;
             index->index.index = right;
             index->index.base = left;
-            index->index.size = sizeOfType(dt, scope);
+            index->index.size = convertToLowerLevelType(dt, scope).size;
             index->type = DataType{.tag = DataType::TAG_ADDRESS};
             index->_type = convertToLowerLevelType(index->type, scope);
             index->ptag = MIR_Primitive::PRIM_EXPR;
@@ -412,7 +315,7 @@ MIR_Expr* MiddleEnd :: transformSubexpr(const Subexpr* expr, StatementBlock* sco
 
             d->load.base = index;
             d->load.offset = loadOffset;
-            d->load.size = sizeOfType(dt, scope);
+            d->load.size = convertToLowerLevelType(dt, scope).size;
             d->ptag = MIR_Primitive::PRIM_EXPR;
 
             return d;
@@ -534,7 +437,7 @@ MIR_Expr* MiddleEnd :: transformSubexpr(const Subexpr* expr, StatementBlock* sco
             left = left->load.base;
             d->store.left = left;
             d->store.right = typeCastTo(right, d->_type, arena);
-            d->store.size = sizeOfType(expr->left->type, scope);
+            d->store.size = convertToLowerLevelType(expr->left->type, scope).size;
             d->ptag = MIR_Primitive::PRIM_EXPR;
 
             return d;
@@ -558,23 +461,30 @@ MIR_Expr* MiddleEnd :: transformSubexpr(const Subexpr* expr, StatementBlock* sco
         DataType dt = getResultantType(expr->left->type, expr->right->type, expr->op);
         d->type = dt;
         d->_type = convertToLowerLevelType(dt, scope);
+                
+        d->binary.left = typeCastTo(left, d->_type, arena);
+        d->binary.right = typeCastTo(right, d->_type, arena);
+        d->binary.size = d->_type.size;
         d->tag = MIR_Expr::EXPR_BINARY;
+        d->ptag = MIR_Primitive::PRIM_EXPR;
+
+        bool isIntegerOperation = isIntegerType(d->_type);
 
         switch (expr->op.type){
         case TOKEN_PLUS:{
-            d->binary.op = MIR_Expr::BinaryOp::EXPR_IADD;
+            d->binary.op = (isIntegerOperation)? MIR_Expr::BinaryOp::EXPR_IADD : MIR_Expr::BinaryOp::EXPR_FADD;
             break;
         } 
         case TOKEN_MINUS:{
-            d->binary.op = MIR_Expr::BinaryOp::EXPR_ISUB;
+            d->binary.op = (isIntegerOperation)? MIR_Expr::BinaryOp::EXPR_ISUB : MIR_Expr::BinaryOp::EXPR_FSUB;
             break;
         } 
         case TOKEN_STAR:{
-            d->binary.op = MIR_Expr::BinaryOp::EXPR_IMUL;
+            d->binary.op = (isIntegerOperation)? MIR_Expr::BinaryOp::EXPR_IMUL : MIR_Expr::BinaryOp::EXPR_FMUL;
             break;
         } 
         case TOKEN_SLASH:{
-            d->binary.op = MIR_Expr::BinaryOp::EXPR_IDIV;
+            d->binary.op = (isIntegerOperation)? MIR_Expr::BinaryOp::EXPR_IDIV : MIR_Expr::BinaryOp::EXPR_FDIV;
             break;
         } 
         case TOKEN_MODULO:{
@@ -611,27 +521,31 @@ MIR_Expr* MiddleEnd :: transformSubexpr(const Subexpr* expr, StatementBlock* sco
             break;
         }
         case TOKEN_EQUALITY_CHECK:{
-            d->binary.op = MIR_Expr::BinaryOp::EXPR_ICOMPARE_EQ;
+            d->binary.op = (isIntegerOperation)? MIR_Expr::BinaryOp::EXPR_ICOMPARE_EQ : MIR_Expr::BinaryOp::EXPR_FCOMPARE_EQ;
             break;
         }
         case TOKEN_NOT_EQUALS:{
-            d->binary.op = MIR_Expr::BinaryOp::EXPR_ICOMPARE_NEQ;
+            d->binary.op = (isIntegerOperation)? MIR_Expr::BinaryOp::EXPR_ICOMPARE_NEQ : MIR_Expr::BinaryOp::EXPR_FCOMPARE_NEQ;
             break;
         }
         case TOKEN_GREATER_EQUALS:{
-            d->binary.op = MIR_Expr::BinaryOp::EXPR_ICOMPARE_GE;
+            d->binary.op = (isIntegerOperation)? MIR_Expr::BinaryOp::EXPR_ICOMPARE_GE : MIR_Expr::BinaryOp::EXPR_FCOMPARE_GE;
+            d->_type = MIR_Datatypes::_u8;
             break;
         }
         case TOKEN_GREATER_THAN:{
-            d->binary.op = MIR_Expr::BinaryOp::EXPR_ICOMPARE_GT;
+            d->binary.op = (isIntegerOperation)? MIR_Expr::BinaryOp::EXPR_ICOMPARE_GT : MIR_Expr::BinaryOp::EXPR_FCOMPARE_GT;
+            d->_type = MIR_Datatypes::_u8;
             break;
         }
         case TOKEN_LESS_EQUALS:{
-            d->binary.op = MIR_Expr::BinaryOp::EXPR_ICOMPARE_LE;
+            d->binary.op = (isIntegerOperation)? MIR_Expr::BinaryOp::EXPR_ICOMPARE_LE : MIR_Expr::BinaryOp::EXPR_FCOMPARE_LE;
+            d->_type = MIR_Datatypes::_u8;
             break;
         }
         case TOKEN_LESS_THAN:{
-            d->binary.op = MIR_Expr::BinaryOp::EXPR_ICOMPARE_LT;
+            d->binary.op = (isIntegerOperation)? MIR_Expr::BinaryOp::EXPR_ICOMPARE_LT : MIR_Expr::BinaryOp::EXPR_FCOMPARE_LT;
+            d->_type = MIR_Datatypes::_u8;
             break;
         }
         
@@ -642,10 +556,7 @@ MIR_Expr* MiddleEnd :: transformSubexpr(const Subexpr* expr, StatementBlock* sco
             break;
         }
 
-        
-        d->binary.left = typeCastTo(left, d->_type, arena);
-        d->binary.right = typeCastTo(right, d->_type, arena);
-        d->ptag = MIR_Primitive::PRIM_EXPR;
+
         
         break;
     }
@@ -677,7 +588,7 @@ MIR_Expr* MiddleEnd :: transformSubexpr(const Subexpr* expr, StatementBlock* sco
             d->tag = MIR_Expr::EXPR_LOAD;
             
             MIR_Expr *leaf = (MIR_Expr*) arena->alloc(sizeof(MIR_Expr));
-            leaf->leaf.val = expr->leaf;
+            leaf->leaf.val = copySplice(expr->leaf.string, arena);
             leaf->tag = MIR_Expr::EXPR_LEAF;
             leaf->ptag = MIR_Primitive::PRIM_EXPR;
 
@@ -743,7 +654,7 @@ MIR_Expr* MiddleEnd :: transformSubexpr(const Subexpr* expr, StatementBlock* sco
         d->_type = convertToLowerLevelType(dt, scope);
 
         d->tag = MIR_Expr::EXPR_LOAD_IMMEDIATE;
-        d->immediate.val = expr->leaf;
+        d->immediate.val = copySplice(expr->leaf.string, arena);
         d->ptag = MIR_Primitive::PRIM_EXPR;
         
         return d;
@@ -771,7 +682,7 @@ MIR_Expr* MiddleEnd :: transformSubexpr(const Subexpr* expr, StatementBlock* sco
 
             d->load.base = operand;
             d->load.offset = 0;
-            d->load.size = sizeOfType(dt, scope);
+            d->load.size = d->_type.size;
             d->ptag = MIR_Primitive::PRIM_EXPR;
 
             return d;
@@ -824,7 +735,8 @@ MIR_Expr* MiddleEnd :: transformSubexpr(const Subexpr* expr, StatementBlock* sco
         d->type = dt;
         d->_type = convertToLowerLevelType(dt, scope);
         d->ptag = MIR_Primitive::PRIM_EXPR;
-
+        
+        bool isIntegerOperation = isIntegerType(d->_type);
 
 
         switch (expr->unaryOp.type){
@@ -832,7 +744,7 @@ MIR_Expr* MiddleEnd :: transformSubexpr(const Subexpr* expr, StatementBlock* sco
         case TOKEN_PLUS:
             break;
         case TOKEN_MINUS:
-            d->unary.op = MIR_Expr::UnaryOp::EXPR_INEGATE;
+            d->unary.op = (isIntegerOperation)? MIR_Expr::UnaryOp::EXPR_INEGATE : MIR_Expr::UnaryOp::EXPR_FNEGATE;
             break;
         case TOKEN_STAR:
             break;
@@ -897,9 +809,11 @@ void MiddleEnd :: calcStructMemberOffsets(StatementBlock *scope){
         
         for(auto &memberName: structInfo.members.order){
             Struct::MemberInfo &member = structInfo.members.getInfo(memberName).info;
+            
+            MIR_Datatype dt = convertToLowerLevelType(member.type, scope);
 
-            size_t size = sizeOfType(member.type, scope);
-            size_t alignment = alignmentOfType(member.type, scope);
+            size_t size = dt.size;
+            size_t alignment = dt.alignment;
 
             offset = alignUpPowerOf2(offset, alignment);
             member.offset = offset;
@@ -937,7 +851,7 @@ MIR_Primitives MiddleEnd :: transformNode(const Node* current, StatementBlock *s
                 MIR_Expr* var = (MIR_Expr*)arena->alloc(sizeof(MIR_Expr)); 
                 var->ptag = MIR_Primitive::PRIM_EXPR;
                 var->tag = MIR_Expr::EXPR_LEAF;
-                var->leaf.val = decln.identifier;
+                var->leaf.val = copySplice(decln.identifier.string, arena);
                 
                 MIR_Expr* left = (MIR_Expr*)arena->alloc(sizeof(MIR_Expr)); 
                 left->ptag = MIR_Primitive::PRIM_EXPR;
@@ -949,7 +863,7 @@ MIR_Primitives MiddleEnd :: transformNode(const Node* current, StatementBlock *s
                 declnAssignment->tag = MIR_Expr::EXPR_STORE;
                 declnAssignment->store.left = left;
                 declnAssignment->store.right = transformSubexpr(decln.initValue, scope, arena);
-                declnAssignment->store.size = sizeOfType(decln.type, scope);
+                declnAssignment->store.size = convertToLowerLevelType(decln.type, scope).size;
                 declnAssignment->store.offset = 0;
                 declnAssignment->_type = convertToLowerLevelType(decln.type, scope);
                 

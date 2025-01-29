@@ -45,7 +45,6 @@ static void printMIRPrimitive(MIR_Primitive* p, int depth){
         printMIRPrimitive(lnode->condition, depth + 1);
 
         printTabs(depth + 1);
-        std::cout << "scope: \n";
         printMIRPrimitive(lnode->scope, depth + 1);
                 
         break;
@@ -120,7 +119,7 @@ static void printMIRPrimitive(MIR_Primitive* p, int depth){
         }
         case MIR_Expr::EXPR_LEAF:{
             printTabs(depth + 1);
-            std::cout << "symbol: " << enode->leaf.val.string << "\n";
+            std::cout << "symbol: " << enode->leaf.val << "\n";
             break;
         }
 
@@ -134,7 +133,7 @@ static void printMIRPrimitive(MIR_Primitive* p, int depth){
         }
         case MIR_Expr::EXPR_LOAD_IMMEDIATE:{
             printTabs(depth + 1);
-            std::cout << "immediate value: " << enode->immediate.val.string << "\n";
+            std::cout << "immediate value: " << enode->immediate.val << "\n";
             break;
         }
         
@@ -215,6 +214,7 @@ static void printMIRPrimitive(MIR_Primitive* p, int depth){
         case MIR_Expr::EXPR_UNARY:{
             static const char* UnaryTypeStrings[] = {
                 "expr_inegate",
+                "expr_fnegate",
                 "expr_ibitwise_not",
                 "expr_logical_not",
             };
