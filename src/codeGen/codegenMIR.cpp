@@ -887,6 +887,10 @@ void CodeGenerator::generateExprMIR(MIR_Expr *current, Register dest, MIR_Scope*
     }
     
     case MIR_Expr::EXPR_CAST:{
+        if (current->cast._from.tag == current->cast._to.tag){
+            break;
+        }
+
         bool canSameRegBeUsed = isIntegerType(current->cast._from) && isIntegerType(current->cast._to);
         canSameRegBeUsed = canSameRegBeUsed || (isFloatType(current->cast._from) && isFloatType(current->cast._to));
         
@@ -904,6 +908,7 @@ void CodeGenerator::generateExprMIR(MIR_Expr *current, Register dest, MIR_Scope*
 
         
         switch (current->cast._from.tag){
+        case MIR_Datatype::TYPE_BOOL:
         case MIR_Datatype::TYPE_I8:
         case MIR_Datatype::TYPE_I16:
         case MIR_Datatype::TYPE_I32:
@@ -913,12 +918,13 @@ void CodeGenerator::generateExprMIR(MIR_Expr *current, Register dest, MIR_Scope*
         case MIR_Datatype::TYPE_U32:
         case MIR_Datatype::TYPE_U64:{
             
-            // since sign is extended by default, there is no need for explicit asm for converting between integer types
-            if (isIntegerType(current->cast._to)){
-                break;
-            }
-            
             switch (current->cast._to.tag) {
+                // conversion to bool
+                case MIR_Datatype::TYPE_BOOL :{
+                    buffer << "    snez " << exprDestName << ", " << exprInName << "\n";
+                    break;
+                }
+                
                 case MIR_Datatype::TYPE_F32 : 
                 case MIR_Datatype::TYPE_F64 :
                     buffer  << "    fcvt." << fInsFloatSuffix(current->cast._to.size) << "." << iInsIntegerSuffix(current->cast._from.size) 
@@ -928,9 +934,13 @@ void CodeGenerator::generateExprMIR(MIR_Expr *current, Register dest, MIR_Scope*
                 case MIR_Datatype::TYPE_F16 :
                 case MIR_Datatype::TYPE_F128 :
                     assert(false && "f16 and f128 are not supported.");
+                    
+
                 default:
                     break;
             }
+
+            // since sign is extended by default, there is no need for explicit asm for converting between integer types
             
             break;
         }

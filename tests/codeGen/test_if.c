@@ -1,6 +1,12 @@
 int main(){
     int a, b;
     a = 0;
+
+    if (a){
+        // this will not run
+        b = 3;
+        return b;
+    }
     
     // all blocks: if, if else and else
     if (a< -1){

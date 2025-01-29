@@ -40,7 +40,7 @@ Splice MiddleEnd :: copySplice(Splice s, Arena* arena){
 */
 MIR_Expr* MiddleEnd :: typeCastTo(MIR_Expr* expr, MIR_Datatype to, Arena* arena){
     MIR_Expr* e = expr;
-    if (expr->_type.tag != to.tag){
+    if (expr && expr->_type.tag != to.tag){
         MIR_Expr *cast = (MIR_Expr*)arena->alloc(sizeof(MIR_Expr));
         cast->ptag = MIR_Primitive::PRIM_EXPR;
         cast->tag = MIR_Expr::EXPR_CAST;
@@ -522,30 +522,32 @@ MIR_Expr* MiddleEnd :: transformSubexpr(const Subexpr* expr, StatementBlock* sco
         }
         case TOKEN_EQUALITY_CHECK:{
             d->binary.op = (isIntegerOperation)? MIR_Expr::BinaryOp::EXPR_ICOMPARE_EQ : MIR_Expr::BinaryOp::EXPR_FCOMPARE_EQ;
+            d->_type = MIR_Datatypes::_bool;
             break;
         }
         case TOKEN_NOT_EQUALS:{
             d->binary.op = (isIntegerOperation)? MIR_Expr::BinaryOp::EXPR_ICOMPARE_NEQ : MIR_Expr::BinaryOp::EXPR_FCOMPARE_NEQ;
+            d->_type = MIR_Datatypes::_bool;
             break;
         }
         case TOKEN_GREATER_EQUALS:{
             d->binary.op = (isIntegerOperation)? MIR_Expr::BinaryOp::EXPR_ICOMPARE_GE : MIR_Expr::BinaryOp::EXPR_FCOMPARE_GE;
-            d->_type = MIR_Datatypes::_u8;
+            d->_type = MIR_Datatypes::_bool;
             break;
         }
         case TOKEN_GREATER_THAN:{
             d->binary.op = (isIntegerOperation)? MIR_Expr::BinaryOp::EXPR_ICOMPARE_GT : MIR_Expr::BinaryOp::EXPR_FCOMPARE_GT;
-            d->_type = MIR_Datatypes::_u8;
+            d->_type = MIR_Datatypes::_bool;
             break;
         }
         case TOKEN_LESS_EQUALS:{
             d->binary.op = (isIntegerOperation)? MIR_Expr::BinaryOp::EXPR_ICOMPARE_LE : MIR_Expr::BinaryOp::EXPR_FCOMPARE_LE;
-            d->_type = MIR_Datatypes::_u8;
+            d->_type = MIR_Datatypes::_bool;
             break;
         }
         case TOKEN_LESS_THAN:{
             d->binary.op = (isIntegerOperation)? MIR_Expr::BinaryOp::EXPR_ICOMPARE_LT : MIR_Expr::BinaryOp::EXPR_FCOMPARE_LT;
-            d->_type = MIR_Datatypes::_u8;
+            d->_type = MIR_Datatypes::_bool;
             break;
         }
         
@@ -748,9 +750,11 @@ MIR_Expr* MiddleEnd :: transformSubexpr(const Subexpr* expr, StatementBlock* sco
             break;
         case TOKEN_STAR:
             break;
-        case TOKEN_LOGICAL_NOT:
+        case TOKEN_LOGICAL_NOT:{
             d->unary.op = MIR_Expr::UnaryOp::EXPR_LOGICAL_NOT;
+            d->_type = MIR_Datatypes::_bool;
             break;
+        }
         case TOKEN_BITWISE_NOT:
             d->unary.op = MIR_Expr::UnaryOp::EXPR_IBITWISE_NOT;
             break;
@@ -946,7 +950,8 @@ MIR_Primitives MiddleEnd :: transformNode(const Node* current, StatementBlock *s
             assert(stmts.primitives[0]->ptag == MIR_Primitive::PRIM_SCOPE);
 
             (*inode)->ptag = MIR_Primitive::PRIM_IF;
-            (*inode)->condition = transformSubexpr(AST_current->condition, scope, arena);
+            MIR_Expr* condition = transformSubexpr(AST_current->condition, scope, arena);
+            (*inode)->condition = typeCastTo(condition, MIR_Datatypes::_bool, arena);
             (*inode)->scope = (MIR_Scope*) stmts.primitives[0]; 
             (*inode)->next = NULL;
             
@@ -970,7 +975,8 @@ MIR_Primitives MiddleEnd :: transformNode(const Node* current, StatementBlock *s
 
 
         loop->ptag = MIR_Primitive::PRIM_LOOP;
-        loop->condition = transformSubexpr(AST_wnode->condition, scope, arena);
+        MIR_Expr* condition = transformSubexpr(AST_wnode->condition, scope, arena);
+        loop->condition = typeCastTo(condition, MIR_Datatypes::_bool, arena);
         loop->scope = (MIR_Scope*) stmts.primitives[0];
 
         return MIR_Primitives{.primitives = {loop}, .n = 1};
@@ -989,7 +995,8 @@ MIR_Primitives MiddleEnd :: transformNode(const Node* current, StatementBlock *s
         
         loop->ptag = MIR_Primitive::PRIM_LOOP;
         loop->scope = (MIR_Scope*) stmts.primitives[0];
-        loop->condition = transformSubexpr(AST_fnode->exitCondition, scope, arena);
+        MIR_Expr* condition = transformSubexpr(AST_fnode->exitCondition, scope, arena);
+        loop->condition = typeCastTo(condition, MIR_Datatypes::_bool, arena);
         
         // add the update statement to the loop body
         loop->scope->statements.push_back(transformSubexpr(AST_fnode->update, scope, arena));

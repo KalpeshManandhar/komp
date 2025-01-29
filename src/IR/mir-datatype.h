@@ -20,6 +20,7 @@ struct MIR_Datatype {
         TYPE_PTR,
         TYPE_ARRAY,
         TYPE_VOID,
+        TYPE_BOOL
     }tag;
 
     size_t size;
@@ -46,14 +47,19 @@ namespace MIR_Datatypes{
     inline MIR_Datatype _f64 = MIR_Datatype {.tag = MIR_Datatype::TYPE_F64, .size = 8, .alignment = 8, .name = "_f64"};
     inline MIR_Datatype _f128 = MIR_Datatype {.tag = MIR_Datatype::TYPE_F128, .size = 16, .alignment = 16, .name = "_f128"};
     inline MIR_Datatype _ptr = MIR_Datatype {.tag = MIR_Datatype::TYPE_PTR, .size = 8, .alignment = 8, .name = "_ptr"};
+    inline MIR_Datatype _bool = MIR_Datatype {.tag = MIR_Datatype::TYPE_BOOL, .size = 1, .alignment = 1, .name = "_bool"};
     
     inline MIR_Datatype _struct = MIR_Datatype {.tag = MIR_Datatype::TYPE_STRUCT, .name = "_struct"};
 };
 
 static bool isIntegerType(MIR_Datatype type){
-    return (type.tag >= MIR_Datatype::TYPE_U8 && type.tag <= MIR_Datatype::TYPE_I128) || type.tag == MIR_Datatype::TYPE_PTR;
+    return (type.tag >= MIR_Datatype::TYPE_U8 && type.tag <= MIR_Datatype::TYPE_I128) || type.tag == MIR_Datatype::TYPE_PTR || type.tag == MIR_Datatype::TYPE_BOOL;
 }
 
 static bool isFloatType(MIR_Datatype type){
     return type.tag >= MIR_Datatype::TYPE_F16 && type.tag <= MIR_Datatype::TYPE_F128;
+}
+
+static bool isUnsigned(MIR_Datatype type){
+    return type.tag >= MIR_Datatype::TYPE_U8 && type.tag <= MIR_Datatype::TYPE_U128;
 }
