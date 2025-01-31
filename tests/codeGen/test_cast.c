@@ -8,6 +8,9 @@ int main(){
     float e = 12; // i32 to f32: asm generated
     float f = e; // f32 to f32: no asm generated
 
-    // 1 + 12 = 13
-    return d + c; // i32(u64 + u64(u32))
+    double g = 1.05f; // f32 to f64
+    float h = (float)12/15 * 10; // explicit cast: i32 to f32
+
+    // 1 + 12 + 8 = 21 
+    return d + c + (int)h; // i32(u64 + u64(u32))
 }

@@ -805,9 +805,16 @@ MIR_Expr* MiddleEnd :: transformSubexpr(const Subexpr* expr, StatementBlock* sco
         d->functionCall = mfooCall;
         break;
     }
-
+    
     case Subexpr::SUBEXPR_CAST:{
+        d->cast._from = convertToLowerLevelType(expr->expr->type, scope);
+        d->cast._to = convertToLowerLevelType(expr->to, scope);
         
+        d->cast.expr = transformSubexpr(expr->expr, scope, arena);
+        d->ptag = MIR_Primitive::PRIM_EXPR;
+        d->tag = MIR_Expr::EXPR_CAST;
+        d->_type = d->cast._to;
+        break;
     }
         
     
