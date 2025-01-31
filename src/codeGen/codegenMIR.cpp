@@ -112,7 +112,7 @@ static int getDepth(const MIR_Expr *expr){
         int operand = getDepth(expr->unary.unarySubexpr);
         return operand + 1;
     }
-    case MIR_Expr::EXPR_FUNCTION_CALL: {
+    case MIR_Expr::EXPR_CALL: {
         return 1;
     }
     default:
@@ -342,15 +342,32 @@ void CodeGenerator :: generatePrimitiveMIR(MIR_Primitive* p, MIR_Scope* scope, S
         
         case MIR_Primitive::PRIM_RETURN:{
             MIR_Return* rnode = (MIR_Return*) p;
-
-            Register a0 = regAlloc.allocRegister(REG_A0);
-
-            generateExprMIR(rnode->returnValue, a0, scope, storageScope);
+            MIR_Function &foo = this->mir->functions.getInfo(rnode->funcName).info;
             
-            const char* a0Name = RV64_RegisterName[regAlloc.resolveRegister(a0)];
+            if (foo.returnType.tag == MIR_Datatype::TYPE_VOID){
+
+            }
+            else if (isIntegerType(foo.returnType)){
+                assert(foo.returnType.size <= XLEN && "Return values are only supported in one register.");
+
+                Register a0 = regAlloc.allocRegister(REG_A0);
+                generateExprMIR(rnode->returnValue, a0, scope, storageScope);
+                regAlloc.freeRegister(a0);
+            }
+            else if (isFloatType(foo.returnType)){
+                assert(foo.returnType.size <= FLEN && "Return values are only supported in one register.");
+
+                Register fa0 = regAlloc.allocRegister(REG_FA0);
+                generateExprMIR(rnode->returnValue, fa0, scope, storageScope);
+                
+                regAlloc.freeRegister(fa0);
+            }
+            else {
+                assert(false && "Struct returns not implemented yet.");
+            }
             buffer << "    j ." << rnode->funcName << "_ep\n";
-            
-            regAlloc.freeRegister(a0);
+
+
             break;
         }
         case MIR_Primitive::PRIM_JUMP:{
@@ -421,12 +438,94 @@ void CodeGenerator :: generateFunctionMIR(MIR_Function *foo, MIR_Scope* global, 
     buffer << "    sd fp, 0(sp)\n";     // save prev frame pointer
     buffer << "    mv fp, sp\n";        // save current stack pointer 
     
-    ScopeInfo s;
-    s.frameBase = 0;
-    s.parent = storageScope;
 
+    ScopeInfo storage;
+    storage.parent = storageScope;
+    storage.frameBase = 0;
 
-    generatePrimitiveMIR(foo->scope, global, &s);
+    // allocate stack space for parameters and local variables
+    size_t totalSize = allocStackSpaceMIR((MIR_Scope*) foo, &storage);
+    
+    if (totalSize > 0)
+        buffer << "    addi sp, sp, -" << totalSize << "\n"; 
+    
+
+    
+    // follows the LP64D ABI
+    // available register counts
+    int totalAvailableXA = (REG_A7 - REG_A0 + 1);
+    int totalAvailableFA = (REG_FA7 - REG_FA0 + 1);
+    int occupiedXA = 0;
+    int occupiedFA = 0;
+    // copy parameters from registers to stack
+    for (int paramNo = 0; paramNo < foo->parameters.size(); paramNo++){
+        MIR_Datatype typeOfParam = foo->parameters[paramNo].type;
+        size_t sizeOfParam = typeOfParam.size;
+        
+        StorageInfo sInfo = storage.storage.getInfo(foo->parameters[paramNo].identifier).info;
+
+        // integer types
+        if (isIntegerType(typeOfParam)){
+            int nRegistersRequired = alignUpPowerOf2(sizeOfParam, XLEN)/XLEN;
+            
+            // pass in registers
+            if (nRegistersRequired <= 2){
+                assert(nRegistersRequired != 2 && "Multiple registers load isnt currently supported.");
+                
+                Register argRegister = regAlloc.allocRegister(RV64_Register(REG_A0 + occupiedXA));
+                const char* argRegName = RV64_RegisterName[regAlloc.resolveRegister(argRegister)];
+                
+                
+                int64_t offset = sInfo.memAddress - storage.frameBase;
+                buffer << "    s" << iInsIntegerSuffix(sizeOfParam) << " " << argRegName << ", -" << offset << "(fp)\n"; 
+                regAlloc.freeRegister(argRegister);
+                occupiedXA++;
+                
+            }
+            else {
+                assert(false && "Integer types should fit in one XLEN length register.");
+            }
+
+            
+        }
+        // floating types
+        else if(isFloatType(typeOfParam)){
+            int nRegistersRequired = alignUpPowerOf2(sizeOfParam, FLEN)/FLEN;
+            
+            if (nRegistersRequired <= 2){
+                assert(nRegistersRequired != 2 && "Multiple registers load isnt currently supported.");
+                
+                Register argRegister = regAlloc.allocRegister(RV64_Register(REG_FA0 + occupiedFA));
+                
+                const char* argRegName = RV64_RegisterName[regAlloc.resolveRegister(argRegister)];
+                
+                int64_t offset = sInfo.memAddress - storage.frameBase;
+                buffer << "    fs" << iInsIntegerSuffix(sizeOfParam) << " " << argRegName << ", -" << offset << "(fp)\n";
+                regAlloc.freeRegister(argRegister);
+                occupiedFA++;
+            }
+            else {
+                assert(false && "Float types should fit in one FLEN length register.");
+            }
+        }
+        // struct types
+        else{
+            assert(false && "Struct arguments are not supported yet.");
+        }
+
+    }
+
+    for (auto &prim : foo->statements){
+        generatePrimitiveMIR(prim, (MIR_Scope*) foo, &storage);
+    }
+
+    // deallocate stack space
+    stackAlloc.deallocate(totalSize);
+    if (totalSize > 0)
+        buffer << "    addi sp, sp, " << totalSize << "\n"; 
+    
+    
+
 
     // function epilogue
     buffer << "."<<foo->funcName << "_ep:\n";
@@ -443,6 +542,8 @@ void CodeGenerator :: generateFunctionMIR(MIR_Function *foo, MIR_Scope* global, 
 
 
 void CodeGenerator :: generateAssemblyFromMIR(MIR *mir){
+    this->mir = mir;
+
     ScopeInfo s;
     s.frameBase = 0;
     s.parent = 0;
@@ -897,7 +998,7 @@ void CodeGenerator::generateExprMIR(MIR_Expr *current, Register dest, MIR_Scope*
         Register exprIn = dest;
         // same register cannot be used, then allocate another register of the other type 
         if (!canSameRegBeUsed){
-            exprIn = regAlloc.allocVRegister(RegisterType(dest.type ^ REG_FLOATING_POINT));
+            exprIn = regAlloc.allocVRegister(RegisterType(((dest.type ^ REG_FLOATING_POINT) & REG_FLOATING_POINT) | REG_TEMPORARY));
         }
 
         // generate the expr to be cast
@@ -1042,85 +1143,170 @@ void CodeGenerator::generateExprMIR(MIR_Expr *current, Register dest, MIR_Scope*
 
         break;
     }
-    case MIR_Expr::EXPR_FUNCTION_CALL:{
-        RegisterState state = regAlloc.getRegisterState(REG_CALLER_SAVED);
-        regAlloc.save(state);
-            
-        // the number of caller saved registers in use
-        int count = 0;
-        for (int i = 0; i<RV64_Register::REG_COUNT; i++){
-            count += (state.x[i].occupied)? 1 : 0;
-        }
-        
-        // save the caller saved registers used in memory
-        int n = count;
-        size_t ptrSize = MIR_Datatypes::_ptr.size;
-        int allocSize = count * ptrSize;
-        if (allocSize > 0){
-            buffer << "    addi sp, sp, -" << allocSize << "\n";
-
-            for (int i = 0; i<RV64_Register::REG_COUNT; i++){
-                if(state.x[i].occupied){
-                    buffer << "    s"<< iInsIntegerSuffix(ptrSize) << " " << RV64_RegisterName[i] << ", "<< (n-1)*ptrSize << "(sp) \n";
-                    n--;
-                }
-            }
-        }
-
-        
-        // arguments
-        // TODO: currently only int args are supported
-        assert(current->functionCall->arguments.size() <= (REG_A7 - REG_A0 + 1));
-        
-        // int argNo = 0;
-        // for (auto &arg : current->functionCall->arguments){
-        //     MIR_Expr *expand = expandSubexpr(arg, scope);
-            
-        //     size_t size = sizeOfType(expand->type, scope);
-            
-        //     // pass in registers
-        //     if (size <= ptrSize){
-        //         Register argRegister = regAlloc.allocRegister(RV64_Register(REG_A0 + argNo));
-        //         generateExprMIR(expand, argRegister, scope, storageScope);
-
-        //         regAlloc.freeRegister(argRegister);
-        //         argNo++;
-        //     }
-        //     // pass in stack
-        //     else{
-        //         buffer << "    addi sp, sp, " << -size << "\n";
-                
-
-
-        //     }
-            
-        // }
-        
-
-
-
-        buffer << "    call " << current->functionCall->funcName.string << "\n";
-        
+    case MIR_Expr::EXPR_CALL:{
         // move return value into destination register
         RV64_Register destReg = regAlloc.resolveRegister(dest);
         const char *destName = RV64_RegisterName[destReg];
-        buffer << "    mv " << destName << ", a0 \n";
-        
-        // load back register values after function call
-        n = count;
-        if (allocSize > 0){
-            for (int i = 0; i<RV64_Register::REG_COUNT; i++){
-                if(state.x[i].occupied){
-                    // only restore the registers except the destination registers since the destination register now contains the return value
-                    if (i != destReg)
-                        buffer << "    l"<< iInsIntegerSuffix(ptrSize) << " " << RV64_RegisterName[i] << ", "<< (n-1)*ptrSize << "(sp) \n";
-                    n--;
+
+
+        RegisterState Xstate = regAlloc.getRegisterState(REG_CALLER_SAVED);
+        RegisterState Fstate = regAlloc.getRegisterState(RegisterType(REG_CALLER_SAVED | REG_FLOATING_POINT));
+        RegisterState state = {0};
+
+        // the number of caller saved registers in use
+        int count = 0;
+        for (int i = 0; i<RV64_Register::REG_COUNT; i++){
+            if (i == destReg){
+                continue;
+            }
+            count += (Xstate.reg[i].occupied)? 1 : 0;
+            count += (Fstate.reg[i].occupied)? 1 : 0;
+            state.reg[i] = (Xstate.reg[i].occupied)? Xstate.reg[i] : Fstate.reg[i];
+        }
+
+        auto saveRegisters = [&] (RegisterState rState) {
+            // save the caller saved registers used in memory
+            int n = count;
+            int allocSize = count * XLEN;
+            if (count > 0){
+                buffer << "    addi sp, sp, -" << allocSize << "\n";
+
+                for (int i = 0; i<RV64_Register::REG_COUNT; i++){
+                    if (i == destReg){
+                        continue;
+                    }
+                    if(rState.reg[i].occupied){
+                        bool isFloatReg = (RV64Registers[i].type & REG_FLOATING_POINT) != 0;
+                        const char* prefix = isFloatReg? "f": "";
+                        
+                        buffer << "    " << prefix << "s"<< iInsIntegerSuffix(XLEN) << " " << RV64_RegisterName[i] << ", "<< (n-1)*XLEN << "(sp) \n";
+                        n--;
+                        regAlloc.freeRegister(Register{.id = size_t(i)});
+                    }
                 }
             }
-            buffer << "    addi sp, sp, " << allocSize << "\n";
+
+        };
+        saveRegisters(state);
+
+
+        // follows the LP64D ABI
+        // available register counts
+        int totalAvailableXA = (REG_A7 - REG_A0 + 1);
+        int totalAvailableFA = (REG_FA7 - REG_FA0 + 1);
+        int occupiedXA = 0;
+        int occupiedFA = 0;
+        
+        for (int argNo = 0; argNo < current->functionCall->arguments.size(); argNo++){
+            MIR_Expr* arg = current->functionCall->arguments[argNo];
+            size_t sizeOfArg = arg->_type.size;
+            
+            // integer types
+            if (isIntegerType(arg->_type)){
+                int nRegistersRequired = alignUpPowerOf2(sizeOfArg, XLEN)/XLEN;
+                
+                // pass in registers
+                if (nRegistersRequired <= 2){
+                    assert(nRegistersRequired != 2 && "Multiple registers load isnt currently supported.");
+                    
+                    Register argRegister = regAlloc.allocRegister(RV64_Register(REG_A0 + occupiedXA));
+                    generateExprMIR(arg, argRegister, scope, storageScope);
+                    regAlloc.freeRegister(argRegister);
+                    occupiedXA++;
+                    
+                }
+                else {
+                    assert(false && "Integer types should fit in one XLEN length register.");
+                }
+
+                
+            }
+            // floating types
+            else if(isFloatType(arg->_type)){
+                int nRegistersRequired = alignUpPowerOf2(sizeOfArg, FLEN)/FLEN;
+                
+                if (nRegistersRequired <= 2){
+                    assert(nRegistersRequired != 2 && "Multiple registers load isnt currently supported.");
+                    
+                    Register argRegister = regAlloc.allocRegister(RV64_Register(REG_FA0 + occupiedFA));
+                    generateExprMIR(arg, argRegister, scope, storageScope);
+                    regAlloc.freeRegister(argRegister);
+                    occupiedFA++;
+                }
+                else {
+                    assert(false && "Float types should fit in one FLEN length register.");
+                }
+            }
+            // struct types
+            else{
+                assert(false && "Struct arguments are not supported yet.");
+                // int nRegistersRequired = alignUpPowerOf2(sizeOfArg, XLEN)/XLEN;
+                
+                // if (nRegistersRequired > 2){
+                //     Register argRegister = regAlloc.allocRegister(RV64_Register(REG_A0 + occupiedXA));
+                //     generateExprMIR(arg, argRegister, scope, storageScope);
+                //     regAlloc.freeRegister(argRegister);
+                //     occupiedXA++;
+                // }
+
+                // assert(false && "Float types should fit in one FLEN length register.");
+            }
+
+        }
+
+        buffer << "    call " << current->functionCall->funcName << "\n";
+        
+        
+        MIR_Function &foo = this->mir->functions.getInfo(current->functionCall->funcName).info;
+        if (foo.returnType.tag != MIR_Datatype::TYPE_VOID){
+            Register returnValIn;
+            const char* prefix = "";
+            const char* suffix1 = "";
+            const char* suffix2 = "";
+
+            if (isIntegerType(foo.returnType)){
+                returnValIn = regAlloc.allocRegister(REG_A0);
+            }
+            else if (isFloatType(foo.returnType)){
+                returnValIn = regAlloc.allocRegister(REG_FA0);
+                prefix = "f";
+                suffix1 = ".";
+                suffix2 = fInsFloatSuffix(foo.returnType.size);
+            }
+            else {
+                assert(false && "Return types other than integers and floats aren't submitted currently.");
+            }
+
+            const char *returnValInName = RV64_RegisterName[regAlloc.resolveRegister(returnValIn)];
+
+            
+            buffer << "    " << prefix << "mv" << suffix1 << suffix2 << " " << destName << ", " << returnValInName << "\n";
+        
+            regAlloc.freeRegister(returnValIn);
         }
         
-        regAlloc.restore(state);
+        // load back register values after function call
+        auto restoreRegisters = [&] (RegisterState rState){
+            int n = count;
+            int allocSize = XLEN * count;
+            if (count > 0){
+                for (int i = 0; i<RV64_Register::REG_COUNT; i++){
+                    if (i == destReg){
+                        continue;
+                    }
+                    if(rState.reg[i].occupied){
+                        bool isFloatReg = (RV64Registers[i].type & REG_FLOATING_POINT) != 0;
+                        const char* prefix = isFloatReg? "f": "";
+                        // only restore the registers except the destination registers since the destination register now contains the return value
+                        buffer << "    " << prefix << "l"<< iInsIntegerSuffix(XLEN) << " " << RV64_RegisterName[i] << ", "<< (n-1)*XLEN << "(sp) \n";
+                        n--;
+                    }
+                }
+                buffer << "    addi sp, sp, " << allocSize << "\n";
+            }
+        };
+        restoreRegisters(state);
+        regAlloc.setRegisterState(RegisterType::REG_CALLER_SAVED, state);
 
         break;
     }
@@ -1130,3 +1316,27 @@ void CodeGenerator::generateExprMIR(MIR_Expr *current, Register dest, MIR_Scope*
     }
 }
 
+/*
+    Write assembly out to a given file.
+*/
+void CodeGenerator::writeAssemblyToFile(const char *filename){
+    std::ofstream outFile(filename);
+    if (outFile.is_open())
+    {
+        outFile << rodataSection.str(); // Write the combined assembly to file
+        outFile << dataSection.str(); // Write the combined assembly to file
+        outFile << textSection.str(); // Write the combined assembly to file
+        outFile.close();
+        std::cout << "Assembly written to " << filename << std::endl;
+    }
+    else
+    {
+        std::cerr << "Failed to open file: " << filename << std::endl;
+    }
+}
+
+void CodeGenerator::printAssembly(){
+    std::cout << rodataSection.str() << std::endl;
+    std::cout << dataSection.str() << std::endl;
+    std::cout << textSection.str() << std::endl;
+}

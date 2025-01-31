@@ -44,6 +44,7 @@ MIR_Expr* MiddleEnd :: typeCastTo(MIR_Expr* expr, MIR_Datatype to, Arena* arena)
         MIR_Expr *cast = (MIR_Expr*)arena->alloc(sizeof(MIR_Expr));
         cast->ptag = MIR_Primitive::PRIM_EXPR;
         cast->tag = MIR_Expr::EXPR_CAST;
+        cast->_type = to;
         cast->cast._from = expr->_type; 
         cast->cast._to = to; 
         cast->cast.expr = expr;
@@ -778,13 +779,35 @@ MIR_Expr* MiddleEnd :: transformSubexpr(const Subexpr* expr, StatementBlock* sco
     
     case Subexpr::SUBEXPR_FUNCTION_CALL:{
         FunctionCall *fooCall = expr->functionCall;
-        assert(false && "Function calls not supported yet huhu");
-        // Function foo = ir->functions.getInfo(fooCall->funcName.string).info;
+        Function foo = ast->functions.getInfo(fooCall->funcName.string).info;
         
-        // d->tag = MIR_Expr::EXPR_FUNCTION_CALL;
-        // d->type = foo.returnType;
-        // d->functionCall = expr->functionCall;
+        void* mem = arena->alloc(sizeof(MIR_FunctionCall));
+        MIR_FunctionCall* mfooCall = new (mem) MIR_FunctionCall;
+        mfooCall->funcName = copySplice(fooCall->funcName.string, arena);
+        
+        // convert the arguments
+        for (int i=0; i<fooCall->arguments.size(); i++){
+            DataType reqType = foo.parameters[i].type;
+            MIR_Datatype mReqType = convertToLowerLevelType(reqType, scope);
+            
+            // convert
+            MIR_Expr* mArg = transformSubexpr(fooCall->arguments[i], scope, arena);
+            // type cast to required type
+            mArg = typeCastTo(mArg, mReqType, arena);
+            mfooCall->arguments.push_back(mArg);
+        }
+
+        
+        d->ptag = MIR_Primitive::PRIM_EXPR;
+        d->tag = MIR_Expr::EXPR_CALL;
+        d->type = foo.returnType;
+        d->_type = convertToLowerLevelType(foo.returnType, scope);
+        d->functionCall = mfooCall;
         break;
+    }
+
+    case Subexpr::SUBEXPR_CAST:{
+        
     }
         
     
@@ -1041,7 +1064,19 @@ MIR* transform(AST *ast, Arena *arena){
         
         MIR_Primitives scopeNode = middleEnd.transformNode(foo.block, &ast->global, arena, middleEnd.mir->global);
         assert(scopeNode.n == 1 && scopeNode.primitives[0]->ptag == MIR_Primitive::PRIM_SCOPE);
-        f.scope = (MIR_Scope*) scopeNode.primitives[0];
+        MIR_Scope* scope = (MIR_Scope*) scopeNode.primitives[0];
+        f.parent = scope->parent;
+        f.statements = scope->statements;
+        f.symbols = scope->symbols;
+
+        for (auto &param: foo.parameters) {
+            f.parameters.push_back(MIR_Function::Parameter{
+                .type = middleEnd.convertToLowerLevelType(param.type, &ast->global),
+                .identifier = middleEnd.copySplice(param.identifier.string, arena)
+            });
+        }
+
+        f.ptag = MIR_Primitive::PRIM_SCOPE;
 
         middleEnd.mir->functions.add(f.funcName, f);
     }

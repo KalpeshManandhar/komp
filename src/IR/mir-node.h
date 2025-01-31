@@ -26,8 +26,9 @@ struct MIR_Primitive {
 
 
 
+struct MIR_FunctionCall;
 
-typedef FunctionCall Exp_FunctionCall;
+
 
 struct MIR_Expr : public MIR_Primitive{
     enum ExprType{
@@ -47,7 +48,6 @@ struct MIR_Expr : public MIR_Primitive{
         EXPR_BINARY,
         EXPR_UNARY,
 
-        EXPR_FUNCTION_CALL,
     }tag;
     
     
@@ -241,10 +241,16 @@ struct MIR_Expr : public MIR_Primitive{
         /*
             Function call info: function name, arguments.
         */
-        Exp_FunctionCall *functionCall;        
+        MIR_FunctionCall *functionCall;        
         
     };
 
+};
+
+
+struct MIR_FunctionCall {
+    Splice funcName;
+    std::vector <MIR_Expr*> arguments;
 };
 
 
@@ -274,16 +280,10 @@ struct MIR_Return : public MIR_Primitive{
 };
 
 
-
-
-
-
-
-
-struct MIR_Function {
+struct MIR_Function : public MIR_Scope{
     MIR_Datatype returnType;
     Splice funcName; 
-    MIR_Scope* scope;
+    // MIR_Scope* scope;
 
     struct Parameter{
         MIR_Datatype type;
@@ -292,5 +292,11 @@ struct MIR_Function {
     std::vector<Parameter> parameters;
 
 };
+
+
+
+
+
+
 
 

@@ -152,7 +152,17 @@ static void printMIRPrimitive(MIR_Primitive* p, int depth){
         }
 
         case MIR_Expr::EXPR_CALL:{
-            assert(false && "print calls support baka");
+            printTabs(depth + 1);
+            std::cout << "func name: " << enode->functionCall->funcName << "\n";
+            printTabs(depth + 1);
+            std::cout << "arguments: \n";
+            int argNo = 0;
+            for (auto &arg : enode->functionCall->arguments){
+                printTabs(depth + 1);
+                std::cout << "[" << argNo << "]" <<": \n";
+                printMIRPrimitive(arg, depth + 2);
+                argNo++;
+            }
             break;
         }
         
@@ -226,10 +236,6 @@ static void printMIRPrimitive(MIR_Primitive* p, int depth){
             break;
         }
 
-        case MIR_Expr::EXPR_FUNCTION_CALL:{
-            assert(false && "print calls support baka");
-            break;
-        }
         default:
             assert(false && "something is not supported");
             break;
@@ -274,13 +280,15 @@ static void printMIR(MIR *mir){
         std::cout << "Function: " << foo.funcName << "\n";
         std::cout << "Return type: " << foo.returnType.name << "\n";
         std::cout << "Params: \n";
-
+        
+        int i = 0;
         for (auto &param : foo.parameters){
-            std::cout << "\t" << param.identifier << ": " << param.type.name << "\n";
+            std::cout << "\t" << "[" << i << "]" << param.identifier << ": " << param.type.name << "\n";
+            i++;
         }
 
         std::cout << "Scope: \n";
-        printMIRPrimitive(foo.scope, 1);
+        printMIRPrimitive((MIR_Scope*) &foo, 1);
     }
 }
 

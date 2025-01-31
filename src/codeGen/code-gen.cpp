@@ -87,7 +87,7 @@ static int getDepth(const MIR_Expr *expr){
         int operand = getDepth(expr->unary.unarySubexpr);
         return operand + 1;
     }
-    case MIR_Expr::EXPR_FUNCTION_CALL: {
+    case MIR_Expr::EXPR_CALL: {
         return 1;
     }
     default:
@@ -730,88 +730,87 @@ void CodeGenerator::generateExpandedExpr(MIR_Expr *current, Register dest, State
 
         break;
     }
-    case MIR_Expr::EXPR_FUNCTION_CALL:{
-        RegisterState state = regAlloc.getRegisterState(REG_CALLER_SAVED);
-        regAlloc.save(state);
+    // case MIR_Expr::EXPR_FUNCTION_CALL:{
+        // RegisterState state = regAlloc.getRegisterState(REG_CALLER_SAVED);
             
-        // the number of caller saved registers in use
-        int count = 0;
-        for (int i = 0; i<RV64_Register::REG_COUNT; i++){
-            count += (state.x[i].occupied)? 1 : 0;
-        }
+        // // the number of caller saved registers in use
+        // int count = 0;
+        // for (int i = 0; i<RV64_Register::REG_COUNT; i++){
+        //     count += (state.x[i].occupied)? 1 : 0;
+        // }
         
-        // save the caller saved registers used in memory
-        int n = count;
-        size_t ptrSize = sizeOfType(DataType{.tag = DataType::TAG_PTR}, scope);
-        int allocSize = count * ptrSize;
-        if (allocSize > 0){
-            buffer << "    addi sp, sp, -" << allocSize << "\n";
+        // // save the caller saved registers used in memory
+        // int n = count;
+        // size_t ptrSize = sizeOfType(DataType{.tag = DataType::TAG_PTR}, scope);
+        // int allocSize = count * ptrSize;
+        // if (allocSize > 0){
+        //     buffer << "    addi sp, sp, -" << allocSize << "\n";
 
-            for (int i = 0; i<RV64_Register::REG_COUNT; i++){
-                if(state.x[i].occupied){
-                    buffer << "    s"<< sizeSuffix(ptrSize) << " " << RV64_RegisterName[i] << ", "<< (n-1)*ptrSize << "(sp) \n";
-                    n--;
-                }
-            }
-        }
+        //     for (int i = 0; i<RV64_Register::REG_COUNT; i++){
+        //         if(state.x[i].occupied){
+        //             buffer << "    s"<< sizeSuffix(ptrSize) << " " << RV64_RegisterName[i] << ", "<< (n-1)*ptrSize << "(sp) \n";
+        //             n--;
+        //         }
+        //     }
+        // }
 
         
-        // arguments
-        // TODO: currently only int args are supported
-        assert(current->functionCall->arguments.size() <= (REG_A7 - REG_A0 + 1));
+        // // arguments
+        // // TODO: currently only int args are supported
+        // assert(current->functionCall->arguments.size() <= (REG_A7 - REG_A0 + 1));
         
-        int argNo = 0;
-        for (auto &arg : current->functionCall->arguments){
-            MIR_Expr *expand = expandSubexpr(arg, scope);
+        // int argNo = 0;
+        // for (auto &arg : current->functionCall->arguments){
+        //     MIR_Expr *expand = expandSubexpr(arg, scope);
             
-            size_t size = sizeOfType(expand->type, scope);
+        //     size_t size = sizeOfType(expand->type, scope);
             
-            // pass in registers
-            if (size <= ptrSize){
-                Register argRegister = regAlloc.allocRegister(RV64_Register(REG_A0 + argNo));
-                generateExpandedExpr(expand, argRegister, scope, storageScope);
+        //     // pass in registers
+        //     if (size <= ptrSize){
+        //         Register argRegister = regAlloc.allocRegister(RV64_Register(REG_A0 + argNo));
+        //         generateExpandedExpr(expand, argRegister, scope, storageScope);
 
-                regAlloc.freeRegister(argRegister);
-                argNo++;
-            }
-            // pass in stack
-            else{
-                buffer << "    addi sp, sp, " << -size << "\n";
+        //         regAlloc.freeRegister(argRegister);
+        //         argNo++;
+        //     }
+        //     // pass in stack
+        //     else{
+        //         buffer << "    addi sp, sp, " << -size << "\n";
                 
 
 
-            }
+        //     }
             
-        }
+        // }
         
 
 
 
-        buffer << "    call " << current->functionCall->funcName.string << "\n";
+        // buffer << "    call " << current->functionCall->funcName << "\n";
         
-        // move return value into destination register
-        RV64_Register destReg = regAlloc.resolveRegister(dest);
-        const char *destName = RV64_RegisterName[destReg];
-        buffer << "    mv " << destName << ", a0 \n";
+        // // move return value into destination register
+        // RV64_Register destReg = regAlloc.resolveRegister(dest);
+        // const char *destName = RV64_RegisterName[destReg];
+        // buffer << "    mv " << destName << ", a0 \n";
         
-        // load back register values after function call
-        n = count;
-        if (allocSize > 0){
-            for (int i = 0; i<RV64_Register::REG_COUNT; i++){
-                if(state.x[i].occupied){
-                    // only restore the registers except the destination registers since the destination register now contains the return value
-                    if (i != destReg)
-                        buffer << "    l"<< sizeSuffix(ptrSize) << " " << RV64_RegisterName[i] << ", "<< (n-1)*ptrSize << "(sp) \n";
-                    n--;
-                }
-            }
-            buffer << "    addi sp, sp, " << allocSize << "\n";
-        }
+        // // load back register values after function call
+        // n = count;
+        // if (allocSize > 0){
+        //     for (int i = 0; i<RV64_Register::REG_COUNT; i++){
+        //         if(state.reg[i].occupied){
+        //             // only restore the registers except the destination registers since the destination register now contains the return value
+        //             if (i != destReg)
+        //                 buffer << "    l"<< sizeSuffix(ptrSize) << " " << RV64_RegisterName[i] << ", "<< (n-1)*ptrSize << "(sp) \n";
+        //             n--;
+        //         }
+        //     }
+        //     buffer << "    addi sp, sp, " << allocSize << "\n";
+        // }
         
-        regAlloc.restore(state);
+        // regAlloc.getRegisterState(RegisterType::REG_CALLER_SAVED, state);
 
-        break;
-    }
+    //     break;
+    // }
     default:
         break;
     }
@@ -1118,30 +1117,6 @@ void CodeGenerator::generateFunction(Function *foo, ScopeInfo *storageScope){
 }
 
 
-/*
-    Write assembly out to a given file.
-*/
-void CodeGenerator::writeAssemblyToFile(const char *filename){
-    std::ofstream outFile(filename);
-    if (outFile.is_open())
-    {
-        outFile << rodataSection.str(); // Write the combined assembly to file
-        outFile << dataSection.str(); // Write the combined assembly to file
-        outFile << textSection.str(); // Write the combined assembly to file
-        outFile.close();
-        std::cout << "Assembly written to " << filename << std::endl;
-    }
-    else
-    {
-        std::cerr << "Failed to open file: " << filename << std::endl;
-    }
-}
-
-void CodeGenerator::printAssembly(){
-    std::cout << rodataSection.str() << std::endl;
-    std::cout << dataSection.str() << std::endl;
-    std::cout << textSection.str() << std::endl;
-}
 
 
 void CodeGenerator::generateAssembly(AST *ir){
@@ -1799,12 +1774,12 @@ MIR_Expr* CodeGenerator::expandSubexpr(const Subexpr *expr, StatementBlock *scop
     }
     
     case Subexpr::SUBEXPR_FUNCTION_CALL:{
-        FunctionCall *fooCall = expr->functionCall;
-        Function foo = ir->functions.getInfo(fooCall->funcName.string).info;
+        // FunctionCall *fooCall = expr->functionCall;
+        // Function foo = ir->functions.getInfo(fooCall->funcName.string).info;
         
-        d->tag = MIR_Expr::EXPR_FUNCTION_CALL;
-        d->type = foo.returnType;
-        d->functionCall = expr->functionCall;
+        // d->tag = MIR_Expr::EXPR_FUNCTION_CALL;
+        // d->type = foo.returnType;
+        // d->functionCall = expr->functionCall;
         break;
     }
         

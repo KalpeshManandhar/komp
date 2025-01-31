@@ -218,8 +218,7 @@ struct RegisterInfo{
     uint64_t vRegisterMapping;
 };
 
-static RegisterInfo x[REG_COUNT];
-static RegisterInfo f[REG_COUNT];
+static RegisterInfo xf[REG_COUNT];
 
 
 struct RV64RegisterInfo {
@@ -322,7 +321,7 @@ static RV64RegisterInfo RV64Registers[REG_COUNT] = {
 
 
 struct RegisterState{
-    RegisterInfo x[REG_COUNT];
+    RegisterInfo reg[REG_COUNT];
 };
 
 
@@ -330,8 +329,7 @@ struct RegisterAllocator{
     
     // allocate a specific register
     Register allocRegister(RV64_Register reg){
-        assert(!x[reg].occupied);
-        x[reg].occupied = true;
+        assert(!xf[reg].occupied);
         
         Register r;
         r.id = reg;
@@ -355,14 +353,14 @@ struct RegisterAllocator{
     void freeRegister(Register r){
         // if register is physical register
         if (r.id < RV64_Register::REG_COUNT){
-            x[r.id].occupied = false;
+            xf[r.id].occupied = false;
         }
         
         // if register is virtual, remove mapping
         for (int i=0; i<RV64_Register::REG_COUNT; i++){
-            if (x[i].vRegisterMapping == r.id){
-                x[i].vRegisterMapping = 0;
-                x[i].occupied = false;
+            if (xf[i].vRegisterMapping == r.id){
+                xf[i].vRegisterMapping = 0;
+                xf[i].occupied = false;
             }
         }
         
@@ -371,17 +369,19 @@ struct RegisterAllocator{
     RV64_Register resolveRegister(Register r){
         // if register is physical register
         if (r.id < RV64_Register::REG_COUNT){
+            xf[r.id].occupied = true;
             return RV64_Register(r.id);
         }
 
         // if virtual and mapped, return the physical register with the mapping
         for (int i=0; i<RV64_Register::REG_COUNT; i++){
-            if (x[i].vRegisterMapping == r.id){
+            if (xf[i].vRegisterMapping == r.id){
                 return RV64_Register(i);
             }
         }
         
         assert(r.type != RegisterType::REG_FLOATING_POINT && r.type != REG_DONOT_ALLOCATE && "That is not a valid register type you dumbum.");
+        // if virtual and unmapped, then create a mapping
         for (int i=0; i<REG_COUNT; i++){
             RV64RegisterInfo pRegister = RV64Registers[i];
             // if donot allocate, then just dont allocate?
@@ -396,110 +396,50 @@ struct RegisterAllocator{
             
             // if any other bits match, then this register can be used for mapping
             if (pRegister.type & r.type & (~RegisterType::REG_FLOATING_POINT)){
-                if (!x[i].occupied){
-                    x[i].occupied = true;
-                    x[i].vRegisterMapping = r.id;
+                if (!xf[i].occupied){
+                    xf[i].occupied = true;
+                    xf[i].vRegisterMapping = r.id;
                     return RV64_Register(i);
                 }
             }
         }
         assert(false && "Register resolution went wrong huhu.");
-        
-
-
-        // if virtual and unmapped, then add mapping
-        // floating point registers
-        if (r.type & RegisterType::REG_FLOATING_POINT){
-            if (r.type & RegisterType::REG_TEMPORARY){
-                for (int i=RV64_Register::REG_FT0; i<=RV64_Register::REG_FT2; i++){
-                    if (!x[i].occupied){
-                        x[i].occupied = true;
-                        x[i].vRegisterMapping = r.id;
-                        return RV64_Register(i);
-                    }
-                }
-                for (int i=RV64_Register::REG_FT3; i<=RV64_Register::REG_FT6; i++){
-                    if (!x[i].occupied){
-                        x[i].occupied = true;
-                        x[i].vRegisterMapping = r.id;
-                        return RV64_Register(i);
-                    }
-                }
-            }
-        }
-        
-        // integer registers
-        if (r.type & RegisterType::REG_TEMPORARY){
-            for (int i=RV64_Register::REG_T0; i<=RV64_Register::REG_T2; i++){
-                if (!x[i].occupied){
-                    x[i].occupied = true;
-                    x[i].vRegisterMapping = r.id;
-                    return RV64_Register(i);
-                }
-            }
-            for (int i=RV64_Register::REG_T3; i<=RV64_Register::REG_T6; i++){
-                if (!x[i].occupied){
-                    x[i].occupied = true;
-                    x[i].vRegisterMapping = r.id;
-                    return RV64_Register(i);
-                }
-            }
-        }
-        
-        assert(false && "Out of temporary registers.");
         return RV64_Register::REG_A0;
     }
 
     RegisterState getRegisterState(RegisterType type){
         RegisterState state = {0};
+        
+        for (int i=0; i<REG_COUNT; i++){
+            if (RV64Registers[i].type & RegisterType::REG_DONOT_ALLOCATE){
+                continue;
+            }
 
-        if (type & RegisterType::REG_TEMPORARY){
-            for (int i=RV64_Register::REG_T0; i<=RV64_Register::REG_T2; i++){
-                state.x[i] = x[i];
+            if ((type & RegisterType::REG_FLOATING_POINT) != (RV64Registers[i].type & RegisterType::REG_FLOATING_POINT)){
+                continue;
             }
-            for (int i=RV64_Register::REG_T3; i<=RV64_Register::REG_T6; i++){
-                state.x[i] = x[i];
-            }
-        }
-        
-        if (type & RegisterType::REG_SAVED){
-            for (int i=RV64_Register::REG_S0; i<=RV64_Register::REG_S1; i++){
-                state.x[i] = x[i];
-            }
-            for (int i=RV64_Register::REG_S2; i<=RV64_Register::REG_S11; i++){
-                state.x[i] = x[i];
+
+            if (RV64Registers[i].type & type & (~RegisterType::REG_FLOATING_POINT)){
+                state.reg[i] = xf[i];
             }
         }
-        
-        if (type & RegisterType::REG_ARGUMENTS){
-            for (int i=RV64_Register::REG_A0; i<=RV64_Register::REG_A7; i++){
-                state.x[i] = x[i];
-            }
-        }
-        
-        if (type & RegisterType::REG_FLOATING_POINT){
-            for (int i=RV64_Register::REG_A0; i<=RV64_Register::REG_A7; i++){
-                state.x[i] = x[i];
-            }
-        }
-        
         return state;
     }
 
-    void save(RegisterState state){
-        for (int i=0; i<=RV64_Register::REG_COUNT; i++){
-            if (state.x[i].occupied){
-                x[i].occupied = false;
-                x[i].vRegisterMapping = 0;
+    
+    void setRegisterState(RegisterType type, RegisterState state){
+        for (int i=0; i<REG_COUNT; i++){
+            if (RV64Registers[i].type & RegisterType::REG_DONOT_ALLOCATE){
+                continue;
             }
-        }
-    }
-    
-    
-    void restore(RegisterState state){
-        for (int i=0; i<=RV64_Register::REG_COUNT; i++){
-            if (state.x[i].occupied)
-                x[i] = state.x[i];
+
+            if ((type & RegisterType::REG_FLOATING_POINT) != (RV64Registers[i].type & RegisterType::REG_FLOATING_POINT)){
+                continue;
+            }
+
+            if (RV64Registers[i].type & type & (~RegisterType::REG_FLOATING_POINT)){
+                xf[i] = state.reg[i];
+            }
         }
         
     }

@@ -30,6 +30,7 @@ struct CodeGenerator{
     Labeller labeller;
 
     AST *ir;
+    MIR *mir;
     Arena *arena;
     
     // RV64 specific info
