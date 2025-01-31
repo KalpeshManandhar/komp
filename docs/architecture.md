@@ -66,11 +66,11 @@ Parse tree + Symbol tables -------------> LowLevelIR + Storage tables
 - Symbol tables store this newer datatype info along with space for storage info. 
 
 ### Code Generator
-- **Input:** The LowLevelIR
-- Provides a few primitives nodes for code generation (the LowLevelIR) (can be found in **`./src/IR/expanded-node.h`**)
+- **Input:** The MIR
+- Provides a few primitives nodes for code generation (the LowLevelIR) (can be found in **`./src/IR/mir-node.h`**)
 - Consumes this IR to generate RV64 assembly.
 - Basic treewalk implementation.
-- Temporary register allocation for expression generation using virtual registers.
+- Basic register assignment for intermediate/temporary values in expressions.
 
 
 - Assign storage locations to each variable.

@@ -2,6 +2,10 @@
 # TODO
 
 ### Specific refactors:
+ - A minimal stdlib for wrappers around syscalls. 
+ - Maybe look into better register allocation (Linear scan maybe?)
+    - Would probably require that the MIR be converted to a linear IR? Maybe? Dunno
+
  - Maybe change the arena to be dynamic in OS memory allocations instead of a fixed size table.
     - Maybe use a list?
  
@@ -24,15 +28,13 @@
  - Externs/Statics/Volatiles
  - Array/Struct initialization
 
+
  - Explicit type casts - done
  - Change declaration initializers to be an assignment - done
-
-
  - function params into symbols table - done
  - function parsing only in global - done
  - += -= operators in assignment + assignments are binary expressions - done
  - break/continue/return - done
-    
  - arrays - indexing works, declarations done
  - type checking - done
  - structs - declaration done
@@ -49,11 +51,15 @@
 
 
 ## Code generator
-
-- Fully support allocation for all registers
-- Call return primitives?
+- Codegen for string literals.
+- Fully support allocation for all registers - somewhat done?
 - Proper support for function calls
-- Type casts
+    - Support for struct arguments - remaining
+    - Callee saved registers - remaining
+    - Caller saved registers - done
+    - Can be made more efficient through better register allocation
+- Call return primitives - done
+- Type casts - done
 
 
 
