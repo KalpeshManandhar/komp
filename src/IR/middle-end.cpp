@@ -1064,26 +1064,33 @@ MIR* transform(AST *ast, Arena *arena){
 
     for (auto &func: ast->functions.entries){
         Function foo = func.second.info;
-
+        
+        
         MIR_Function f;
         f.funcName = foo.funcName.string;
         f.returnType = middleEnd.convertToLowerLevelType(foo.returnType, &ast->global);
-        
-        MIR_Primitives scopeNode = middleEnd.transformNode(foo.block, &ast->global, arena, middleEnd.mir->global);
-        assert(scopeNode.n == 1 && scopeNode.primitives[0]->ptag == MIR_Primitive::PRIM_SCOPE);
-        MIR_Scope* scope = (MIR_Scope*) scopeNode.primitives[0];
-        f.parent = scope->parent;
-        f.statements = scope->statements;
-        f.symbols = scope->symbols;
-
         for (auto &param: foo.parameters) {
             f.parameters.push_back(MIR_Function::Parameter{
                 .type = middleEnd.convertToLowerLevelType(param.type, &ast->global),
                 .identifier = middleEnd.copySplice(param.identifier.string, arena)
             });
         }
+        
+        // if function definition doesnt exist, then no need to generate
+        f.isExtern = true;
 
-        f.ptag = MIR_Primitive::PRIM_SCOPE;
+        if (foo.block){
+            MIR_Primitives scopeNode = middleEnd.transformNode(foo.block, &ast->global, arena, middleEnd.mir->global);
+            assert(scopeNode.n == 1 && scopeNode.primitives[0]->ptag == MIR_Primitive::PRIM_SCOPE);
+            MIR_Scope* scope = (MIR_Scope*) scopeNode.primitives[0];
+            f.parent = scope->parent;
+            f.statements = scope->statements;
+            f.symbols = scope->symbols;
+
+
+            f.ptag = MIR_Primitive::PRIM_SCOPE;
+            f.isExtern = false;
+        }
 
         middleEnd.mir->functions.add(f.funcName, f);
     }

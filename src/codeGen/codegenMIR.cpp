@@ -430,6 +430,14 @@ void CodeGenerator :: generatePrimitiveMIR(MIR_Primitive* p, MIR_Scope* scope, S
     Generate assembly for a function.
 */
 void CodeGenerator :: generateFunctionMIR(MIR_Function *foo, MIR_Scope* global, ScopeInfo *storageScope){
+    // if extern, then no need to generate
+    if (foo->isExtern){
+        return;
+    }
+
+    std::cout << "Generating for " << foo->funcName << "\n";
+
+
     buffer << "    .globl " << foo->funcName << "\n";
     buffer << foo->funcName << ":\n";
     // function prologue
@@ -1088,7 +1096,12 @@ void CodeGenerator::generateExprMIR(MIR_Expr *current, Register dest, MIR_Scope*
         case MIR_Datatype::TYPE_F128:
             assert(false && "16 and 128 bit floating point numbers aren't supported.");
             break;
-
+        
+        case MIR_Datatype::TYPE_ARRAY:{
+            assert(isIntegerType(current->cast._to) && "Arrays can only be converted to integer types.");
+            break;
+        
+        }
         
         default:
             assert(false && "Support for casts not implemented fully yet.");

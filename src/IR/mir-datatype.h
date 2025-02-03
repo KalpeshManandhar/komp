@@ -53,7 +53,8 @@ namespace MIR_Datatypes{
 };
 
 static bool isIntegerType(MIR_Datatype type){
-    return (type.tag >= MIR_Datatype::TYPE_U8 && type.tag <= MIR_Datatype::TYPE_I128) || type.tag == MIR_Datatype::TYPE_PTR || type.tag == MIR_Datatype::TYPE_BOOL;
+    return (type.tag >= MIR_Datatype::TYPE_U8 && type.tag <= MIR_Datatype::TYPE_I128) || type.tag == MIR_Datatype::TYPE_PTR 
+        || type.tag == MIR_Datatype::TYPE_BOOL || type.tag == MIR_Datatype::TYPE_ARRAY;
 }
 
 static bool isFloatType(MIR_Datatype type){

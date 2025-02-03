@@ -283,7 +283,7 @@ struct MIR_Return : public MIR_Primitive{
 struct MIR_Function : public MIR_Scope{
     MIR_Datatype returnType;
     Splice funcName; 
-    // MIR_Scope* scope;
+    bool isExtern;
 
     struct Parameter{
         MIR_Datatype type;
