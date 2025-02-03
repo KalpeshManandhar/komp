@@ -4,6 +4,8 @@
 #include <assert.h>
 #include <IR/symbol-table.h>
 
+#include <iostream>
+
 
 enum RV64_Register{
     REG_ZERO, // hardwired 0
@@ -218,7 +220,6 @@ struct RegisterInfo{
     uint64_t vRegisterMapping;
 };
 
-static RegisterInfo xf[REG_COUNT];
 
 
 struct RV64RegisterInfo {
@@ -326,6 +327,8 @@ struct RegisterState{
 
 
 struct RegisterAllocator{
+    RegisterInfo xf[REG_COUNT] = { 0 };
+    
     
     // allocate a specific register
     Register allocRegister(RV64_Register reg){
@@ -334,6 +337,7 @@ struct RegisterAllocator{
         Register r;
         r.id = reg;
         r.type = RegisterType(RV64Registers[reg].type | RegisterType::REG_ANY);
+        
         return r;
     }
     
@@ -354,6 +358,7 @@ struct RegisterAllocator{
         // if register is physical register
         if (r.id < RV64_Register::REG_COUNT){
             xf[r.id].occupied = false;
+            std::cout << "Freed register " <<  RV64Registers[r.id].name << "\n";
         }
         
         // if register is virtual, remove mapping
@@ -361,6 +366,7 @@ struct RegisterAllocator{
             if (xf[i].vRegisterMapping == r.id){
                 xf[i].vRegisterMapping = 0;
                 xf[i].occupied = false;
+                std::cout << "Removed mapping vregister " << r.id << " to " << RV64Registers[i].name << "\n";
             }
         }
         
@@ -370,12 +376,14 @@ struct RegisterAllocator{
         // if register is physical register
         if (r.id < RV64_Register::REG_COUNT){
             xf[r.id].occupied = true;
+            std::cout << "Allocated register " << RV64Registers[r.id].name << "\n";
             return RV64_Register(r.id);
         }
 
         // if virtual and mapped, return the physical register with the mapping
         for (int i=0; i<RV64_Register::REG_COUNT; i++){
             if (xf[i].vRegisterMapping == r.id){
+                std::cout << "Resolved vregister " << r.id << " to " << RV64Registers[i].name << "\n";
                 return RV64_Register(i);
             }
         }
@@ -399,6 +407,7 @@ struct RegisterAllocator{
                 if (!xf[i].occupied){
                     xf[i].occupied = true;
                     xf[i].vRegisterMapping = r.id;
+                    std::cout << "Added mapping vregister " << r.id << " to " << RV64Registers[i].name << "\n";
                     return RV64_Register(i);
                 }
             }
