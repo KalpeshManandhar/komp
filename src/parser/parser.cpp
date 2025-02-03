@@ -1940,7 +1940,9 @@ Node* Parser::parseFor(StatementBlock *scope){
 */
 AST *Parser::parseProgram(){
     while (peekToken().type != TOKEN_EOF){
-        if (matchv(DATA_TYPE_TOKENS, ARRAY_COUNT(DATA_TYPE_TOKENS))){
+        if (matchv(DATA_TYPE_TOKENS, ARRAY_COUNT(DATA_TYPE_TOKENS))
+        || matchv(TYPE_MODIFIER_TOKENS, ARRAY_COUNT(TYPE_MODIFIER_TOKENS))
+        || matchv(TYPE_QUALIFIER_TOKENS, ARRAY_COUNT(TYPE_QUALIFIER_TOKENS))){
             Node *stmt = this->parseDeclaration(&ir->global);
             if (stmt){
                 ir->global.statements.push_back(stmt);
