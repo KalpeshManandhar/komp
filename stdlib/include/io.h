@@ -1,0 +1,1 @@
+long write(unsigned int fd, const char *buf, unsigned long long count);

@@ -4,15 +4,18 @@ Param(
     [string]$test_name
 )
 
-$test_folder = ".\tests\codeGen"
+
+$test_folder = ".\tests\stdlib"
 
 
 # add the following things to a new path_info.ps1 file
-# # the riscv toolchain gcc executable in linux
-# $gcc_toolchain = 
-# $riscv_gcc = 
-# $qemu = 
-# $sysroot = 
+# the riscv toolchain gcc executable in linux
+# $gcc_toolchain = "~/software/riscv"
+# $riscv_cpp = $gcc_toolchain + "/bin/riscv64-unknown-linux-gnu-cpp"
+# $riscv_gcc = $gcc_toolchain + "/bin/riscv64-unknown-linux-gnu-gcc"
+# $riscv_ld = $gcc_toolchain + "/bin/riscv64-unknown-linux-gnu-ld"
+# $qemu = $gcc_toolchain + "/bin/qemu-riscv64"
+# $sysroot = $gcc_toolchain + "/sysroot"
 
 . "$test_folder/path_info.ps1"
 
@@ -21,10 +24,15 @@ $test_folder = ".\tests\codeGen"
 $found_values = $expected_values.Clone()
 
 
+
+
+
 $files = Get-ChildItem -Path $test_folder"\*" -Include "*.c" 
 if ($PSBoundParameters.ContainsKey('test_name')){
     $files = $files | Where-Object -Property Name -eq $test_name
 }
+
+
 
 function Convert-WindowsPathToLinux {
     param (
@@ -47,17 +55,28 @@ $cwd = Get-Item -Path .
 $cwdLinux = Convert-WindowsPathToLinux($cwd)
 Write-Host $cwdLinux
 
-
-
 foreach ($file in $files){  
-    Write-Host "Test: " $file.Name -ForegroundColor Cyan  
+
+    Write-Host "Test: " $file.Name -ForegroundColor Cyan
     
-    Write-Host "Generating asm:" -ForegroundColor Yellow  
-    & "$exec_path" $file  
+    $linuxPath = Convert-WindowsPathToLinux($file.FullName)
+    Write-Host $linuxPath
+
+
+    Write-Host "Invoking preprocessor.." -ForegroundColor Yellow
+    Start-Process "wsl" -ArgumentList "--distribution", "Ubuntu", "$riscv_cpp -I $cwdLinux/stdlib/include -P $linuxPath -o $cwdLinux/preprocessed.i" -NoNewWindow -Wait
     
-    Write-Host "Compiling into RV64-ELF.." -ForegroundColor Yellow  
-    & "wsl" --distribution Ubuntu $riscv_gcc $cwdLinux/codegen_output.s -o $cwdLinux/codegen_output
+    Write-Host "Generating asm.." -ForegroundColor Yellow  
+    & "$exec_path"  $cwd/preprocessed.i
     
+    Write-Host "Compiling into RV64 obj.." -ForegroundColor Yellow  
+    Start-Process "wsl" -ArgumentList "--distribution", "Ubuntu", "$riscv_gcc -nostdlib -c $cwdLinux/codegen_output.s -o $cwdLinux/codegen_output.o" -NoNewWindow -Wait
+    
+    Write-Host "Linking into RV64-ELF.." -ForegroundColor Yellow  
+    Start-Process "wsl" -ArgumentList "--distribution", "Ubuntu", 
+                "$riscv_ld $cwdLinux/codegen_output.o $cwdLinux/stdlib/lib/*.o $cwdLinux/stdlib/lib/*.so -o $cwdLinux/codegen_output --dynamic-linker /lib/ld-linux-riscv64-lp64d.so.1" `
+                -NoNewWindow -Wait
+
     Write-Host "Running on qemu.." -ForegroundColor Yellow
     & "wsl" --distribution Ubuntu $qemu -L $sysroot $cwdLinux/codegen_output
       
