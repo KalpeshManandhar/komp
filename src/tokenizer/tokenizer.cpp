@@ -243,6 +243,63 @@ Token Tokenizer::getPunctuatorToken(){
 }
 
 
+Token Tokenizer::getCharLiteralToken() {
+    size_t tokenStart = this->cursor;
+    Token t;
+    t.type = TOKEN_CHARACTER_LITERAL;
+    // consume start single quote
+    this->consumeChar();
+    
+    if (this->peekChar() == '\\'){
+        this->consumeChar();
+        auto isAllowed = [&](char c){
+            char allowed[] = {
+                'r',
+                'n',
+                't',
+                '\\',
+                '\'',
+                '0',
+            };
+            
+            for (int i=0; i<ARRAY_COUNT(allowed); i++){
+                if (c == allowed[i]){
+                    return true;
+                }
+            }
+            return false;
+        };
+
+        if (!isAllowed(this->peekChar())){
+            t.type = TOKEN_ERROR;
+        }
+        this->consumeChar();
+    }
+    else {
+        this->consumeChar();
+    }
+
+
+    if (this->peekChar() != '\''){
+        this->skipNonWhitespaces();
+        t.type = TOKEN_ERROR;
+    }
+    else {
+        this->consumeChar();
+    }
+
+    Splice s;
+    s.data = &this->buffer[tokenStart];
+    s.len  = this->cursor - tokenStart;
+    
+    t.string = s;
+
+    return t;
+    
+}
+
+
+
 bool Tokenizer::isEOF(){
     return this->cursor >= this->bufferSize;
 }
@@ -291,6 +348,10 @@ Token Tokenizer::nextToken(){
     // starts with ": string
     else if (this->buffer[this->cursor] == '"'){
         t = this->getStringLiteralToken();
+    }
+    // starts with ": string
+    else if (this->buffer[this->cursor] == '\''){
+        t = this->getCharLiteralToken();
     }
     else{
         t.type = TOKEN_ERROR;
@@ -351,6 +412,9 @@ char Tokenizer::peekChar(){
 }
 
 char Tokenizer::consumeChar(){
+    if (isEOF()){
+        return 0;
+    }
     char c = this->buffer[this->cursor];
     if (c == '\n'){
         this->lineNo++;

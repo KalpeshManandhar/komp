@@ -22,6 +22,7 @@ private:
 
     Token getIdentifierToken();
     Token getNumberToken();
+    Token getCharLiteralToken();
     Token getStringLiteralToken();
     Token getPunctuatorToken();
 
