@@ -593,6 +593,11 @@ void CodeGenerator :: generateAssemblyFromMIR(MIR *mir){
             rodataSection << "    .word "  << value.u32[1] << "\n";
             break;
         }
+        // string
+        case MIR_Datatype::TYPE_PTR:{
+            rodataSection << "    .string " << symbol.value << "\n";
+            break;
+        }
         default:
             break;
         }
@@ -622,10 +627,23 @@ void CodeGenerator::generateExprMIR(MIR_Expr *current, Register dest, MIR_Scope*
         
         // load immediate value into a register
         if (isIntegerType(current->_type)){
-            buffer << "    li " << destName << ", " << current->immediate.val << "\n";
+            // for string literal, load address
+            if (current->_type.tag == MIR_Datatype::TYPE_PTR){
+                if (!rodata.existKey(current->immediate.val)){
+                    rodata.add(current->immediate.val, SymbolInfo{.label = labeller.label(), .value = current->immediate.val, .type = current->_type});
+                }
+                
+                SymbolInfo stringLiteralInfo = rodata.getInfo(current->immediate.val).info;
+
+                buffer << "    la " << destName << ", .symbol" << stringLiteralInfo.label << "\n";
+            }
+            else{
+                buffer << "    li " << destName << ", " << current->immediate.val << "\n";
+            }
         }
+
+        // since there is no instruction in RV64 to load a immediate value into a floating point register
         else if (isFloatType(current->_type)){
-            
             if (!rodata.existKey(current->immediate.val)){
                 rodata.add(current->immediate.val, SymbolInfo{.label = labeller.label(), .value = current->immediate.val, .type = current->_type});
             }
@@ -1018,6 +1036,7 @@ void CodeGenerator::generateExprMIR(MIR_Expr *current, Register dest, MIR_Scope*
         
         switch (current->cast._from.tag){
         case MIR_Datatype::TYPE_BOOL:
+        case MIR_Datatype::TYPE_PTR:
         case MIR_Datatype::TYPE_I8:
         case MIR_Datatype::TYPE_I16:
         case MIR_Datatype::TYPE_I32:
@@ -1057,6 +1076,7 @@ void CodeGenerator::generateExprMIR(MIR_Expr *current, Register dest, MIR_Scope*
         case MIR_Datatype::TYPE_F32:
         case MIR_Datatype::TYPE_F64:{
             switch (current->cast._to.tag) {
+                case MIR_Datatype::TYPE_PTR:
                 case MIR_Datatype::TYPE_I8:
                 case MIR_Datatype::TYPE_I16:
                 case MIR_Datatype::TYPE_I32:

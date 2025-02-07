@@ -62,7 +62,7 @@ MIR_Datatype MiddleEnd :: convertToLowerLevelType(DataType d, StatementBlock *sc
     switch (d.tag){
     case DataType::TAG_ADDRESS:
     case DataType::TAG_PTR:
-        return MIR_Datatypes::_u64;
+        return MIR_Datatypes::_ptr;
         break;
     case DataType::TAG_ARRAY:{
         MIR_Datatype arrayOf = convertToLowerLevelType(*d.ptrTo, scope);
