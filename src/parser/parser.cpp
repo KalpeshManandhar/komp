@@ -601,7 +601,7 @@ Token Parser::getSubexprToken(Subexpr *expr) {
 /*
     Check if a datatype can be converted to another.
 */
-bool Parser::canBeConverted(Subexpr *from, DataType fromType, DataType toType){
+bool Parser::canBeConverted(Subexpr *from, DataType fromType, DataType toType, StatementBlock* scope){
     if (fromType.tag == DataType::TAG_ERROR || toType.tag == DataType::TAG_ERROR){
         return true;
     }
@@ -614,6 +614,62 @@ bool Parser::canBeConverted(Subexpr *from, DataType fromType, DataType toType){
         return false;
     }
     
+    if (fromType.tag == DataType::TAG_UNSPECIFIED){
+        if (toType.tag == DataType::TAG_PRIMARY || toType.tag == DataType::TAG_PTR){
+            return false;
+        }
+
+        if (toType.tag == DataType::TAG_ARRAY){
+            for (auto &value : from->initList->values){
+                if (!canBeConverted(value, value->type, *(toType.ptrTo), scope)){
+                    Token subexprToken = getSubexprToken(value);
+                    
+                    errors++;
+                    logErrorMessage(subexprToken, "Cannot convert a expression of type \"%s\" to initialize type \"%s\"",
+                                    dataTypePrintf(value->type), dataTypePrintf(*(toType.ptrTo))
+                    );
+                }
+            }
+            assert(false && "Huhu finish this please");
+        }
+        
+        if (toType.tag == DataType::TAG_STRUCT){
+            StatementBlock* structDeclnScope = scope->findStructDeclaration(toType.structName);
+            assert(structDeclnScope != NULL);
+
+            Struct &structInfo = structDeclnScope->structs.getInfo(toType.structName.string).info;
+            
+            if (from->initList->values.size() != structInfo.members.entries.size()){
+                Token subexprToken = getSubexprToken(from);
+                errors++;
+                logErrorMessage(subexprToken, "Number of provided initializer values doesn't match that of required type.");
+                return false;
+            }
+
+
+            bool canConvert = true;
+            for (int i=0; i < from->initList->values.size(); i++){
+                Subexpr* value = from->initList->values[i];
+                Struct::MemberInfo member = structInfo.members.getInfo(structInfo.members.order[i]).info;
+                
+
+                if (!canBeConverted(value, value->type, member.type, scope)){
+                    Token subexprToken = getSubexprToken(value);
+                    
+                    errors++;
+                    logErrorMessage(subexprToken, "Cannot convert a expression of type \"%s\" to initialize type \"%s\"",
+                                    dataTypePrintf(value->type), dataTypePrintf(member.type)
+                    );
+                    canConvert = false;
+                }
+            }
+
+            return canConvert;
+        }
+    }
+
+
+
     Token subexprToken = getSubexprToken(from);
 
     // pointers can be converted to other pointers and to integers
@@ -761,7 +817,7 @@ DataType Parser::checkSubexprType(Subexpr *expr, StatementBlock *scope){
         case Subexpr::SUBEXPR_CAST: {
             DataType from = checkSubexprType(expr->expr, scope);
             
-            if (!canBeConverted(expr->expr, from, expr->to)){
+            if (!canBeConverted(expr->expr, from, expr->to, scope)){
                 logErrorMessage(getSubexprToken(expr->expr), "Cannot convert expression of type \"%s\" to type \"%s\".", 
                     dataTypePrintf(from), dataTypePrintf(expr->to)
                 );
@@ -771,6 +827,13 @@ DataType Parser::checkSubexprType(Subexpr *expr, StatementBlock *scope){
 
             return expr->to;
         }
+
+        case Subexpr::SUBEXPR_INITIALIZER_LIST: {
+            for (auto &val : expr->initList->values){
+                checkSubexprType(val, scope);
+            }
+            return DataTypes::MemBlock;
+        } 
 
 
         case Subexpr::SUBEXPR_BINARY_OP:{
@@ -944,7 +1007,7 @@ DataType Parser::checkSubexprType(Subexpr *expr, StatementBlock *scope){
                     // can only assign but log a warning
                     else if (left.indirectionLevel() > 0 && right.indirectionLevel() > 0){
                         if (match(expr->op, TOKEN_ASSIGNMENT)){
-                            if (canBeConverted(expr->right, right, left)){}
+                            if (canBeConverted(expr->right, right, left, scope)){}
 
                             return left;
                         }
@@ -958,7 +1021,7 @@ DataType Parser::checkSubexprType(Subexpr *expr, StatementBlock *scope){
                     if (left.indirectionLevel() > 0){
                         // can assign, but log error if of different types
                         if (match(expr->op, TOKEN_ASSIGNMENT)){
-                            if (canBeConverted(expr->right, right, left)){}
+                            if (canBeConverted(expr->right, right, left, scope)){}
                             
                             return left;
                         }
@@ -1230,7 +1293,7 @@ DataType Parser::checkSubexprType(Subexpr *expr, StatementBlock *scope){
                     for (int i=0; i<foo->parameters.size(); i++){
                         DataType fromType = checkSubexprType(fooCall->arguments[i], scope);
                         
-                        if (!canBeConverted(fooCall->arguments[i], fromType, foo->parameters[i].type)){
+                        if (!canBeConverted(fooCall->arguments[i], fromType, foo->parameters[i].type, scope)){
                             logErrorMessage(getSubexprToken(fooCall->arguments[i]), "Cannot convert argument of type \"%s\" to \"%s\"",
                                             dataTypePrintf(fromType), dataTypePrintf(foo->parameters[i].type));
                             errors++;
@@ -1355,6 +1418,27 @@ Subexpr* Parser::parsePrimary(StatementBlock *scope){
         
 
     }
+    // initializer list
+    else if (match(TOKEN_CURLY_OPEN)){
+        expect(TOKEN_CURLY_OPEN);
+        
+        void *mem = arena->alloc(sizeof(InitializerList));
+        s->initList = new (mem) InitializerList;
+        s->tag = Node::NODE_SUBEXPR;
+        s->subtag = Subexpr::SUBEXPR_INITIALIZER_LIST;
+        
+        while (isExprStart() || match(TOKEN_CURLY_OPEN)){
+            Subexpr* expr = parseSubexpr(INT32_MAX, scope);
+            s->initList->values.push_back(expr);
+
+            if (!match(TOKEN_COMMA)){
+                break;
+            }
+            expect(TOKEN_COMMA);
+        }
+        
+        expect(TOKEN_CURLY_CLOSE);
+    }
     // unary 
     else if (matchv(UNARY_OP_TOKENS, ARRAY_COUNT(UNARY_OP_TOKENS))){
         s->unaryOp = consumeToken();
@@ -1466,6 +1550,14 @@ bool Parser::canResolveToConstant(Subexpr *s, StatementBlock *scope){
     }
     case Subexpr::SUBEXPR_CAST:{
         return canResolveToConstant(s->expr, scope);
+    }
+    case Subexpr::SUBEXPR_INITIALIZER_LIST:{
+        for (auto const &val : s->initList->values){
+            if (!canResolveToConstant(val, scope)){
+                return false;
+            }
+        } 
+        return true;
     }
     default:
         break;
@@ -1993,7 +2085,7 @@ bool Parser::checkContext(Node *n, StatementBlock *scope){
                 // check if condition expression can be converted to a boolean/arithmetic value
                 DataType conditionType = checkSubexprType(i->condition, scope);
 
-                if (!canBeConverted(i->condition, conditionType, DataTypes::Int)){
+                if (!canBeConverted(i->condition, conditionType, DataTypes::Int, scope)){
                     Token subexprToken = getSubexprToken(i->condition);
                     
                     logErrorMessage(subexprToken, "Cannot convert from expression of type \"%s\" to an integer/arithmetic type",
@@ -2014,7 +2106,7 @@ bool Parser::checkContext(Node *n, StatementBlock *scope){
         // check if condition expression can be converted to a boolean/arithmetic value
         DataType conditionType = checkSubexprType(w->condition, scope);
 
-        if (!canBeConverted(w->condition, conditionType, DataTypes::Int)){
+        if (!canBeConverted(w->condition, conditionType, DataTypes::Int, scope)){
             Token subexprToken = getSubexprToken(w->condition);
             
             logErrorMessage(subexprToken, "Cannot convert from expression of type \"%s\" to an integer/arithmetic type.",
@@ -2035,7 +2127,7 @@ bool Parser::checkContext(Node *n, StatementBlock *scope){
         DataType conditionType = checkSubexprType(f->exitCondition, scope);
 
         // check if condition expression can be converted to a boolean/arithmetic value
-        if (!canBeConverted(f->exitCondition, conditionType, DataTypes::Int)){
+        if (!canBeConverted(f->exitCondition, conditionType, DataTypes::Int, scope)){
             Token subexprToken = getSubexprToken(f->exitCondition);
             
             logErrorMessage(subexprToken, "Cannot convert from expression of type \"%s\" to an integer/arithmetic type.",
@@ -2075,7 +2167,7 @@ bool Parser::checkContext(Node *n, StatementBlock *scope){
         DataType expectedRetType = ir->functions.getInfo(functionScope->funcName.string).info.returnType;
         DataType retExprType = checkSubexprType(r->returnVal, scope);
 
-        if (!canBeConverted(r->returnVal, retExprType, expectedRetType)){
+        if (!canBeConverted(r->returnVal, retExprType, expectedRetType, scope)){
             Token errorToken = (r->returnVal)? getSubexprToken(r->returnVal) : r->returnToken;
             
             logErrorMessage(errorToken, "Cannot convert subexpr of type \"%s\" to expected return type \"%s\".",
@@ -2155,7 +2247,7 @@ bool Parser::checkContext(Node *n, StatementBlock *scope){
 
             if (decln.initValue){
                 DataType initType = checkSubexprType(decln.initValue, scope);
-                if (!canBeConverted(decln.initValue, initType, decln.type)){
+                if (!canBeConverted(decln.initValue, initType, decln.type, scope)){
                     logErrorMessage(getSubexprToken(decln.initValue), "Cannot initialize variable of type \"%s\" with value of type \"%s\".", 
                         dataTypePrintf(decln.type), dataTypePrintf(initType)
                     );

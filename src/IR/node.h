@@ -39,6 +39,7 @@ static const char* NODE_TAG_STRINGS[] = {
 };
 
 struct FunctionCall;
+struct InitializerList;
 
 
 struct Subexpr: public Node{
@@ -49,6 +50,7 @@ struct Subexpr: public Node{
         SUBEXPR_UNARY,
         SUBEXPR_FUNCTION_CALL,
         SUBEXPR_CAST,
+        SUBEXPR_INITIALIZER_LIST,
     }subtag;
     
     DataType type;
@@ -79,12 +81,16 @@ struct Subexpr: public Node{
             Subexpr* expr;
         };
         
+
+        InitializerList *initList;        
         FunctionCall *functionCall;        
         
     };
 };
 
-
+struct InitializerList {
+    std::vector <Subexpr*> values;
+};
 
 
 

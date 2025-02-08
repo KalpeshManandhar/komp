@@ -1119,6 +1119,8 @@ void CodeGenerator::generateExprMIR(MIR_Expr *current, Register dest, MIR_Scope*
         
         case MIR_Datatype::TYPE_ARRAY:{
             assert(isIntegerType(current->cast._to) && "Arrays can only be converted to integer types.");
+
+            
             break;
         
         }

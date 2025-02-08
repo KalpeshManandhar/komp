@@ -362,6 +362,17 @@ static void printParseTree(Node *const current, int depth = 0){
             printParseTree(s->expr, depth + 1);
             break;
         }
+        case Subexpr::SUBEXPR_INITIALIZER_LIST : {
+            int i = 0;
+            for (auto &val : s->initList->values){
+                printTabs(depth + 1);
+                std::cout<< "["<< i <<"]" <<":\n";
+                printParseTree(val, depth + 2);
+                i++;
+            }
+            
+            break;
+        }
         default:
             break;
         }

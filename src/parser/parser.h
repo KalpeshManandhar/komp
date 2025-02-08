@@ -35,7 +35,7 @@ struct Parser{
     bool isExprStart();
     
     // type/context checking
-    bool canBeConverted(Subexpr *from, DataType fromType, DataType toType);
+    bool canBeConverted(Subexpr *from, DataType fromType, DataType toType, StatementBlock* scope);
     DataType checkSubexprType(Subexpr *operation, StatementBlock *scope);
     bool checkContext(Node *n, StatementBlock *scope);
     bool canResolveToConstant(Subexpr *s, StatementBlock *scope);
@@ -54,6 +54,7 @@ struct Parser{
     DataType parseArrayType(StatementBlock *scope, DataType baseType);
     DataType parseDataType(StatementBlock *scope);
 
+    Token parseTypedef(StatementBlock *scope);
     Token parseStructDefinition(StatementBlock *scope);
     Subexpr* parsePrimary(StatementBlock *scope);
     Subexpr* parseSubexpr(int precedence, StatementBlock *scope); 

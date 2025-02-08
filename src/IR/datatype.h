@@ -16,6 +16,7 @@ struct DataType{
         TAG_ERROR,
         TAG_ADDRESS,
         TAG_ARRAY,
+        TAG_UNSPECIFIED,
     }tag;
 
     union{
@@ -101,10 +102,11 @@ namespace DataTypes{
     inline DataType Long_Long  = {.tag = DataType::TAG_PRIMARY, .type = {TOKEN_INT, {"int", sizeof("int") - 1}, 0, 0}, .flags = DataType::Specifiers::LONG_LONG};
     inline DataType Float  = {.tag = DataType::TAG_PRIMARY, .type = {TOKEN_FLOAT, {"float", sizeof("float") - 1}, 0, 0}};
     inline DataType Double = {.tag = DataType::TAG_PRIMARY, .type = {TOKEN_DOUBLE, {"double", sizeof("double") - 1}, 0, 0}};
-    inline DataType String = {.tag = DataType::TAG_PTR, .ptrTo = &Char};
+    inline DataType String = {.tag = DataType::TAG_ARRAY, .ptrTo = &Char};
     inline DataType Void = {.tag = DataType::TAG_VOID, .type = {TOKEN_VOID, {"void", sizeof("void") - 1}, 0, 0}};
     inline DataType Error = {.tag = DataType::TAG_ERROR, .type = {TOKEN_ERROR, {"error", sizeof("error") - 1}, 0, 0}};
     inline DataType Struct = {.tag = DataType::TAG_STRUCT};
+    inline DataType MemBlock = {.tag = DataType::TAG_UNSPECIFIED};
 };
 
 static void _recursePrintf(DataType d, char *scratchpad, int *sp){
@@ -166,6 +168,10 @@ static void _recursePrintf(DataType d, char *scratchpad, int *sp){
                 scratchpad[(*sp)++] = d.type.string.data[i];
             }
 
+            break;
+        }
+        case DataType::TAG_UNSPECIFIED:{
+            append("initializer list");
             break;
         }
         default:
