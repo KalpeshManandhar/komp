@@ -591,6 +591,9 @@ Token Parser::getSubexprToken(Subexpr *expr) {
         case Subexpr::SUBEXPR_RECURSE_PARENTHESIS:
             return getSubexprToken(expr->inside);
 
+        case Subexpr::SUBEXPR_INITIALIZER_LIST:
+            return getSubexprToken(expr->initList->values[0]);
+
         default:
             return expr->leaf;
     }
@@ -614,12 +617,22 @@ bool Parser::canBeConverted(Subexpr *from, DataType fromType, DataType toType, S
         return false;
     }
     
-    if (fromType.tag == DataType::TAG_UNSPECIFIED){
+    if (fromType.tag == DataType::TAG_COMPOSITE_UNSPECIFIED){
         if (toType.tag == DataType::TAG_PRIMARY || toType.tag == DataType::TAG_PTR){
             return false;
         }
 
         if (toType.tag == DataType::TAG_ARRAY){
+            if (from->initList->values.size() != toType.arrayCount){
+                Token subexprToken = getSubexprToken(from);
+                errors++;
+                logErrorMessage(subexprToken, "Number of provided initializer values doesn't match that of required type.");
+                return false;
+            }
+
+            
+            bool willWork = true;
+            
             for (auto &value : from->initList->values){
                 if (!canBeConverted(value, value->type, *(toType.ptrTo), scope)){
                     Token subexprToken = getSubexprToken(value);
@@ -628,9 +641,12 @@ bool Parser::canBeConverted(Subexpr *from, DataType fromType, DataType toType, S
                     logErrorMessage(subexprToken, "Cannot convert a expression of type \"%s\" to initialize type \"%s\"",
                                     dataTypePrintf(value->type), dataTypePrintf(*(toType.ptrTo))
                     );
+                    willWork = false;
                 }
             }
-            assert(false && "Huhu finish this please");
+            
+
+            return willWork;
         }
         
         if (toType.tag == DataType::TAG_STRUCT){
@@ -829,10 +845,15 @@ DataType Parser::checkSubexprType(Subexpr *expr, StatementBlock *scope){
         }
 
         case Subexpr::SUBEXPR_INITIALIZER_LIST: {
+            DataType d = DataTypes::MemBlock;
+            
+            void* mem = arena->alloc(sizeof(DataType::CompositeType));
+            d.composite = new (mem) DataType::CompositeType;
             for (auto &val : expr->initList->values){
-                checkSubexprType(val, scope);
+                DataType dt = checkSubexprType(val, scope);
+                d.composite->types.push_back(dt);
             }
-            return DataTypes::MemBlock;
+            return d;
         } 
 
 

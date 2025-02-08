@@ -5,6 +5,7 @@
 #include <stdlib.h>
 
 
+
 struct DataType{
     // Pointer types have the ptrTo member set to their corresponding data types
     // example: an "int*" datatype would have its ptrTo pointing to an "int" datatype
@@ -16,8 +17,12 @@ struct DataType{
         TAG_ERROR,
         TAG_ADDRESS,
         TAG_ARRAY,
-        TAG_UNSPECIFIED,
+        TAG_COMPOSITE_UNSPECIFIED,
     }tag;
+
+    struct CompositeType{
+        std::vector<DataType> types;
+    };
 
     union{
         // for primary types
@@ -33,6 +38,12 @@ struct DataType{
             // element count for arrays
             size_t arrayCount;
         };
+        
+        
+        CompositeType* composite;
+
+
+
     };
     
     enum Specifiers{
@@ -106,7 +117,7 @@ namespace DataTypes{
     inline DataType Void = {.tag = DataType::TAG_VOID, .type = {TOKEN_VOID, {"void", sizeof("void") - 1}, 0, 0}};
     inline DataType Error = {.tag = DataType::TAG_ERROR, .type = {TOKEN_ERROR, {"error", sizeof("error") - 1}, 0, 0}};
     inline DataType Struct = {.tag = DataType::TAG_STRUCT};
-    inline DataType MemBlock = {.tag = DataType::TAG_UNSPECIFIED};
+    inline DataType MemBlock = {.tag = DataType::TAG_COMPOSITE_UNSPECIFIED};
 };
 
 static void _recursePrintf(DataType d, char *scratchpad, int *sp){
@@ -170,8 +181,16 @@ static void _recursePrintf(DataType d, char *scratchpad, int *sp){
 
             break;
         }
-        case DataType::TAG_UNSPECIFIED:{
-            append("initializer list");
+        case DataType::TAG_COMPOSITE_UNSPECIFIED:{
+            append("{");
+            for (int i=0; i<d.composite->types.size(); i++){
+                _recursePrintf(d.composite->types[i], scratchpad, sp);
+                if (i == d.composite->types.size() - 1){
+                    break;
+                }
+                append(",");
+            }
+            append("}");
             break;
         }
         default:
