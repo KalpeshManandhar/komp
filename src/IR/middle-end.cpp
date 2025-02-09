@@ -3,11 +3,14 @@
 #include <utils/utils.h>
 
 
+
+void* scratchPad[1024];
+
+
 struct MIR_Primitives {
-    MIR_Primitive* primitives[8];
+    MIR_Primitive** primitives;
     int n;
 };
-
 
 
 
@@ -17,10 +20,12 @@ struct MiddleEnd {
 
     MIR_Expr* typeCastTo(MIR_Expr* expr, MIR_Datatype to, Arena* arena);
     MIR_Datatype convertToLowerLevelType(DataType d, StatementBlock *scope);
-    MIR_Expr* transformSubexpr(const Subexpr* expr, StatementBlock* scope, Arena* arena);
     void calcStructMemberOffsets(StatementBlock *scope);
-    MIR_Primitives transformNode(const Node* current, StatementBlock *scope, Arena* arena, MIR_Scope* mScope);    
+    MIR_Primitives transformSubexpr(const Subexpr* expr, StatementBlock* scope, Arena* arena);
+    MIR_Primitives transformNode(const Node* current, StatementBlock *scope, Arena* arena, MIR_Scope* mScope);  
+    MIR_Primitives resolveInitializerLists(const Subexpr* expr, DataType d, MIR_Expr* left, size_t offset, StatementBlock* scope, Arena* arena);
     Splice copySplice(Splice s, Arena* arena);
+    MIR_Expr* getStoreNode(MIR_Expr* left, MIR_Expr* right, MIR_Datatype dt, size_t storeOffset, Arena* arena);
 
 };
 
@@ -134,19 +139,157 @@ MIR_Datatype MiddleEnd :: convertToLowerLevelType(DataType d, StatementBlock *sc
 }
 
 
+MIR_Expr* MiddleEnd :: getStoreNode(MIR_Expr* left, MIR_Expr* right, MIR_Datatype dt, size_t storeOffset, Arena* arena) {
+    MIR_Expr* node = (MIR_Expr*)arena->alloc(sizeof(MIR_Expr));
+
+    node->_type = dt;
+
+    
+
+    /* 
+        Any variable node will generate a load node.
+        For lvalue, we need an address in the left node of the store node.
+        So, remove the load node: 
+        - set the base address of the load as the left node. 
+        - set the load offset as the offset in the store node.
+    */
+    assert(left->tag == MIR_Expr::EXPR_LOAD);
+    node->store.offset = left->load.offset + storeOffset;
+    node->store.size = dt.size;
+    
+    node->tag = MIR_Expr::EXPR_STORE;
+    left = left->load.base;
+    node->store.left = left;
+    node->store.right = typeCastTo(right, node->_type, arena);
+    node->ptag = MIR_Primitive::PRIM_EXPR;
+
+    return node;
+};
+
+
+
+
+MIR_Primitives MiddleEnd :: resolveInitializerLists(const Subexpr* expr, DataType d, MIR_Expr* left, size_t offset, StatementBlock* scope, Arena* arena){
+    if (expr->subtag != Subexpr::SUBEXPR_INITIALIZER_LIST){
+        MIR_Primitives exprsRight = transformSubexpr(expr, scope, arena);
+        assert(exprsRight.n == 1);
+        MIR_Expr* right = (MIR_Expr*) exprsRight.primitives[0];
+        
+        MIR_Datatype dt = convertToLowerLevelType(d, scope);
+        
+        MIR_Primitives m = {
+            .primitives = (MIR_Primitive**)scratchPad,
+            .n = 0
+        };
+        
+
+
+        m.primitives[m.n] = getStoreNode(left, right, dt, offset, arena);
+        m.n++;
+
+        return m;
+    }
+
+
+
+    bool isStructType = d.tag == DataType::TAG_STRUCT;
+    bool isArrayType = d.tag == DataType::TAG_ARRAY;
+
+    MIR_Primitives returnExprs = {.primitives = (MIR_Primitive**)scratchPad, .n = 0};
+
+    InitializerList* initlist = expr->initList;
+    std::vector <MIR_Primitive*> exprsCopy;
+    if (isStructType){
+        StatementBlock* declnScope = scope->findStructDeclaration(d.structName);
+        Struct &structInfo = declnScope->structs.getInfo(d.structName.string).info;
+        
+        
+        for (int i=0; i < initlist->values.size(); i++){
+
+            Splice structMemberName = structInfo.members.order[i];
+            Struct::MemberInfo &member = structInfo.members.getInfo(structMemberName).info;
+
+            MIR_Primitives exprs = resolveInitializerLists(initlist->values[i], member.type, left, offset + member.offset, scope, arena);
+            
+            for (int j=0; j<exprs.n; j++){
+                exprsCopy.push_back(exprs.primitives[j]);
+            }
+
+        }
+        
+
+        for (auto &expr : exprsCopy){
+            returnExprs.primitives[returnExprs.n] = expr;
+            returnExprs.n++;
+        }
+
+        return returnExprs;
+    }
+    else if (isArrayType){
+            
+        for (int i=0; i<initlist->values.size(); i++){
+            size_t sizeOfType = convertToLowerLevelType(*(d.ptrTo), scope).size;
+
+            MIR_Primitives exprs = resolveInitializerLists(initlist->values[i], *(d.ptrTo), left, offset + sizeOfType * i, scope, arena);
+            
+            for (int j=0; j<exprs.n; j++){
+                exprsCopy.push_back(exprs.primitives[j]);
+            }
+
+        }
+
+        
+    
+    }
+    else {
+        assert(false && "Initializer list/Expected datatype should either be a struct or array type.");
+    }
+
+    for (auto &expr : exprsCopy){
+        returnExprs.primitives[returnExprs.n] = expr;
+        returnExprs.n++;
+    }
+
+    return returnExprs;
+
+}
+
+
+
 
 /*
     Expand subexpr nodes to a lower level IR.
 */
-MIR_Expr* MiddleEnd :: transformSubexpr(const Subexpr* expr, StatementBlock* scope, Arena* arena){
+MIR_Primitives MiddleEnd :: transformSubexpr(const Subexpr* expr, StatementBlock* scope, Arena* arena){
     if (!expr){
-        return NULL;
+        return MIR_Primitives{.n = 0};
     }
     
-    
+    MIR_Primitives returnExprs = {.primitives = (MIR_Primitive**)scratchPad, .n = 0};
     MIR_Expr *d = (MIR_Expr *)arena->alloc(sizeof(MIR_Expr));
     
     switch (expr->subtag){
+    case Subexpr::SUBEXPR_INITIALIZER_LIST: {
+        std::vector <MIR_Primitive*> values;
+
+        for (auto &value : expr->initList->values){
+            MIR_Primitives exprs = transformSubexpr(value, scope, arena);
+            assert(exprs.n == 1);
+            
+            for (int i=0; i<exprs.n; i++){
+                values.push_back(exprs.primitives[i]);
+            }
+        }
+        
+        for (auto &value : values){
+            returnExprs.primitives[returnExprs.n] = value;
+            returnExprs.n++;
+        }
+
+        break;
+    }
+
+
     case Subexpr::SUBEXPR_BINARY_OP :{
         if (_match(expr->op, TOKEN_DOT)){
             /*
@@ -164,7 +307,9 @@ MIR_Expr* MiddleEnd :: transformSubexpr(const Subexpr* expr, StatementBlock* sco
             */ 
 
 
-            d = transformSubexpr(expr->left, scope, arena);
+            MIR_Primitives exprs = transformSubexpr(expr->left, scope, arena);
+            assert(exprs.n == 1);
+            d = (MIR_Expr*)exprs.primitives[0];
 
             DataType structType = expr->left->type;
             assert(structType.tag == DataType::TAG_STRUCT);
@@ -185,7 +330,9 @@ MIR_Expr* MiddleEnd :: transformSubexpr(const Subexpr* expr, StatementBlock* sco
             d->load.offset += member.offset;
             d->ptag = MIR_Primitive::PRIM_EXPR;
             
-            return d;
+            returnExprs.primitives[returnExprs.n] = d;
+            returnExprs.n++;
+            break;
         }
         
         if (_match(expr->op, TOKEN_ARROW)){
@@ -207,8 +354,9 @@ MIR_Expr* MiddleEnd :: transformSubexpr(const Subexpr* expr, StatementBlock* sco
                                     a 
             */ 
             
-            
-            d->load.base = transformSubexpr(expr->left, scope, arena);
+            MIR_Primitives exprs = transformSubexpr(expr->left, scope, arena);
+            assert(exprs.n == 1);
+            d->load.base = (MIR_Expr*)exprs.primitives[0];
             
             DataType structType = expr->left->type.getBaseType();
 
@@ -232,7 +380,9 @@ MIR_Expr* MiddleEnd :: transformSubexpr(const Subexpr* expr, StatementBlock* sco
             d->tag = MIR_Expr::EXPR_LOAD;
             d->ptag = MIR_Primitive::PRIM_EXPR;
             
-            return d;
+            returnExprs.primitives[returnExprs.n] = d;
+            returnExprs.n++;
+            break;
         }
 
 
@@ -276,10 +426,15 @@ MIR_Expr* MiddleEnd :: transformSubexpr(const Subexpr* expr, StatementBlock* sco
                                 ADDRESS  value of
                                   of a      i
             */ 
+            
+            
+            MIR_Primitives exprLeft = transformSubexpr(expr->left, scope, arena);
+            assert(exprLeft.n == 1);
+            MIR_Expr *left = (MIR_Expr*) exprLeft.primitives[0];
 
-
-            MIR_Expr *left = transformSubexpr(expr->left, scope, arena);
-            MIR_Expr *right = transformSubexpr(expr->right, scope, arena);
+            MIR_Primitives exprRight = transformSubexpr(expr->right, scope, arena);
+            assert(exprRight.n == 1);
+            MIR_Expr *right = (MIR_Expr*) exprRight.primitives[0];
             
             assert(expr->left->type.tag == DataType::TAG_PTR || 
                     expr->left->type.tag == DataType::TAG_ARRAY ||
@@ -319,7 +474,9 @@ MIR_Expr* MiddleEnd :: transformSubexpr(const Subexpr* expr, StatementBlock* sco
             d->load.size = convertToLowerLevelType(dt, scope).size;
             d->ptag = MIR_Primitive::PRIM_EXPR;
 
-            return d;
+            returnExprs.primitives[returnExprs.n] = d;
+            returnExprs.n++;
+            break;
         }
 
 
@@ -328,37 +485,51 @@ MIR_Expr* MiddleEnd :: transformSubexpr(const Subexpr* expr, StatementBlock* sco
         
         // assignments are converted into stores
         if (isAssignment){
+            MIR_Primitives exprLeft = transformSubexpr(expr->left, scope, arena);
+            assert(exprLeft.n == 1);
+            MIR_Expr *left = (MIR_Expr*) exprLeft.primitives[0];
+
+
+            if (expr->right->subtag == Subexpr::SUBEXPR_INITIALIZER_LIST){
+                return resolveInitializerLists(expr->right, expr->left->type, left, 0, scope, arena);
+            }
+
+
             /*
-                Assignment is expanded into 
+                    Assignment is expanded into 
+                    
+                                STORE
+                            /   |    \
+                            /     |     \
+                    offset /       |left  \
+                        /         |       \
+                        0       ADDRESS    rvalue
+                            of lvalue 
                 
-                              STORE
-                           /   |    \
-                         /     |     \
-                offset /       |left  \
-                     /         |       \
-                    0       ADDRESS    rvalue
-                          of lvalue 
+                
+                    Something-Assignment is expanded to
+                                STORE
+                            /   |    \
+                            /     |     \
+                    offset /       |left  \
+                        /         |       \
+                        0       ADDRESS   BINARY_EXPR
+                            of lvalue  /         \
+                                    /            \ 
+                                    /              \
+                                lvalue           rvalue
+                */ 
+
             
+
+
+
+
+            MIR_Primitives exprRight = transformSubexpr(expr->right, scope, arena);
+            assert(exprRight.n == 1);
+            MIR_Expr* right = (MIR_Expr*) exprRight.primitives[0];
+
             
-                Something-Assignment is expanded to
-                              STORE
-                           /   |    \
-                         /     |     \
-                offset /       |left  \
-                     /         |       \
-                    0       ADDRESS   BINARY_EXPR
-                          of lvalue  /         \
-                                   /            \ 
-                                  /              \
-                               lvalue           rvalue
-            */ 
-
-
-
-            MIR_Expr *left = transformSubexpr(expr->left, scope, arena);
-            MIR_Expr *right = transformSubexpr(expr->right, scope, arena);
-
-
             switch (expr->op.type){
             case TOKEN_ASSIGNMENT:{
                 break;
@@ -418,30 +589,14 @@ MIR_Expr* MiddleEnd :: transformSubexpr(const Subexpr* expr, StatementBlock* sco
             default:
                 break;
             }
-            
-            d->type = expr->left->type;
-            d->_type = convertToLowerLevelType(expr->left->type, scope);
-            d->tag = MIR_Expr::EXPR_STORE;
 
+
+            returnExprs.primitives[returnExprs.n] = getStoreNode(left, right, left->_type, 0, arena);
+            returnExprs.n++;
             
 
-            /* 
-                Any variable node will generate a load node.
-                For lvalue, we need an address in the left node of the store node.
-                So, remove the load node: 
-                - set the base address of the load as the left node. 
-                - set the load offset as the offset in the store node.
-            */
-            assert(left->tag == MIR_Expr::EXPR_LOAD);
-            d->store.offset = left->load.offset;
-            
-            left = left->load.base;
-            d->store.left = left;
-            d->store.right = typeCastTo(right, d->_type, arena);
-            d->store.size = convertToLowerLevelType(expr->left->type, scope).size;
-            d->ptag = MIR_Primitive::PRIM_EXPR;
+            break;
 
-            return d;
         }
 
         /*
@@ -455,8 +610,13 @@ MIR_Expr* MiddleEnd :: transformSubexpr(const Subexpr* expr, StatementBlock* sco
         */
         
         // expand left and right 
-        MIR_Expr *left = transformSubexpr(expr->left, scope, arena);
-        MIR_Expr *right = transformSubexpr(expr->right, scope, arena);
+        MIR_Primitives exprLeft = transformSubexpr(expr->left, scope, arena);
+        assert(exprLeft.n == 1);
+        MIR_Expr *left = (MIR_Expr*) exprLeft.primitives[0];
+
+        MIR_Primitives exprRight = transformSubexpr(expr->right, scope, arena);
+        assert(exprRight.n == 1);
+        MIR_Expr *right = (MIR_Expr*) exprRight.primitives[0];
         
         // get resultant type
         DataType dt = getResultantType(expr->left->type, expr->right->type, expr->op);
@@ -560,7 +720,8 @@ MIR_Expr* MiddleEnd :: transformSubexpr(const Subexpr* expr, StatementBlock* sco
         }
 
 
-        
+        returnExprs.primitives[returnExprs.n] = d;
+        returnExprs.n++;
         break;
     }
     
@@ -615,7 +776,9 @@ MIR_Expr* MiddleEnd :: transformSubexpr(const Subexpr* expr, StatementBlock* sco
                 d->load.type = MIR_Expr::LoadType::EXPR_MEMLOAD;
             }
 
-            return d;
+            returnExprs.primitives[returnExprs.n] = d;
+            returnExprs.n++;
+            break;
         }
         
         // else is an immediate value
@@ -660,12 +823,16 @@ MIR_Expr* MiddleEnd :: transformSubexpr(const Subexpr* expr, StatementBlock* sco
         d->immediate.val = copySplice(expr->leaf.string, arena);
         d->ptag = MIR_Primitive::PRIM_EXPR;
         
-        return d;
+        returnExprs.primitives[returnExprs.n] = d;
+        returnExprs.n++;
+        break;
     }
 
     case Subexpr::SUBEXPR_UNARY: {
-
-        MIR_Expr *operand = transformSubexpr(expr->unarySubexpr, scope, arena);
+        
+        MIR_Primitives exprs = transformSubexpr(expr->unarySubexpr, scope, arena);
+        assert(exprs.n == 1);
+        MIR_Expr* operand = (MIR_Expr*)exprs.primitives[0];
         
         if (_match(expr->unaryOp, TOKEN_STAR)){
             /*
@@ -688,7 +855,9 @@ MIR_Expr* MiddleEnd :: transformSubexpr(const Subexpr* expr, StatementBlock* sco
             d->load.size = d->_type.size;
             d->ptag = MIR_Primitive::PRIM_EXPR;
 
-            return d;
+            returnExprs.primitives[returnExprs.n] = d;
+            returnExprs.n++;
+            break;
         }
 
         else if(_match(expr->unaryOp, TOKEN_AMPERSAND)){
@@ -718,7 +887,9 @@ MIR_Expr* MiddleEnd :: transformSubexpr(const Subexpr* expr, StatementBlock* sco
 
             d->ptag = MIR_Primitive::PRIM_EXPR;
 
-            return d;
+            returnExprs.primitives[returnExprs.n] = d;
+            returnExprs.n++;
+            break;
         }
         
         /*
@@ -759,8 +930,6 @@ MIR_Expr* MiddleEnd :: transformSubexpr(const Subexpr* expr, StatementBlock* sco
         case TOKEN_BITWISE_NOT:
             d->unary.op = MIR_Expr::UnaryOp::EXPR_IBITWISE_NOT;
             break;
-        case TOKEN_AMPERSAND:
-            break;
         case TOKEN_PLUS_PLUS:
             break;
         case TOKEN_MINUS_MINUS:
@@ -770,6 +939,8 @@ MIR_Expr* MiddleEnd :: transformSubexpr(const Subexpr* expr, StatementBlock* sco
             break;
         }
 
+        returnExprs.primitives[returnExprs.n] = d;
+        returnExprs.n++;
         break;
     }
 
@@ -791,7 +962,10 @@ MIR_Expr* MiddleEnd :: transformSubexpr(const Subexpr* expr, StatementBlock* sco
             MIR_Datatype mReqType = convertToLowerLevelType(reqType, scope);
             
             // convert
-            MIR_Expr* mArg = transformSubexpr(fooCall->arguments[i], scope, arena);
+            MIR_Primitives exprs = transformSubexpr(fooCall->arguments[i], scope, arena);
+            assert(exprs.n == 1);
+            MIR_Expr* mArg = (MIR_Expr*)exprs.primitives[0];
+
             // type cast to required type
             mArg = typeCastTo(mArg, mReqType, arena);
             mfooCall->arguments.push_back(mArg);
@@ -803,6 +977,9 @@ MIR_Expr* MiddleEnd :: transformSubexpr(const Subexpr* expr, StatementBlock* sco
         d->type = foo.returnType;
         d->_type = convertToLowerLevelType(foo.returnType, scope);
         d->functionCall = mfooCall;
+
+        returnExprs.primitives[returnExprs.n] = d;
+        returnExprs.n++;
         break;
     }
     
@@ -810,10 +987,16 @@ MIR_Expr* MiddleEnd :: transformSubexpr(const Subexpr* expr, StatementBlock* sco
         d->cast._from = convertToLowerLevelType(expr->expr->type, scope);
         d->cast._to = convertToLowerLevelType(expr->to, scope);
         
-        d->cast.expr = transformSubexpr(expr->expr, scope, arena);
+        MIR_Primitives exprs = transformSubexpr(expr->expr, scope, arena);
+        assert(exprs.n == 1);
+
+        d->cast.expr = (MIR_Expr*)exprs.primitives[0];
         d->ptag = MIR_Primitive::PRIM_EXPR;
         d->tag = MIR_Expr::EXPR_CAST;
         d->_type = d->cast._to;
+
+        returnExprs.primitives[returnExprs.n] = d;
+        returnExprs.n++;
         break;
     }
         
@@ -823,7 +1006,7 @@ MIR_Expr* MiddleEnd :: transformSubexpr(const Subexpr* expr, StatementBlock* sco
     }
     
 
-    return d;
+    return returnExprs;
 
 }
 
@@ -880,30 +1063,23 @@ MIR_Primitives MiddleEnd :: transformNode(const Node* current, StatementBlock *s
         Declaration* d = (Declaration*) current;
         for (auto const &decln : d->decln){
             if (decln.initValue){
-                assert(decln.type.tag != DataType::TAG_STRUCT && "Struct assignments aren't supported currently.");
+                Subexpr left = Subexpr {0};
+                left.tag = Node::NODE_SUBEXPR;
+                left.subtag = Subexpr::SUBEXPR_LEAF;
+                left.leaf = decln.identifier;
+                left.type = decln.type;
+                
+                Subexpr assignment = Subexpr {0};
+                assignment.tag = Node::NODE_SUBEXPR;
+                assignment.subtag = Subexpr::SUBEXPR_BINARY_OP;
+                assignment.op = Token{.type = TOKEN_ASSIGNMENT};
+                assignment.left = &left;
+                assignment.right = decln.initValue;
+                assignment.type = decln.type;
 
-                MIR_Expr* var = (MIR_Expr*)arena->alloc(sizeof(MIR_Expr)); 
-                var->ptag = MIR_Primitive::PRIM_EXPR;
-                var->tag = MIR_Expr::EXPR_LEAF;
-                var->leaf.val = copySplice(decln.identifier.string, arena);
-                
-                MIR_Expr* left = (MIR_Expr*)arena->alloc(sizeof(MIR_Expr)); 
-                left->ptag = MIR_Primitive::PRIM_EXPR;
-                left->tag = MIR_Expr::EXPR_ADDRESSOF;
-                left->addressOf.of = var;
+                MIR_Primitives convertedExprs = transformSubexpr(&assignment, scope, arena);
 
-                MIR_Expr* declnAssignment = (MIR_Expr*)arena->alloc(sizeof(MIR_Expr)); 
-                declnAssignment->ptag = MIR_Primitive::PRIM_EXPR;
-                declnAssignment->tag = MIR_Expr::EXPR_STORE;
-                declnAssignment->store.left = left;
-                declnAssignment->store.right = transformSubexpr(decln.initValue, scope, arena);
-                declnAssignment->store.size = convertToLowerLevelType(decln.type, scope).size;
-                declnAssignment->store.offset = 0;
-                declnAssignment->_type = convertToLowerLevelType(decln.type, scope);
-                
-                declnAssignment->store.right = typeCastTo(declnAssignment->store.right, declnAssignment->_type, arena);
-                
-                return MIR_Primitives{.primitives = {declnAssignment}, .n = 1};
+                return convertedExprs;
             }
 
         }
@@ -936,8 +1112,8 @@ MIR_Primitives MiddleEnd :: transformNode(const Node* current, StatementBlock *s
             }
         }
 
-
-        return MIR_Primitives{.primitives = {mir}, .n = 1};
+        scratchPad[0] = mir;
+        return MIR_Primitives{.primitives = (MIR_Primitive**)&scratchPad[0], .n = 1};
         break;
     }
 
@@ -948,22 +1124,24 @@ MIR_Primitives MiddleEnd :: transformNode(const Node* current, StatementBlock *s
         StatementBlock* parentFunc = scope->getParentFunction();
 
         rnode->ptag = MIR_Primitive::PRIM_RETURN;
-        rnode->returnValue = transformSubexpr(AST_rnode->returnVal, scope, arena);
+        
+        MIR_Primitives retVal = transformSubexpr(AST_rnode->returnVal, scope, arena);
+        assert(retVal.n == 1);
+        rnode->returnValue = (MIR_Expr*)retVal.primitives[0];
         rnode->funcName = parentFunc->funcName.string;
 
         // type cast to the return type
         MIR_Datatype retType = convertToLowerLevelType(ast->functions.getInfo(parentFunc->funcName.string).info.returnType, scope);
         rnode->returnValue = typeCastTo(rnode->returnValue, retType, arena);
         
-        return MIR_Primitives{.primitives = {rnode}, .n = 1};
+        scratchPad[0] = rnode;
+        return MIR_Primitives{.primitives = (MIR_Primitive**)&scratchPad[0], .n = 1};
         break;
     }
     
     case Node::NODE_SUBEXPR:{
         Subexpr* AST_expr = (Subexpr*) current;
-        MIR_Expr* expr = transformSubexpr(AST_expr, scope, arena);
-        
-        return MIR_Primitives{.primitives = {expr}, .n = 1};
+        return transformSubexpr(AST_expr, scope, arena);
         break;
     }
 
@@ -974,13 +1152,20 @@ MIR_Primitives MiddleEnd :: transformNode(const Node* current, StatementBlock *s
         MIR_If** inode = &start;
         while (AST_current){
             *inode = (MIR_If*) arena->alloc(sizeof(MIR_If));
+
+            MIR_Expr* condition = NULL;
+            
+            if (AST_current->condition) {
+                MIR_Primitives exprs = transformSubexpr(AST_current->condition, scope, arena);
+                assert(exprs.n == 1);
+                condition = (MIR_Expr*) exprs.primitives[0];
+            }
             
             MIR_Primitives stmts = transformNode(AST_current->block, scope, arena, mScope);
             assert(stmts.n == 1);
             assert(stmts.primitives[0]->ptag == MIR_Primitive::PRIM_SCOPE);
-
+            
             (*inode)->ptag = MIR_Primitive::PRIM_IF;
-            MIR_Expr* condition = transformSubexpr(AST_current->condition, scope, arena);
             (*inode)->condition = typeCastTo(condition, MIR_Datatypes::_bool, arena);
             (*inode)->scope = (MIR_Scope*) stmts.primitives[0]; 
             (*inode)->next = NULL;
@@ -989,7 +1174,8 @@ MIR_Primitives MiddleEnd :: transformNode(const Node* current, StatementBlock *s
             AST_current = AST_current->nextIf;
         }
         
-        return MIR_Primitives{.primitives = {start}, .n = 1};
+        scratchPad[0] = start;
+        return MIR_Primitives{.primitives = (MIR_Primitive**)&scratchPad[0], .n = 1};
         break;
     }
 
@@ -998,18 +1184,21 @@ MIR_Primitives MiddleEnd :: transformNode(const Node* current, StatementBlock *s
         WhileNode* AST_wnode = (WhileNode*) current;
         
         MIR_Loop* loop = (MIR_Loop*) arena->alloc(sizeof(MIR_Loop));
+
+        MIR_Primitives exprs = transformSubexpr(AST_wnode->condition, scope, arena);
+        assert(exprs.n == 1);
+        MIR_Expr* condition = (MIR_Expr*) exprs.primitives[0];
         
         MIR_Primitives stmts = transformNode(AST_wnode->block, scope, arena, mScope);
         assert(stmts.n == 1);
         assert(stmts.primitives[0]->ptag == MIR_Primitive::PRIM_SCOPE);
-
-
+        
         loop->ptag = MIR_Primitive::PRIM_LOOP;
-        MIR_Expr* condition = transformSubexpr(AST_wnode->condition, scope, arena);
         loop->condition = typeCastTo(condition, MIR_Datatypes::_bool, arena);
         loop->scope = (MIR_Scope*) stmts.primitives[0];
-
-        return MIR_Primitives{.primitives = {loop}, .n = 1};
+        
+        scratchPad[0] = loop;
+        return MIR_Primitives{.primitives = (MIR_Primitive**)&scratchPad[0], .n = 1};
         break;
     }
     
@@ -1019,24 +1208,35 @@ MIR_Primitives MiddleEnd :: transformNode(const Node* current, StatementBlock *s
         MIR_Loop* loop = (MIR_Loop*) arena->alloc(sizeof(MIR_Loop));
         
         // transform body and loop condition
+
+        MIR_Primitives exprs = transformSubexpr(AST_fnode->exitCondition, scope, arena);
+        assert(exprs.n == 1);
+        MIR_Expr* condition = (MIR_Expr*) exprs.primitives[0];
+        
+        exprs = transformSubexpr(AST_fnode->update, scope, arena);
+        assert(exprs.n == 1);
+        MIR_Expr* update = (MIR_Expr*) exprs.primitives[0];
+        
         MIR_Primitives stmts = transformNode(AST_fnode->block, scope, arena, mScope);
         assert(stmts.n == 1);
         assert(stmts.primitives[0]->ptag == MIR_Primitive::PRIM_SCOPE);
         
         loop->ptag = MIR_Primitive::PRIM_LOOP;
         loop->scope = (MIR_Scope*) stmts.primitives[0];
-        MIR_Expr* condition = transformSubexpr(AST_fnode->exitCondition, scope, arena);
         loop->condition = typeCastTo(condition, MIR_Datatypes::_bool, arena);
+
         
         // add the update statement to the loop body
-        loop->scope->statements.push_back(transformSubexpr(AST_fnode->update, scope, arena));
+        loop->scope->statements.push_back(update);
 
         // the init statement
         stmts = transformNode(AST_fnode->block, scope, arena, mScope);
         assert(stmts.n == 1);
         MIR_Primitive* initStmt = stmts.primitives[0];
-
-        return MIR_Primitives{.primitives = {initStmt, loop}, .n = 2};
+        
+        scratchPad[0] = initStmt;
+        scratchPad[1] = loop;
+        return MIR_Primitives{.primitives = (MIR_Primitive**)&scratchPad[0], .n = 2};
         break;
     }
 
@@ -1048,6 +1248,8 @@ MIR_Primitives MiddleEnd :: transformNode(const Node* current, StatementBlock *s
     assert(false && "Huhu");
     return MIR_Primitives{.n = 0};
 }
+
+
 
 
 

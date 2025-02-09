@@ -722,7 +722,7 @@ void CodeGenerator::generateExprMIR(MIR_Expr *current, Register dest, MIR_Scope*
         generateExprMIR(current->load.base, dest, scope, storageScope); 
         
         const char *destName = RV64_RegisterName[regAlloc.resolveRegister(dest)];
-        bool isFloatExpr = isFloatType(current->_type);
+        bool isFloatExpr = current->load.type == MIR_Expr::LoadType::EXPR_FLOAD;
         
         const char* prefix = isFloatExpr? "f" : "";
 
@@ -744,7 +744,7 @@ void CodeGenerator::generateExprMIR(MIR_Expr *current, Register dest, MIR_Scope*
     
     case MIR_Expr::EXPR_STORE:{
         // Store the given rvalue in the address of the lvalue, and also load it into the destination register.
-
+        
         // Load the rvalue into the destination register
         generateExprMIR(current->store.right, dest, scope, storageScope);
         

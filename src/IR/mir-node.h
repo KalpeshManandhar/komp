@@ -163,7 +163,6 @@ struct MIR_Expr : public MIR_Primitive{
             Splice val;
         }leaf;
 
-
         /*
             Load a value at a given address.
             Used for variable accesses, pointer dereferences. 
@@ -178,7 +177,6 @@ struct MIR_Expr : public MIR_Primitive{
             size_t size;
             LoadType type;
         }load;
-
 
         /*
             To add a given offset to a given address. 
