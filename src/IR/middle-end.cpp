@@ -44,8 +44,27 @@ Splice MiddleEnd :: copySplice(Splice s, Arena* arena){
     Convert an expression to a given type.
 */
 MIR_Expr* MiddleEnd :: typeCastTo(MIR_Expr* expr, MIR_Datatype to, Arena* arena){
+    if (!expr || expr->_type.tag == to.tag){
+        return expr;
+    }
+
     MIR_Expr* e = expr;
-    if (expr && expr->_type.tag != to.tag){
+    
+    // if conversion from array to pointer, just change the load to a load address 
+    if (e->_type.tag == MIR_Datatype::TYPE_ARRAY && to.tag == MIR_Datatype::TYPE_PTR){
+        assert(e->tag == MIR_Expr::EXPR_LOAD);
+        assert(e->load.base->tag == MIR_Expr::EXPR_ADDRESSOF);
+
+        MIR_Expr loadAddressOfArray = {};
+        loadAddressOfArray.ptag = MIR_Primitive::PRIM_EXPR;
+        loadAddressOfArray.tag = MIR_Expr::EXPR_LOAD_ADDRESS;
+        loadAddressOfArray.loadAddress.base = e->load.base;
+        loadAddressOfArray.loadAddress.offset = e->load.offset;
+        loadAddressOfArray._type = to;
+        
+        *e = loadAddressOfArray;
+    }
+    else{    
         MIR_Expr *cast = (MIR_Expr*)arena->alloc(sizeof(MIR_Expr));
         cast->ptag = MIR_Primitive::PRIM_EXPR;
         cast->tag = MIR_Expr::EXPR_CAST;
@@ -55,7 +74,11 @@ MIR_Expr* MiddleEnd :: typeCastTo(MIR_Expr* expr, MIR_Datatype to, Arena* arena)
         cast->cast.expr = expr;
         
         e = cast;
+    
     }
+    
+
+
     return e;
 }
 
@@ -509,7 +532,7 @@ MIR_Primitives MiddleEnd :: transformSubexpr(const Subexpr* expr, StatementBlock
                 
                     Something-Assignment is expanded to
                                 STORE
-                            /   |    \
+                             /   |    \
                             /     |     \
                     offset /       |left  \
                         /         |       \

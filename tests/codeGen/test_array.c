@@ -5,7 +5,7 @@ struct Foo{
 
 
 int main(){
-    int a, *b, c[3], d[2][2], *e[2];
+    int a, *b, c[3], d[2][2], *e[2], *f;
     
     
     struct Foo foo;
@@ -19,12 +19,12 @@ int main(){
     d[0][0] = 13; // 2D indexing
     e[0] = &d[0][1];
     e[0][0] = 20;
-
+    f = c;
 
     // inside struct arrays
     foo.arr[2] = 14;
     foo.arr2[3][5] = 15;
     
-    // 1 + 1 + 12 + 13 + 20 + 14 + 15
-    return b[0] + a + c[1] + d[0][0] + d[0][1] + foo.arr[2] + foo.arr2[3][5];
+    // 1 + 1 + 12 + 13 + 20 + 14 + 15 + 12 = 88 
+    return b[0] + a + c[1] + d[0][0] + d[0][1] + foo.arr[2] + foo.arr2[3][5] + f[1];
 }
