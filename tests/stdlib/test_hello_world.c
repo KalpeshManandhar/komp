@@ -1,4 +1,5 @@
 #include <io.h>
+#include <system.h>
 
 int main(){
     char buf[12];
@@ -16,8 +17,11 @@ int main(){
     buf[11] = '\n';
 
     const char* buf2 = "omae wa mou shindeiru\n";
-    write(1, &buf[0], 13);
+    write(1, &buf[0], 12);
     write(1, buf2, 22);
+
+    int n = read(0, buf, 12);
+    write(1, buf, n);
 
     return 12;
 }

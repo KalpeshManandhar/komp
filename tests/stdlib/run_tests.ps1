@@ -25,8 +25,6 @@ $found_values = $expected_values.Clone()
 
 
 
-
-
 $files = Get-ChildItem -Path $test_folder"\*" -Include "*.c" 
 if ($PSBoundParameters.ContainsKey('test_name')){
     $files = $files | Where-Object -Property Name -eq $test_name
@@ -74,11 +72,11 @@ foreach ($file in $files){
     
     Write-Host "Linking into RV64-ELF.." -ForegroundColor Yellow  
     Start-Process "wsl" -ArgumentList "--distribution", "Ubuntu", 
-                "$riscv_ld $cwdLinux/codegen_output.o $cwdLinux/stdlib/lib/*.o $cwdLinux/stdlib/lib/*.so -o $cwdLinux/codegen_output --dynamic-linker /lib/ld-linux-riscv64-lp64d.so.1" `
+                "$riscv_ld $cwdLinux/codegen_output.o $cwdLinux/stdlib/lib/entry.o $cwdLinux/stdlib/lib/stdlib.so -o $cwdLinux/codegen_output --dynamic-linker /lib/ld-linux-riscv64-lp64d.so.1" `
                 -NoNewWindow -Wait
 
     Write-Host "Running on qemu.." -ForegroundColor Yellow
-    & "wsl" --distribution Ubuntu $qemu -L $sysroot $cwdLinux/codegen_output
+    & "wsl" --distribution Ubuntu $qemu -L $sysroot $cwdLinux/codegen_output @($arguments[$file.Name])
       
     $found_values[$file.Name] = $LASTEXITCODE
 } 
