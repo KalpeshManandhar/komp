@@ -594,7 +594,7 @@ void CodeGenerator :: generateAssemblyFromMIR(MIR *mir){
             break;
         }
         // string
-        case MIR_Datatype::TYPE_PTR:{
+        case MIR_Datatype::TYPE_ARRAY:{
             rodataSection << "    .string " << symbol.value << "\n";
             break;
         }
@@ -628,7 +628,7 @@ void CodeGenerator::generateExprMIR(MIR_Expr *current, Register dest, MIR_Scope*
         // load immediate value into a register
         if (isIntegerType(current->_type)){
             // for string literal, load address
-            if (current->_type.tag == MIR_Datatype::TYPE_PTR){
+            if (current->_type.tag == MIR_Datatype::TYPE_PTR || current->_type.tag == MIR_Datatype::TYPE_ARRAY){
                 if (!rodata.existKey(current->immediate.val)){
                     rodata.add(current->immediate.val, SymbolInfo{.label = labeller.label(), .value = current->immediate.val, .type = current->_type});
                 }
@@ -1232,6 +1232,8 @@ void CodeGenerator::generateExprMIR(MIR_Expr *current, Register dest, MIR_Scope*
         int occupiedXA = 0;
         int occupiedFA = 0;
         
+        Register argRegisters[16];
+
         for (int argNo = 0; argNo < current->functionCall->arguments.size(); argNo++){
             MIR_Expr* arg = current->functionCall->arguments[argNo];
             size_t sizeOfArg = arg->_type.size;
@@ -1246,7 +1248,8 @@ void CodeGenerator::generateExprMIR(MIR_Expr *current, Register dest, MIR_Scope*
                     
                     Register argRegister = regAlloc.allocRegister(RV64_Register(REG_A0 + occupiedXA));
                     generateExprMIR(arg, argRegister, scope, storageScope);
-                    regAlloc.freeRegister(argRegister);
+                    
+                    argRegisters[occupiedXA + occupiedFA] = argRegister;
                     occupiedXA++;
                     
                 }
@@ -1265,8 +1268,10 @@ void CodeGenerator::generateExprMIR(MIR_Expr *current, Register dest, MIR_Scope*
                     
                     Register argRegister = regAlloc.allocRegister(RV64_Register(REG_FA0 + occupiedFA));
                     generateExprMIR(arg, argRegister, scope, storageScope);
-                    regAlloc.freeRegister(argRegister);
+
+                    argRegisters[occupiedXA + occupiedFA] = argRegister;
                     occupiedFA++;
+
                 }
                 else {
                     assert(false && "Float types should fit in one FLEN length register.");
@@ -1290,6 +1295,11 @@ void CodeGenerator::generateExprMIR(MIR_Expr *current, Register dest, MIR_Scope*
         }
 
         buffer << "    call " << current->functionCall->funcName << "\n";
+
+        // free the argument registers
+        for (int i=0; i<occupiedXA + occupiedFA; i++){
+            regAlloc.freeRegister(argRegisters[i]);
+        }
         
         
         MIR_Function &foo = this->mir->functions.getInfo(current->functionCall->funcName).info;
