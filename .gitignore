@@ -31,4 +31,4 @@
 *.out
 *.app
 
-tests/codeGen/path_info.ps1
+*path_info.ps1

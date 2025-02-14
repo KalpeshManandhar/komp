@@ -18,11 +18,6 @@ For the current code, after the middle end refactor.
 ```powershell
 clang++ -g --std=c++20 -I.\src\ .\src\tokenizer\tokenizer.cpp .\src\parser\parser.cpp .\src\arena\arena.cpp .\src\IR\middle-end.cpp .\src\codeGen\*.cpp -o codegen.exe
 ```
-For the previous code, before the middle end. WARNING: May or may not work.
-```powershell
-clang++ -g --std=c++20 -I.\src\ .\src\tokenizer\tokenizer.cpp .\src\parser\parser.cpp .\src\arena\arena.cpp .\src\codeGen\*.cpp -o codegen.exe
-```
-
 
 ### Testing
 All tests are in **`./tests/`** with respective tests for each stage in the pipeline. 
@@ -41,7 +36,9 @@ $gcc_toolchain =
 $riscv_gcc = 
 $qemu = 
 $sysroot = 
-
-# path for current wd from linux
-$cwd_from_linux = 
 ```
+
+
+### Standard library
+The standard library currently consists of functions wrapping some common syscalls to form a minimal stdlib experience (wow!). 
+You can compile the stdlib by running the `compile_stdlib.ps1`.

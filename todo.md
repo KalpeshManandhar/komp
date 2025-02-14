@@ -3,6 +3,7 @@
 
 ### Specific refactors:
  - A minimal stdlib for wrappers around syscalls. 
+    - Add memory functions + IO functions + Files + Strings for now
  - Maybe look into better register allocation (Linear scan maybe?)
     - Would probably require that the MIR be converted to a linear IR? Maybe? Dunno
 
@@ -19,16 +20,16 @@
 
 
 ## Tokenizer
- - Character literal tokenization
+ - Character literal tokenization - done
 
 
 ## Parser:
  - Unions
  - Typedefs
  - Externs/Statics/Volatiles
- - Array/Struct initialization
 
 
+ - Array/Struct initialization - done
  - Explicit type casts - done
  - Change declaration initializers to be an assignment - done
  - function params into symbols table - done
@@ -44,22 +45,34 @@
 
 
 ## IR / Middleend
-- Convert the C datatypes to a simpler form (tag + size like u32, i64) for simple conversions.
+
+- Convert the C datatypes to a simpler form (tag + size like u32, i64) for simple conversions. - done
     - The code generator will be working with these only.
-- All defined structs and other complex data types will be changed into the lower level IR. 
+- All defined structs and other complex data types will be changed into the lower level IR. - done
     - So there will be no need of the Statement block info while generating code.
+- Type conversions including arrays. - done
+- Initializer lists - done
+
+
+## Optimization
+- Simple register allocation
+    - Maybe allocate registers for first N local variables in a scope?
+    - Or maybe implement a linear scan register allocator by adding a linear IR?
+- Dead code elimination
+
 
 
 ## Code generator
-- Codegen for string literals.
 - Fully support allocation for all registers - somewhat done?
 - Proper support for function calls
     - Support for struct arguments - remaining
     - Callee saved registers - remaining
     - Caller saved registers - done
-    - Can be made more efficient through better register allocation
+    - Can be made more efficient through better register assignment
+- Codegen for string literals - done
 - Call return primitives - done
 - Type casts - done
 
+- Change register assignment maybe
 
 

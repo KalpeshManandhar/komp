@@ -52,17 +52,19 @@ MIR_Expr* MiddleEnd :: typeCastTo(MIR_Expr* expr, MIR_Datatype to, Arena* arena)
     
     // if conversion from array to pointer, just change the load to a load address 
     if (e->_type.tag == MIR_Datatype::TYPE_ARRAY && to.tag == MIR_Datatype::TYPE_PTR){
-        assert(e->tag == MIR_Expr::EXPR_LOAD);
-        assert(e->load.base->tag == MIR_Expr::EXPR_ADDRESSOF);
+        if (e->tag == MIR_Expr::EXPR_LOAD){
+            assert(e->tag == MIR_Expr::EXPR_LOAD);
+            assert(e->load.base->tag == MIR_Expr::EXPR_ADDRESSOF);
 
-        MIR_Expr loadAddressOfArray = {};
-        loadAddressOfArray.ptag = MIR_Primitive::PRIM_EXPR;
-        loadAddressOfArray.tag = MIR_Expr::EXPR_LOAD_ADDRESS;
-        loadAddressOfArray.loadAddress.base = e->load.base;
-        loadAddressOfArray.loadAddress.offset = e->load.offset;
-        loadAddressOfArray._type = to;
-        
-        *e = loadAddressOfArray;
+            MIR_Expr loadAddressOfArray = {};
+            loadAddressOfArray.ptag = MIR_Primitive::PRIM_EXPR;
+            loadAddressOfArray.tag = MIR_Expr::EXPR_LOAD_ADDRESS;
+            loadAddressOfArray.loadAddress.base = e->load.base;
+            loadAddressOfArray.loadAddress.offset = e->load.offset;
+            loadAddressOfArray._type = to;
+            
+            *e = loadAddressOfArray;
+        }
     }
     else{    
         MIR_Expr *cast = (MIR_Expr*)arena->alloc(sizeof(MIR_Expr));
@@ -1253,7 +1255,7 @@ MIR_Primitives MiddleEnd :: transformNode(const Node* current, StatementBlock *s
         loop->scope->statements.push_back(update);
 
         // the init statement
-        stmts = transformNode(AST_fnode->block, scope, arena, mScope);
+        stmts = transformNode(AST_fnode->init, scope, arena, mScope);
         assert(stmts.n == 1);
         MIR_Primitive* initStmt = stmts.primitives[0];
         
@@ -1262,7 +1264,12 @@ MIR_Primitives MiddleEnd :: transformNode(const Node* current, StatementBlock *s
         return MIR_Primitives{.primitives = (MIR_Primitive**)&scratchPad[0], .n = 2};
         break;
     }
-
+    
+    case Node::NODE_BREAK:
+    case Node::NODE_CONTINUE:{
+        assert(false && "break and continue havent been supported huhu");
+        break;
+    }
 
     default:
         break;

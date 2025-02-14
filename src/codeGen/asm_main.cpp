@@ -23,16 +23,6 @@ int main(int argc, char **argv){
 
     AST *ir = p.parseProgram();
     
-    // directly from AST
-    if (false && ir){
-        CodeGenerator gen;
-        gen.arena = &a;
-        
-        gen.generateAssembly(ir);
-        gen.printAssembly();
-        gen.writeAssemblyToFile("./codegen_output.s");
-    }
-
     if (ir){
         Arena b;
         b.init(PAGE_SIZE * 2);
