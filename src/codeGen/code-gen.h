@@ -32,8 +32,10 @@ struct CodeGenerator{
     AST *ir;
     MIR *mir;
     Arena *arena;
+
     
-    // RV64 specific info
+    
+    // RV64D specific info
     const size_t XLEN = 8;
     const size_t FLEN = 8;
     
@@ -41,6 +43,9 @@ struct CodeGenerator{
     void generatePrimitiveMIR(MIR_Primitive* p, MIR_Scope* scope , ScopeInfo *storageScope);
     void generateExprMIR(MIR_Expr *current, Register dest, MIR_Scope* scope, ScopeInfo *storageScope);
     size_t allocStackSpaceMIR(MIR_Scope* scope, ScopeInfo* storage);
+    void saveRegisters(RegisterState &rstate, std::stringstream &buffer, ScopeInfo* scope);
+    void restoreRegisters(RegisterState &rstate, std::stringstream &buffer, ScopeInfo* scope);
+
 
     // output
     void writeAssemblyToFile(const char *filename);

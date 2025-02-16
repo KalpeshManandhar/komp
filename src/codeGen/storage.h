@@ -242,7 +242,7 @@ static RV64RegisterInfo RV64Registers[REG_COUNT] = {
     {.id = REG_T2, .name = "t2", .type = RegisterType(REG_TEMPORARY | REG_CALLER_SAVED)},
     
     // saved registers
-    {.id = REG_S0, .name = "s0", .type = RegisterType(REG_SAVED | REG_CALLEE_SAVED)}, // frame pointer
+    {.id = REG_S0, .name = "s0", .type = RegisterType(REG_DONOT_ALLOCATE | REG_SAVED | REG_CALLEE_SAVED)}, // frame pointer
     {.id = REG_S1, .name = "s1", .type = RegisterType(REG_SAVED | REG_CALLEE_SAVED)},
     
     // function arguments/return values
@@ -328,6 +328,7 @@ struct RegisterState{
 
 struct RegisterAllocator{
     RegisterInfo xf[REG_COUNT] = { 0 };
+    bool usage[REG_COUNT] = {0};
     
     
     // allocate a specific register
@@ -374,6 +375,7 @@ struct RegisterAllocator{
         // if register is physical register
         if (r.id < RV64_Register::REG_COUNT){
             xf[r.id].occupied = true;
+            usage[r.id] = true;
             return RV64_Register(r.id);
         }
 
@@ -403,6 +405,8 @@ struct RegisterAllocator{
                 if (!xf[i].occupied){
                     xf[i].occupied = true;
                     xf[i].vRegisterMapping = r.id;
+                    
+                    usage[i] = true;
                     return RV64_Register(i);
                 }
             }
@@ -447,8 +451,33 @@ struct RegisterAllocator{
         }
         
     }
+
+
+    RegisterState getRegisterUsage(RegisterType type){
+        RegisterState state = {0};
+        
+        for (int i=0; i<REG_COUNT; i++){
+            if (RV64Registers[i].type & RegisterType::REG_DONOT_ALLOCATE){
+                continue;
+            }
+
+            if ((type & RegisterType::REG_FLOATING_POINT) != (RV64Registers[i].type & RegisterType::REG_FLOATING_POINT)){
+                continue;
+            }
+
+            if (RV64Registers[i].type & type & (~RegisterType::REG_FLOATING_POINT)){
+                state.reg[i].occupied = usage[i];
+            }
+        }
+        return state;
+    }
 };
 
+
+struct MemBlock{
+    size_t start;
+    size_t size;
+};
 
 
 
@@ -461,35 +490,43 @@ struct StorageInfo{
     
     union{
         Register reg;
-        size_t memAddress;
+        MemBlock memAddress;
     };
 };
 
 
 struct StackAllocator{
     size_t sp = 0;
-    
-    size_t allocate(size_t size){
+    size_t frameBase = 0;
+
+    // allocate memory and return the memblock
+    MemBlock allocate(size_t size){
         size_t spRet = sp;
         
         sp += size;
-        return spRet;
+        return MemBlock{.start = spRet, .size = size};
     }
     
-    void deallocate(size_t size){
+    // deallocate memory and return the mem block deallocated
+    MemBlock deallocate(size_t size){
         sp -= size;
+        return MemBlock{.start = sp, .size = size};
     }
 
     size_t getCurrentAddress(){
         return sp;
+    }
+
+    int64_t offsetFromBase(MemBlock block){
+        int64_t offset = block.start + block.size - frameBase;
+        return -offset;
     }
 };
 
 
 
 struct ScopeInfo{
-    SymbolTable<StorageInfo> storage;
-    size_t frameBase;
+    SymbolTable<StorageInfo> symbols;
 
     ScopeInfo *parent;
 };

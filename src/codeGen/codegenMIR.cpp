@@ -144,7 +144,7 @@ size_t CodeGenerator :: allocStackSpaceMIR(MIR_Scope* scope, ScopeInfo* storage)
     
     if (totalSize > 0){
         // allocate stack space
-        size_t mem = stackAlloc.allocate(totalSize);
+        MemBlock mem = stackAlloc.allocate(totalSize);
         size_t offset = 0;
         
         // assign memory offsets as storage info for each variable 
@@ -155,13 +155,15 @@ size_t CodeGenerator :: allocStackSpaceMIR(MIR_Scope* scope, ScopeInfo* storage)
             size_t alignment = dt.alignment;
             
             offset = alignUpPowerOf2(offset, alignment);
-            offset += size;
 
             StorageInfo s;
-            s.memAddress = mem + offset;
+            s.memAddress.start = mem.start + offset;
+            s.memAddress.size = size;
+            
+            offset += size;
             s.tag = StorageInfo::STORAGE_MEMORY;
 
-            storage->storage.add(var, s);
+            storage->symbols.add(var, s);
 
         }    
 
@@ -187,7 +189,7 @@ void CodeGenerator :: generatePrimitiveMIR(MIR_Primitive* p, MIR_Scope* scope, S
 
             while (inode){
                 if (inode->condition){
-                    Register condition = regAlloc.allocVRegister(REG_TEMPORARY);
+                    Register condition = regAlloc.allocVRegister(REG_SAVED);
                     // compute the condition
                     generateExprMIR(inode->condition, condition, scope, storageScope);
                     
@@ -228,7 +230,7 @@ void CodeGenerator :: generatePrimitiveMIR(MIR_Primitive* p, MIR_Scope* scope, S
         case MIR_Primitive::PRIM_LOOP:{
             MIR_Loop* lnode = (MIR_Loop*) p;
         
-            Register condition = regAlloc.allocVRegister(REG_TEMPORARY);
+            Register condition = regAlloc.allocVRegister(REG_SAVED);
 
             size_t startLabel = labeller.label();
             size_t falseLabel = labeller.label();
@@ -304,7 +306,7 @@ void CodeGenerator :: generatePrimitiveMIR(MIR_Primitive* p, MIR_Scope* scope, S
             bool isFloatExpr = isFloatType(enode->_type);
             int mask = isFloatExpr? REG_FLOATING_POINT : 0; 
 
-            Register rtmp = regAlloc.allocVRegister(RegisterType(REG_TEMPORARY | mask));
+            Register rtmp = regAlloc.allocVRegister(RegisterType(REG_SAVED | mask));
 
             generateExprMIR(enode, rtmp, scope, storageScope);
             
@@ -317,7 +319,6 @@ void CodeGenerator :: generatePrimitiveMIR(MIR_Primitive* p, MIR_Scope* scope, S
 
             ScopeInfo storage;
             storage.parent = storageScope;
-            storage.frameBase = storageScope->frameBase;
 
             size_t totalSize = allocStackSpaceMIR(snode, &storage);
             
@@ -360,27 +361,25 @@ void CodeGenerator :: generateFunctionMIR(MIR_Function *foo, MIR_Scope* global, 
         return;
     }
 
-    std::cout << "Generating for " << foo->funcName << "\n";
+    std::stringstream prologue;
 
-
-    buffer << "    .globl " << foo->funcName << "\n";
-    buffer << foo->funcName << ":\n";
+    prologue << "    .globl " << foo->funcName << "\n";
+    prologue << foo->funcName << ":\n";
     // function prologue
-    buffer << "    addi sp, sp, -16\n"; // allocate stack space for return address and previous frame pointer.
-    buffer << "    sd ra, 8(sp)\n";     // save return address
-    buffer << "    sd fp, 0(sp)\n";     // save prev frame pointer
-    buffer << "    mv fp, sp\n";        // save current stack pointer 
+    prologue << "    addi sp, sp, -16\n"; // allocate stack space for return address and previous frame pointer.
+    prologue << "    sd ra, 8(sp)\n";     // save return address
+    prologue << "    sd fp, 0(sp)\n";     // save prev frame pointer
+    prologue << "    mv fp, sp\n";        // save current stack pointer 
     
 
     ScopeInfo storage;
     storage.parent = storageScope;
-    storage.frameBase = 0;
 
     // allocate stack space for parameters and local variables
     size_t totalSize = allocStackSpaceMIR((MIR_Scope*) foo, &storage);
     
     if (totalSize > 0)
-        buffer << "    addi sp, sp, -" << totalSize << "\n"; 
+        prologue << "    addi sp, sp, -" << totalSize << "\n"; 
     
 
     
@@ -395,7 +394,7 @@ void CodeGenerator :: generateFunctionMIR(MIR_Function *foo, MIR_Scope* global, 
         MIR_Datatype typeOfParam = foo->parameters[paramNo].type;
         size_t sizeOfParam = typeOfParam.size;
         
-        StorageInfo sInfo = storage.storage.getInfo(foo->parameters[paramNo].identifier).info;
+        StorageInfo sInfo = storage.symbols.getInfo(foo->parameters[paramNo].identifier).info;
 
         // integer types
         if (isIntegerType(typeOfParam)){
@@ -409,8 +408,8 @@ void CodeGenerator :: generateFunctionMIR(MIR_Function *foo, MIR_Scope* global, 
                 const char* argRegName = RV64_RegisterName[regAlloc.resolveRegister(argRegister)];
                 
                 
-                int64_t offset = sInfo.memAddress - storage.frameBase;
-                buffer << "    s" << iInsIntegerSuffix(sizeOfParam) << " " << argRegName << ", -" << offset << "(fp)\n"; 
+                int64_t offset = stackAlloc.offsetFromBase(sInfo.memAddress);
+                buffer << "    s" << iInsIntegerSuffix(sizeOfParam) << " " << argRegName << ", " << offset << "(fp)\n"; 
                 regAlloc.freeRegister(argRegister);
                 occupiedXA++;
                 
@@ -432,8 +431,8 @@ void CodeGenerator :: generateFunctionMIR(MIR_Function *foo, MIR_Scope* global, 
                 
                 const char* argRegName = RV64_RegisterName[regAlloc.resolveRegister(argRegister)];
                 
-                int64_t offset = sInfo.memAddress - storage.frameBase;
-                buffer << "    fs" << iInsIntegerSuffix(sizeOfParam) << " " << argRegName << ", -" << offset << "(fp)\n";
+                int64_t offset = stackAlloc.offsetFromBase(sInfo.memAddress);
+                buffer << "    fs" << iInsIntegerSuffix(sizeOfParam) << " " << argRegName << ", " << offset << "(fp)\n";
                 regAlloc.freeRegister(argRegister);
                 occupiedFA++;
             }
@@ -452,21 +451,46 @@ void CodeGenerator :: generateFunctionMIR(MIR_Function *foo, MIR_Scope* global, 
         generatePrimitiveMIR(prim, (MIR_Scope*) foo, &storage);
     }
 
+    
+    
+
+
+
+
+    RegisterState isUsedX = regAlloc.getRegisterUsage(RegisterType(REG_CALLEE_SAVED));
+    RegisterState isUsedF = regAlloc.getRegisterUsage(RegisterType(REG_CALLEE_SAVED | REG_FLOATING_POINT));
+    RegisterState state = {0};
+
+    for (int i=0; i<REG_COUNT; i++){
+        state.reg[i] = isUsedX.reg[i].occupied? isUsedX.reg[i] : isUsedF.reg[i];
+    }
+
+    // save the callee saved registers
+    saveRegisters(state, prologue, &storage);
+
+    
+    
+    // function epilogue
+    std::stringstream epilogue;
+    epilogue << "."<<foo->funcName << "_ep:\n";
+
+    // restore the callee saved registers
+    restoreRegisters(state, epilogue, &storage);
+
     // deallocate stack space
     stackAlloc.deallocate(totalSize);
     if (totalSize > 0)
-        buffer << "    addi sp, sp, " << totalSize << "\n"; 
+        epilogue << "    addi sp, sp, " << totalSize << "\n"; 
+
     
+    epilogue << "    mv sp, fp\n";       // restore stack pointer
+    epilogue << "    ld fp, 0(sp)\n";    // restore previous frame pointer
+    epilogue << "    ld ra, 8(sp)\n";    // restore return address
+    epilogue << "    addi sp, sp, 16\n"; // deallocate stack space
+    epilogue << "    ret\n\n\n";             // return from function
     
 
-
-    // function epilogue
-    buffer << "."<<foo->funcName << "_ep:\n";
-    buffer << "    mv sp, fp\n";       // restore stack pointer
-    buffer << "    ld fp, 0(sp)\n";    // restore previous frame pointer
-    buffer << "    ld ra, 8(sp)\n";    // restore return address
-    buffer << "    addi sp, sp, 16\n"; // deallocate stack space
-    buffer << "    ret\n\n\n";             // return from function
+    buffer.str(prologue.str() + buffer.str() + epilogue.str());
 }
 
 
@@ -478,12 +502,13 @@ void CodeGenerator :: generateAssemblyFromMIR(MIR *mir){
     this->mir = mir;
 
     ScopeInfo s;
-    s.frameBase = 0;
     s.parent = 0;
     
     textSection << "    .section     .text\n";
 
     for (auto &pair : mir->functions.entries){
+        regAlloc = RegisterAllocator{0};
+        stackAlloc = StackAllocator{0};
         generateFunctionMIR(&pair.second.info, mir->global, &s);
 
         MIR_Function *foo = &pair.second.info;
@@ -597,7 +622,7 @@ void CodeGenerator::generateExprMIR(MIR_Expr *current, Register dest, MIR_Scope*
                 ScopeInfo *current = storageScope;
 
                 while (current){
-                    if (current->storage.existKey(symbol)){
+                    if (current->symbols.existKey(symbol)){
                         return current;
                     }
                     current = current->parent;
@@ -609,8 +634,8 @@ void CodeGenerator::generateExprMIR(MIR_Expr *current, Register dest, MIR_Scope*
             // resolve the variable into an address
             ScopeInfo *storage = getAddressScope(of->leaf.val);
             assert(storage != NULL);
-            StorageInfo sInfo = storage->storage.getInfo(of->leaf.val).info;
-            current->addressOf.offset = storage->frameBase - sInfo.memAddress;
+            StorageInfo sInfo = storage->symbols.getInfo(of->leaf.val).info;
+            current->addressOf.offset = stackAlloc.offsetFromBase(sInfo.memAddress);
             break;
         }
 
@@ -691,7 +716,7 @@ void CodeGenerator::generateExprMIR(MIR_Expr *current, Register dest, MIR_Scope*
         }
         
         // else, load the address into a temporary register first 
-        Register temp = regAlloc.allocVRegister(REG_TEMPORARY);
+        Register temp = regAlloc.allocVRegister(REG_SAVED);
         
         // get address of lvalue
         generateExprMIR(current->store.left, temp, scope, storageScope);    
@@ -710,7 +735,7 @@ void CodeGenerator::generateExprMIR(MIR_Expr *current, Register dest, MIR_Scope*
         // Adds a given index to a given address, to get the correct offset.
 
         
-        Register temp = regAlloc.allocVRegister(REG_TEMPORARY);
+        Register temp = regAlloc.allocVRegister(REG_SAVED);
         
         // load the given base address into register
         generateExprMIR(current->index.base, dest, scope, storageScope);
@@ -733,7 +758,7 @@ void CodeGenerator::generateExprMIR(MIR_Expr *current, Register dest, MIR_Scope*
         // multiply the index with the size to get correct offset 
         if (current->index.size > 1){
             // index x size
-            Register indexSize = regAlloc.allocVRegister(REG_TEMPORARY);
+            Register indexSize = regAlloc.allocVRegister(REG_SAVED);
             const char *indexName = RV64_RegisterName[regAlloc.resolveRegister(indexSize)];
             
             buffer << "    li " <<  indexName << ", " << current->index.size << "\n";
@@ -762,9 +787,9 @@ void CodeGenerator::generateExprMIR(MIR_Expr *current, Register dest, MIR_Scope*
         // check if the destination register can be used for one of the operands
         // if can be, then left uses the dest register
         // else, left allocates a temporary register of the opposite register file
-        left = canDestBeUsed? dest : regAlloc.allocVRegister(RegisterType(((dest.type & REG_FLOATING_POINT) ^ REG_FLOATING_POINT) | REG_TEMPORARY));
+        left = canDestBeUsed? dest : regAlloc.allocVRegister(RegisterType(((dest.type & REG_FLOATING_POINT) ^ REG_FLOATING_POINT) | REG_SAVED));
         // right allocates of the same type as left 
-        right = regAlloc.allocVRegister(RegisterType((left.type & REG_FLOATING_POINT) | REG_TEMPORARY));
+        right = regAlloc.allocVRegister(RegisterType((left.type & REG_FLOATING_POINT) | REG_SAVED));
 
 
         int leftDepth = getDepth(current->binary.left);
@@ -949,7 +974,7 @@ void CodeGenerator::generateExprMIR(MIR_Expr *current, Register dest, MIR_Scope*
         Register exprIn = dest;
         // same register cannot be used, then allocate another register of the other type 
         if (!canSameRegBeUsed){
-            exprIn = regAlloc.allocVRegister(RegisterType(((dest.type ^ REG_FLOATING_POINT) & REG_FLOATING_POINT) | REG_TEMPORARY));
+            exprIn = regAlloc.allocVRegister(RegisterType(((dest.type ^ REG_FLOATING_POINT) & REG_FLOATING_POINT) | REG_SAVED));
         }
 
         // generate the expr to be cast
@@ -1078,7 +1103,7 @@ void CodeGenerator::generateExprMIR(MIR_Expr *current, Register dest, MIR_Scope*
                 break;
             }
             case MIR_Expr::UnaryOp::EXPR_FNEGATE:{
-                Register fpZero = regAlloc.allocVRegister(RegisterType(REG_FLOATING_POINT | REG_TEMPORARY));
+                Register fpZero = regAlloc.allocVRegister(RegisterType(REG_FLOATING_POINT | REG_SAVED));
                 const char* fpZeroName = RV64_RegisterName[regAlloc.resolveRegister(fpZero)];
                 
 
@@ -1116,6 +1141,7 @@ void CodeGenerator::generateExprMIR(MIR_Expr *current, Register dest, MIR_Scope*
         // the number of caller saved registers in use
         int count = 0;
         for (int i = 0; i<RV64_Register::REG_COUNT; i++){
+            // dont get state of destination register as it will be overwritten anyway, and should not be restored as well
             if (i == destReg){
                 continue;
             }
@@ -1124,30 +1150,8 @@ void CodeGenerator::generateExprMIR(MIR_Expr *current, Register dest, MIR_Scope*
             state.reg[i] = (Xstate.reg[i].occupied)? Xstate.reg[i] : Fstate.reg[i];
         }
 
-        auto saveRegisters = [&] (RegisterState rState) {
-            // save the caller saved registers used in memory
-            int n = count;
-            int allocSize = count * XLEN;
-            if (count > 0){
-                buffer << "    addi sp, sp, -" << allocSize << "\n";
-
-                for (int i = 0; i<RV64_Register::REG_COUNT; i++){
-                    if (i == destReg){
-                        continue;
-                    }
-                    if(rState.reg[i].occupied){
-                        bool isFloatReg = (RV64Registers[i].type & REG_FLOATING_POINT) != 0;
-                        const char* prefix = isFloatReg? "f": "";
-                        
-                        buffer << "    " << prefix << "s"<< iInsIntegerSuffix(XLEN) << " " << RV64_RegisterName[i] << ", "<< (n-1)*XLEN << "(sp) \n";
-                        n--;
-                        regAlloc.freeRegister(Register{.id = size_t(i)});
-                    }
-                }
-            }
-
-        };
-        saveRegisters(state);
+        // save the caller saved registers
+        saveRegisters(state, buffer, storageScope);
 
 
         // follows the LP64D ABI
@@ -1255,27 +1259,8 @@ void CodeGenerator::generateExprMIR(MIR_Expr *current, Register dest, MIR_Scope*
             regAlloc.freeRegister(returnValIn);
         }
         
-        // load back register values after function call
-        auto restoreRegisters = [&] (RegisterState rState){
-            int n = count;
-            int allocSize = XLEN * count;
-            if (count > 0){
-                for (int i = 0; i<RV64_Register::REG_COUNT; i++){
-                    if (i == destReg){
-                        continue;
-                    }
-                    if(rState.reg[i].occupied){
-                        bool isFloatReg = (RV64Registers[i].type & REG_FLOATING_POINT) != 0;
-                        const char* prefix = isFloatReg? "f": "";
-                        // only restore the registers except the destination registers since the destination register now contains the return value
-                        buffer << "    " << prefix << "l"<< iInsIntegerSuffix(XLEN) << " " << RV64_RegisterName[i] << ", "<< (n-1)*XLEN << "(sp) \n";
-                        n--;
-                    }
-                }
-                buffer << "    addi sp, sp, " << allocSize << "\n";
-            }
-        };
-        restoreRegisters(state);
+        // restore the saved registers
+        restoreRegisters(state, buffer, storageScope);
         regAlloc.setRegisterState(RegisterType::REG_CALLER_SAVED, state);
 
         break;
@@ -1285,6 +1270,83 @@ void CodeGenerator::generateExprMIR(MIR_Expr *current, Register dest, MIR_Scope*
         break;
     }
 }
+
+
+void CodeGenerator :: saveRegisters(RegisterState &rState, std::stringstream &buffer, ScopeInfo* scope){
+    // save the caller saved registers used in memory
+    int count = 0;
+    for (int i = 0; i<RV64_Register::REG_COUNT; i++){
+        // if (i == destReg){
+        //     continue;
+        // }
+        count += (rState.reg[i].occupied)? 1 : 0;
+    }
+
+
+    int n = count;
+    int allocSize = count * XLEN;
+    if (count > 0){
+        buffer << "    addi sp, sp, -" << allocSize << "\n";
+
+        for (int i = 0; i<RV64_Register::REG_COUNT; i++){
+            // if (i == destReg){
+            //     continue;
+            // }
+            if(rState.reg[i].occupied){
+                MemBlock memAddress = stackAlloc.allocate(XLEN);
+                int64_t offset = stackAlloc.offsetFromBase(memAddress); 
+
+                bool isFloatReg = (RV64Registers[i].type & REG_FLOATING_POINT) != 0;
+                const char* prefix = isFloatReg? "f": "";
+                
+                buffer << "    " << prefix << "s"<< iInsIntegerSuffix(XLEN) << " " << RV64_RegisterName[i] << ", "<< offset << "(fp) \n";
+                // buffer << "    " << prefix << "s"<< iInsIntegerSuffix(XLEN) << " " << RV64_RegisterName[i] << ", "<< (n-1)*XLEN << "(sp) \n";
+                n--;
+                regAlloc.freeRegister(Register{.id = size_t(i)});
+            }
+        }
+    }
+}
+
+void CodeGenerator :: restoreRegisters(RegisterState &rState, std::stringstream &buffer, ScopeInfo* scope){
+    int count = 0;
+    for (int i = 0; i<RV64_Register::REG_COUNT; i++){
+        // if (i == destReg){
+        //     continue;
+        // }
+        count += (rState.reg[i].occupied)? 1 : 0;
+    }
+    
+    
+    int n = count;
+    int allocSize = XLEN * count;
+    if (count > 0){
+        for (int i = 0; i<RV64_Register::REG_COUNT; i++){
+            int regIndex = RV64_Register::REG_COUNT - i - 1;
+            // if (i == destReg){
+            //     continue;
+            // }
+
+
+            if(rState.reg[regIndex].occupied){
+                MemBlock memAddress = stackAlloc.deallocate(XLEN);
+                int64_t offset = stackAlloc.offsetFromBase(memAddress); 
+
+                bool isFloatReg = (RV64Registers[regIndex].type & REG_FLOATING_POINT) != 0;
+                const char* prefix = isFloatReg? "f": "";
+                
+                buffer << "    " << prefix << "l"<< iInsIntegerSuffix(XLEN) << " " << RV64_RegisterName[regIndex] << ", "<< offset << "(fp) \n";
+                // buffer << "    " << prefix << "l"<< iInsIntegerSuffix(XLEN) << " " << RV64_RegisterName[i] << ", "<< (n-1)*XLEN << "(sp) \n";
+                n--;
+            }
+        }
+        buffer << "    addi sp, sp, " << allocSize << "\n";
+    }
+}
+
+
+
+
 
 /*
     Write assembly out to a given file.

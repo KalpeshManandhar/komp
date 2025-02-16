@@ -66,7 +66,7 @@
 - Fully support allocation for all registers - somewhat done?
 - Proper support for function calls
     - Support for struct arguments - remaining
-    - Callee saved registers - remaining
+    - Callee saved registers - done
     - Caller saved registers - done
     - Can be made more efficient through better register assignment
 - Codegen for string literals - done
