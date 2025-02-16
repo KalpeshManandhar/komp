@@ -41,10 +41,10 @@ struct CodeGenerator{
     
     void generateFunctionMIR(MIR_Function *foo, MIR_Scope* global, ScopeInfo *storageScope);
     void generatePrimitiveMIR(MIR_Primitive* p, MIR_Scope* scope , ScopeInfo *storageScope);
-    void generateExprMIR(MIR_Expr *current, Register dest, MIR_Scope* scope, ScopeInfo *storageScope);
+    void generateExprMIR(MIR_Expr *current, Register dest, ScopeInfo *storageScope);
     size_t allocStackSpaceMIR(MIR_Scope* scope, ScopeInfo* storage);
-    void saveRegisters(RegisterState &rstate, std::stringstream &buffer, ScopeInfo* scope);
-    void restoreRegisters(RegisterState &rstate, std::stringstream &buffer, ScopeInfo* scope);
+    void saveRegisters(RegisterState &rstate, std::stringstream &buffer);
+    void restoreRegisters(RegisterState &rstate, std::stringstream &buffer);
 
 
     // output

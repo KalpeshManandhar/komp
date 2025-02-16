@@ -64,7 +64,9 @@ static const char* fInsIntegerSuffix(size_t size){
 
 
 
-// get depth of an expanded expr node
+/*
+    Get depth of an MIR_Expr node
+*/ 
 static int getDepth(const MIR_Expr *expr){
     if (!expr){
         return 0;
@@ -124,6 +126,9 @@ static int getDepth(const MIR_Expr *expr){
 
 
 
+/*
+    Assign memory locations to each variable and return the space required.
+*/
 size_t CodeGenerator :: allocStackSpaceMIR(MIR_Scope* scope, ScopeInfo* storage){
     size_t totalSize = 0;
     
@@ -175,7 +180,9 @@ size_t CodeGenerator :: allocStackSpaceMIR(MIR_Scope* scope, ScopeInfo* storage)
 
 
 
-
+/*
+    Generate assembly for an MIR_Primitive node.
+*/
 void CodeGenerator :: generatePrimitiveMIR(MIR_Primitive* p, MIR_Scope* scope, ScopeInfo *storageScope){
     if (!p){
         return;
@@ -191,7 +198,7 @@ void CodeGenerator :: generatePrimitiveMIR(MIR_Primitive* p, MIR_Scope* scope, S
                 if (inode->condition){
                     Register condition = regAlloc.allocVRegister(REG_SAVED);
                     // compute the condition
-                    generateExprMIR(inode->condition, condition, scope, storageScope);
+                    generateExprMIR(inode->condition, condition, storageScope);
                     
                 
                     const char *regName = RV64_RegisterName[regAlloc.resolveRegister(condition)];
@@ -239,7 +246,7 @@ void CodeGenerator :: generatePrimitiveMIR(MIR_Primitive* p, MIR_Scope* scope, S
             buffer << ".while_L" << startLabel << ":\n";
             
             // check condition
-            generateExprMIR(lnode->condition, condition, scope, storageScope);
+            generateExprMIR(lnode->condition, condition, storageScope);
 
             const char *regName = RV64_RegisterName[regAlloc.resolveRegister(condition)];
                     
@@ -278,14 +285,14 @@ void CodeGenerator :: generatePrimitiveMIR(MIR_Primitive* p, MIR_Scope* scope, S
                 assert(foo.returnType.size <= XLEN && "Return values are only supported in one register.");
 
                 Register a0 = regAlloc.allocRegister(REG_A0);
-                generateExprMIR(rnode->returnValue, a0, scope, storageScope);
+                generateExprMIR(rnode->returnValue, a0, storageScope);
                 regAlloc.freeRegister(a0);
             }
             else if (isFloatType(foo.returnType)){
                 assert(foo.returnType.size <= FLEN && "Return values are only supported in one register.");
 
                 Register fa0 = regAlloc.allocRegister(REG_FA0);
-                generateExprMIR(rnode->returnValue, fa0, scope, storageScope);
+                generateExprMIR(rnode->returnValue, fa0, storageScope);
                 
                 regAlloc.freeRegister(fa0);
             }
@@ -308,7 +315,7 @@ void CodeGenerator :: generatePrimitiveMIR(MIR_Primitive* p, MIR_Scope* scope, S
 
             Register rtmp = regAlloc.allocVRegister(RegisterType(REG_SAVED | mask));
 
-            generateExprMIR(enode, rtmp, scope, storageScope);
+            generateExprMIR(enode, rtmp, storageScope);
             
             regAlloc.freeRegister(rtmp);
 
@@ -338,7 +345,7 @@ void CodeGenerator :: generatePrimitiveMIR(MIR_Primitive* p, MIR_Scope* scope, S
 
             break;
         }
-    
+
     default:
         assert(false && "Some thing unaccounted for.");
         break;
@@ -360,22 +367,23 @@ void CodeGenerator :: generateFunctionMIR(MIR_Function *foo, MIR_Scope* global, 
     if (foo->isExtern){
         return;
     }
-
+    
+    // function prologue
     std::stringstream prologue;
-
     prologue << "    .globl " << foo->funcName << "\n";
     prologue << foo->funcName << ":\n";
-    // function prologue
+    
+
     prologue << "    addi sp, sp, -16\n"; // allocate stack space for return address and previous frame pointer.
     prologue << "    sd ra, 8(sp)\n";     // save return address
     prologue << "    sd fp, 0(sp)\n";     // save prev frame pointer
     prologue << "    mv fp, sp\n";        // save current stack pointer 
     
-
+    
+    // allocate stack space for parameters and local variables
     ScopeInfo storage;
     storage.parent = storageScope;
 
-    // allocate stack space for parameters and local variables
     size_t totalSize = allocStackSpaceMIR((MIR_Scope*) foo, &storage);
     
     if (totalSize > 0)
@@ -453,10 +461,7 @@ void CodeGenerator :: generateFunctionMIR(MIR_Function *foo, MIR_Scope* global, 
 
     
     
-
-
-
-
+    // save the callee saved registers which were actually used by the function
     RegisterState isUsedX = regAlloc.getRegisterUsage(RegisterType(REG_CALLEE_SAVED));
     RegisterState isUsedF = regAlloc.getRegisterUsage(RegisterType(REG_CALLEE_SAVED | REG_FLOATING_POINT));
     RegisterState state = {0};
@@ -464,9 +469,7 @@ void CodeGenerator :: generateFunctionMIR(MIR_Function *foo, MIR_Scope* global, 
     for (int i=0; i<REG_COUNT; i++){
         state.reg[i] = isUsedX.reg[i].occupied? isUsedX.reg[i] : isUsedF.reg[i];
     }
-
-    // save the callee saved registers
-    saveRegisters(state, prologue, &storage);
+    saveRegisters(state, prologue);
 
     
     
@@ -475,7 +478,7 @@ void CodeGenerator :: generateFunctionMIR(MIR_Function *foo, MIR_Scope* global, 
     epilogue << "."<<foo->funcName << "_ep:\n";
 
     // restore the callee saved registers
-    restoreRegisters(state, epilogue, &storage);
+    restoreRegisters(state, epilogue);
 
     // deallocate stack space
     stackAlloc.deallocate(totalSize);
@@ -497,7 +500,9 @@ void CodeGenerator :: generateFunctionMIR(MIR_Function *foo, MIR_Scope* global, 
 
 
 
-
+/*
+    Generate assembly from MIR. Self explanatory really.
+*/
 void CodeGenerator :: generateAssemblyFromMIR(MIR *mir){
     this->mir = mir;
 
@@ -505,25 +510,26 @@ void CodeGenerator :: generateAssemblyFromMIR(MIR *mir){
     s.parent = 0;
     
     textSection << "    .section     .text\n";
-
+    
+    // generate functions
     for (auto &pair : mir->functions.entries){
+        // register allocation and stack allocation for each function is independent
+        // register allocation is independent as who-calls-who isn't tracked for global allocation.
+        // stack allocation is independent as all allocations are done with respect to the stack base which is always at 0.
         regAlloc = RegisterAllocator{0};
         stackAlloc = StackAllocator{0};
+
         generateFunctionMIR(&pair.second.info, mir->global, &s);
 
-        MIR_Function *foo = &pair.second.info;
-
-        // Appending the function assembly to textSection
         textSection << buffer.str();
         buffer.str("");
         buffer.clear();
-            
     }
 
     rodataSection << "    .section     .rodata\n";
     dataSection << "    .section     .data\n";
     
-
+    // write out all the symbols in .rodata section
     for (auto &rodataSymbol : rodata.entries){
         SymbolInfo symbol = rodataSymbol.second.info;
         
@@ -567,7 +573,7 @@ void CodeGenerator :: generateAssemblyFromMIR(MIR *mir){
     dest    : The register to put the result in.    
 
 */
-void CodeGenerator::generateExprMIR(MIR_Expr *current, Register dest, MIR_Scope* scope, ScopeInfo *storageScope){
+void CodeGenerator::generateExprMIR(MIR_Expr *current, Register dest, ScopeInfo *storageScope){
     switch (current->tag)
     {
     case MIR_Expr::EXPR_LOAD_IMMEDIATE:{
@@ -647,7 +653,7 @@ void CodeGenerator::generateExprMIR(MIR_Expr *current, Register dest, MIR_Scope*
         MIR_Expr *base = current->loadAddress.base;
         
         // resolve variable into address/load address into regsister
-        generateExprMIR(base, dest, scope, storageScope);
+        generateExprMIR(base, dest, storageScope);
         
         const char *destName = RV64_RegisterName[regAlloc.resolveRegister(dest)];
         
@@ -669,7 +675,7 @@ void CodeGenerator::generateExprMIR(MIR_Expr *current, Register dest, MIR_Scope*
         // Load the value at given address + offset and put it into the destination register.
 
         // load/resolve the address into the register first
-        generateExprMIR(current->load.base, dest, scope, storageScope); 
+        generateExprMIR(current->load.base, dest, storageScope); 
         
         const char *destName = RV64_RegisterName[regAlloc.resolveRegister(dest)];
         bool isFloatExpr = current->load.type == MIR_Expr::LoadType::EXPR_FLOAD;
@@ -696,7 +702,7 @@ void CodeGenerator::generateExprMIR(MIR_Expr *current, Register dest, MIR_Scope*
         // Store the given rvalue in the address of the lvalue, and also load it into the destination register.
         
         // Load the rvalue into the destination register
-        generateExprMIR(current->store.right, dest, scope, storageScope);
+        generateExprMIR(current->store.right, dest, storageScope);
         
 
         const char *destName = RV64_RegisterName[regAlloc.resolveRegister(dest)];
@@ -707,7 +713,7 @@ void CodeGenerator::generateExprMIR(MIR_Expr *current, Register dest, MIR_Scope*
         // if the lvalue has a direct address, use that directly instead of loading it to a register first
         if (current->store.left->tag == MIR_Expr::EXPR_ADDRESSOF){
             // resolve the base adddress
-            generateExprMIR(current->store.left, dest, scope, storageScope);
+            generateExprMIR(current->store.left, dest, storageScope);
             MIR_Expr *base = current->store.left;
             
             // store the value at (address + offset)
@@ -719,7 +725,7 @@ void CodeGenerator::generateExprMIR(MIR_Expr *current, Register dest, MIR_Scope*
         Register temp = regAlloc.allocVRegister(REG_SAVED);
         
         // get address of lvalue
-        generateExprMIR(current->store.left, temp, scope, storageScope);    
+        generateExprMIR(current->store.left, temp, storageScope);    
         
 
         const char *tempName = RV64_RegisterName[regAlloc.resolveRegister(temp)];
@@ -738,7 +744,7 @@ void CodeGenerator::generateExprMIR(MIR_Expr *current, Register dest, MIR_Scope*
         Register temp = regAlloc.allocVRegister(REG_SAVED);
         
         // load the given base address into register
-        generateExprMIR(current->index.base, dest, scope, storageScope);
+        generateExprMIR(current->index.base, dest, storageScope);
 
 
         const char *destName = RV64_RegisterName[regAlloc.resolveRegister(dest)];
@@ -750,7 +756,7 @@ void CodeGenerator::generateExprMIR(MIR_Expr *current, Register dest, MIR_Scope*
 
 
         // calculate index and load it into register
-        generateExprMIR(current->index.index, temp, scope, storageScope);
+        generateExprMIR(current->index.index, temp, storageScope);
         
 
         const char *tempName = RV64_RegisterName[regAlloc.resolveRegister(temp)];
@@ -797,12 +803,12 @@ void CodeGenerator::generateExprMIR(MIR_Expr *current, Register dest, MIR_Scope*
 
         // Generate the one with the greatest depth first so that intermediate values need not be stored.
         if (leftDepth < rightDepth){
-            generateExprMIR(current->binary.right, right, scope, storageScope);
-            generateExprMIR(current->binary.left, left, scope, storageScope);
+            generateExprMIR(current->binary.right, right, storageScope);
+            generateExprMIR(current->binary.left, left, storageScope);
         }
         else{
-            generateExprMIR(current->binary.left, left, scope, storageScope);
-            generateExprMIR(current->binary.right, right, scope, storageScope);
+            generateExprMIR(current->binary.left, left, storageScope);
+            generateExprMIR(current->binary.right, right, storageScope);
         }
 
         const char *destName = RV64_RegisterName[regAlloc.resolveRegister(dest)];
@@ -846,7 +852,6 @@ void CodeGenerator::generateExprMIR(MIR_Expr *current, Register dest, MIR_Scope*
             }
             
 
-            // TODO: boolean values are considered to be 0 or 1, the cast would convert all other values into these
             case MIR_Expr::BinaryOp::EXPR_LOGICAL_AND:{
                 buffer << "    and " << destName << ", " << leftName << ", " << rightName << "\n";
                 break;
@@ -978,7 +983,7 @@ void CodeGenerator::generateExprMIR(MIR_Expr *current, Register dest, MIR_Scope*
         }
 
         // generate the expr to be cast
-        generateExprMIR(current->cast.expr, exprIn, scope, storageScope);
+        generateExprMIR(current->cast.expr, exprIn, storageScope);
 
         const char* exprInName = RV64_RegisterName[regAlloc.resolveRegister(exprIn)];
         const char* exprDestName = RV64_RegisterName[regAlloc.resolveRegister(dest)];
@@ -1015,10 +1020,10 @@ void CodeGenerator::generateExprMIR(MIR_Expr *current, Register dest, MIR_Scope*
                     
 
                 default:
+                // since sign is extended by default, there is no need for explicit asm for converting between integer types
                     break;
             }
 
-            // since sign is extended by default, there is no need for explicit asm for converting between integer types
             
             break;
         }
@@ -1093,7 +1098,7 @@ void CodeGenerator::generateExprMIR(MIR_Expr *current, Register dest, MIR_Scope*
     }
     case MIR_Expr::EXPR_UNARY:{
         // load the expr into register
-        generateExprMIR(current->unary.unarySubexpr, dest, scope, storageScope);
+        generateExprMIR(current->unary.unarySubexpr, dest, storageScope);
 
         const char *destName = RV64_RegisterName[regAlloc.resolveRegister(dest)];
         
@@ -1151,7 +1156,7 @@ void CodeGenerator::generateExprMIR(MIR_Expr *current, Register dest, MIR_Scope*
         }
 
         // save the caller saved registers
-        saveRegisters(state, buffer, storageScope);
+        saveRegisters(state, buffer);
 
 
         // follows the LP64D ABI
@@ -1176,7 +1181,7 @@ void CodeGenerator::generateExprMIR(MIR_Expr *current, Register dest, MIR_Scope*
                     assert(nRegistersRequired != 2 && "Multiple registers load isnt currently supported.");
                     
                     Register argRegister = regAlloc.allocRegister(RV64_Register(REG_A0 + occupiedXA));
-                    generateExprMIR(arg, argRegister, scope, storageScope);
+                    generateExprMIR(arg, argRegister, storageScope);
                     
                     argRegisters[occupiedXA + occupiedFA] = argRegister;
                     occupiedXA++;
@@ -1196,7 +1201,7 @@ void CodeGenerator::generateExprMIR(MIR_Expr *current, Register dest, MIR_Scope*
                     assert(nRegistersRequired != 2 && "Multiple registers load isnt currently supported.");
                     
                     Register argRegister = regAlloc.allocRegister(RV64_Register(REG_FA0 + occupiedFA));
-                    generateExprMIR(arg, argRegister, scope, storageScope);
+                    generateExprMIR(arg, argRegister, storageScope);
 
                     argRegisters[occupiedXA + occupiedFA] = argRegister;
                     occupiedFA++;
@@ -1260,7 +1265,7 @@ void CodeGenerator::generateExprMIR(MIR_Expr *current, Register dest, MIR_Scope*
         }
         
         // restore the saved registers
-        restoreRegisters(state, buffer, storageScope);
+        restoreRegisters(state, buffer);
         regAlloc.setRegisterState(RegisterType::REG_CALLER_SAVED, state);
 
         break;
@@ -1272,18 +1277,19 @@ void CodeGenerator::generateExprMIR(MIR_Expr *current, Register dest, MIR_Scope*
 }
 
 
-void CodeGenerator :: saveRegisters(RegisterState &rState, std::stringstream &buffer, ScopeInfo* scope){
+
+
+/*
+    Save all the occupied registers in rState to memory.
+*/
+void CodeGenerator :: saveRegisters(RegisterState &rState, std::stringstream &buffer){
     // save the caller saved registers used in memory
     int count = 0;
     for (int i = 0; i<RV64_Register::REG_COUNT; i++){
-        // if (i == destReg){
-        //     continue;
-        // }
         count += (rState.reg[i].occupied)? 1 : 0;
     }
 
 
-    int n = count;
     int allocSize = count * XLEN;
     if (count > 0){
         buffer << "    addi sp, sp, -" << allocSize << "\n";
@@ -1301,24 +1307,23 @@ void CodeGenerator :: saveRegisters(RegisterState &rState, std::stringstream &bu
                 
                 buffer << "    " << prefix << "s"<< iInsIntegerSuffix(XLEN) << " " << RV64_RegisterName[i] << ", "<< offset << "(fp) \n";
                 // buffer << "    " << prefix << "s"<< iInsIntegerSuffix(XLEN) << " " << RV64_RegisterName[i] << ", "<< (n-1)*XLEN << "(sp) \n";
-                n--;
                 regAlloc.freeRegister(Register{.id = size_t(i)});
             }
         }
     }
 }
 
-void CodeGenerator :: restoreRegisters(RegisterState &rState, std::stringstream &buffer, ScopeInfo* scope){
+
+/*
+    Restore all the occupied registers from memory back to their corresponding registers.
+*/
+void CodeGenerator :: restoreRegisters(RegisterState &rState, std::stringstream &buffer){
     int count = 0;
     for (int i = 0; i<RV64_Register::REG_COUNT; i++){
-        // if (i == destReg){
-        //     continue;
-        // }
         count += (rState.reg[i].occupied)? 1 : 0;
     }
     
     
-    int n = count;
     int allocSize = XLEN * count;
     if (count > 0){
         for (int i = 0; i<RV64_Register::REG_COUNT; i++){
@@ -1337,7 +1342,6 @@ void CodeGenerator :: restoreRegisters(RegisterState &rState, std::stringstream 
                 
                 buffer << "    " << prefix << "l"<< iInsIntegerSuffix(XLEN) << " " << RV64_RegisterName[regIndex] << ", "<< offset << "(fp) \n";
                 // buffer << "    " << prefix << "l"<< iInsIntegerSuffix(XLEN) << " " << RV64_RegisterName[i] << ", "<< (n-1)*XLEN << "(sp) \n";
-                n--;
             }
         }
         buffer << "    addi sp, sp, " << allocSize << "\n";
@@ -1355,9 +1359,9 @@ void CodeGenerator::writeAssemblyToFile(const char *filename){
     std::ofstream outFile(filename);
     if (outFile.is_open())
     {
-        outFile << rodataSection.str(); // Write the combined assembly to file
-        outFile << dataSection.str(); // Write the combined assembly to file
-        outFile << textSection.str(); // Write the combined assembly to file
+        outFile << rodataSection.str();
+        outFile << dataSection.str();
+        outFile << textSection.str();
         outFile.close();
         std::cout << "Assembly written to " << filename << std::endl;
     }
