@@ -4,6 +4,12 @@ Param(
     [string]$lib_name
 )
 
+# requires PS 7.0 or higher
+if ($PSVersionTable.PSVersion.Major -lt 7) {
+    Write-Host "Error: This script requires PowerShell 7.0 or later." -ForegroundColor Red
+    exit 1
+}
+
 
 # the riscv toolchain gcc executable in linux
 # $gcc_toolchain = "~/software/riscv"

@@ -7,17 +7,21 @@ A work in progress compiler for a subset of the C programming language, indended
 ### Compilation
 #### Tokenizer
 ```powershell
-clang++ -g --std=c++20 -I.\src\ .\src\tokenizer\tokenizer.cpp .\src\tokenizer\tokenizer_main.cpp -o tokenizer.exe
+clang++ -g --std=c++20 -I./src/ ./src/tokenizer/tokenizer.cpp ./src/tokenizer/tokenizer_main.cpp -o tokenizer.exe
 ```
 #### Parser
 ```powershell
-clang++ -g --std=c++20 -I.\src\ .\src\tokenizer\tokenizer.cpp .\src\parser\*.cpp .\src\arena\arena.cpp -o parser.exe
+clang++ -g --std=c++20 -I./src/ ./src/tokenizer/tokenizer.cpp ./src/parser/*.cpp ./src/arena/arena.cpp -o parser.exe
 ```
 #### Code Generator
 For the current code, after the middle end refactor.
 ```powershell
-clang++ -g --std=c++20 -I.\src\ .\src\tokenizer\tokenizer.cpp .\src\parser\parser.cpp .\src\arena\arena.cpp .\src\IR\middle-end.cpp .\src\codeGen\*.cpp -o codegen.exe
+clang++ -g --std=c++20 -I./src/ ./src/tokenizer/tokenizer.cpp ./src/parser/parser.cpp ./src/arena/arena.cpp ./src/IR/middle-end.cpp ./src/codeGen/*.cpp -o codegen.exe
 ```
+
+#### Standard library
+The standard library currently consists of functions wrapping some common syscalls to form a minimal stdlib experience (wow!). 
+You can compile the stdlib by running the `compile_stdlib.ps1`.
 
 ### Testing
 All tests are in **`./tests/`** with respective tests for each stage in the pipeline. 
@@ -29,16 +33,14 @@ run_tests.ps1 <executable to be tested> <specific test name if needed>
 
 For the code generator, the tests are run using the [**riscv-gnu-toolchain**](https://github.com/riscv-collab/riscv-gnu-toolchain) using the **riscv64-linux-elf-gcc** to assemble and link the generated assembly to an executable. The binary is the run on **qemu-riscv64** and the return value is checked.
 
-***NOTE:** The script assumes you are running on Windows, and uses wsl with Ubuntu to invoke the riscv64-gcc and qemu. If you are doing so as well, please make a file `./tests/codeGen/path_info.ps1` and add the paths for the given.*
+***NOTE:** The script assumes you are running on Windows, and uses wsl with Ubuntu to invoke the riscv64-gcc and qemu. If you are doing so as well, please make a file `./path_info.ps1` in the project directory and add the paths for the given.*
 ```powershell
 # the riscv toolchain gcc executable in linux
-$gcc_toolchain = 
-$riscv_gcc = 
-$qemu = 
-$sysroot = 
+$gnu_toolchain = "path/to/gnu-toolchain"
+$riscv_cpp = $gcc_toolchain + "/bin/riscv64-unknown-linux-gnu-cpp"
+$riscv_gcc = $gcc_toolchain + "/bin/riscv64-unknown-linux-gnu-gcc"
+$riscv_ld = $gcc_toolchain + "/bin/riscv64-unknown-linux-gnu-ld"
+$qemu = $gcc_toolchain + "/bin/qemu-riscv64"
+$sysroot = $gcc_toolchain + "/sysroot"
 ```
 
-
-### Standard library
-The standard library currently consists of functions wrapping some common syscalls to form a minimal stdlib experience (wow!). 
-You can compile the stdlib by running the `compile_stdlib.ps1`.

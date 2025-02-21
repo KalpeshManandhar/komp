@@ -4,6 +4,13 @@ Param(
     [string]$test_name
 )
 
+# requires PS 7.0 or higher for the isLinux/isWindows variables
+if ($PSVersionTable.PSVersion.Major -lt 7) {
+    Write-Host "Error: This script requires PowerShell 7.0 or later." -ForegroundColor Red
+    exit 1
+}
+
+
 
 $test_folder = ".\tests\stdlib"
 

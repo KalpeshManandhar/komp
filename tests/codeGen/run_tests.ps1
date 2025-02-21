@@ -4,6 +4,12 @@ Param(
     [string]$test_name
 )
 
+if ($PSVersionTable.PSVersion.Major -lt 7) {
+    Write-Host "Error: This script requires PowerShell 7.0 or later." -ForegroundColor Red
+    exit 1
+}
+
+
 $test_folder = ".\tests\codeGen"
 
 
@@ -42,17 +48,6 @@ function Convert-WindowsPathToLinux {
 
     return $linuxPath
 }
-
-function Check-IsRunningOnLinux {
-    param ()
-    if ($PSVersionTable.PSEdition -eq 'Core') {
-        if ($PSVersionTable.OS -match 'Linux') {
-            return $true
-        }
-    } 
-    return $false
-}
-
 
 $cwd = Get-Item -Path .
 
@@ -94,9 +89,6 @@ elseif ($isWindows){
         $found_values[$file.Name] = $LASTEXITCODE
     } 
 }
-
-Write-Host $cwdLinux
-
 
 
 foreach ($file in $files){    
