@@ -33,7 +33,7 @@ run_tests.ps1 <executable to be tested> <specific test name if needed>
 
 For the code generator, the tests are run using the [**riscv-gnu-toolchain**](https://github.com/riscv-collab/riscv-gnu-toolchain) using the **riscv64-linux-elf-gcc** to assemble and link the generated assembly to an executable. The binary is the run on **qemu-riscv64** and the return value is checked.
 
-***NOTE:** The script assumes you are running on Windows, and uses wsl with Ubuntu to invoke the riscv64-gcc and qemu. If you are doing so as well, please make a file `./path_info.ps1` in the project directory and add the paths for the given.*
+***NOTE:** All scripts that require some form of assembling/linking require path information of the gnu-toolchain, please make a file `./path_info.ps1` in the project directory and add the paths for the given.*
 ```powershell
 # the riscv toolchain gcc executable in linux
 $gnu_toolchain = "path/to/gnu-toolchain"
