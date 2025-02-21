@@ -104,7 +104,7 @@ public:
         }
 
         
-        fprintf(stdout, "[Parser] %llu errors generated.\n", errors);
+        fprintf(stdout, "[Parser] %" PRIu64 " errors generated.\n", errors);
         return (errors == 0)? ir : NULL;
     }
 };

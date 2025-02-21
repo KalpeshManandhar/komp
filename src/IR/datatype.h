@@ -3,6 +3,7 @@
 #include <tokenizer/token.h>
 #include <assert.h>
 #include <stdlib.h>
+#include <utils/utils.h>
 
 
 
@@ -122,7 +123,7 @@ namespace DataTypes{
 
 static void _recursePrintf(DataType d, char *scratchpad, int *sp){
     auto append = [&](const char *str){
-        strcpy_s(&scratchpad[*sp], 1024 - *sp, str);
+        strncpy(&scratchpad[*sp], str, min(1024 - *sp, strlen(str)));
         (*sp) += strlen(str);
     };
     
@@ -135,7 +136,7 @@ static void _recursePrintf(DataType d, char *scratchpad, int *sp){
         }
         case DataType::TAG_ARRAY :{
             append("[");
-            int n = sprintf(&scratchpad[*sp], "%llu", d.arrayCount);
+            int n = sprintf(&scratchpad[*sp], "%" PRIu64, d.arrayCount);
             (*sp) += n;
             append("]");
             _recursePrintf(*(d.ptrTo), scratchpad, sp);

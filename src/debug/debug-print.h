@@ -232,7 +232,7 @@ static void printMIRPrimitive(MIR_Primitive* p, int depth){
             std::cout << "op: " << UnaryTypeStrings[int(enode->unary.op)] << "\n";
             printTabs(depth + 1);
             std::cout << "expr: \n";
-            printMIRPrimitive(enode->unary.unarySubexpr, depth + 1);
+            printMIRPrimitive(enode->unary.expr, depth + 1);
             break;
         }
 
@@ -314,12 +314,12 @@ static void printParseTree(Node *const current, int depth = 0){
 
         switch (s->subtag){
         case Subexpr::SUBEXPR_BINARY_OP :{
-            printParseTree(s->left, depth + 1);
+            printParseTree(s->binary.left, depth + 1);
             
             printTabs(depth + 1);
-            std::cout<<"OP: " << s->op.string<< "\n";
+            std::cout<<"OP: " << s->binary.op.string<< "\n";
             
-            printParseTree(s->right, depth + 1);   
+            printParseTree(s->binary.right, depth + 1);   
             break;
         }
 
@@ -340,8 +340,8 @@ static void printParseTree(Node *const current, int depth = 0){
 
         case Subexpr::SUBEXPR_UNARY : {
             printTabs(depth + 1);
-            std::cout<<"UNARY OP: " <<s->unaryOp.string << "\n";
-            printParseTree(s->unarySubexpr, depth + 1);
+            std::cout<<"UNARY OP: " <<s->unary.op.string << "\n";
+            printParseTree(s->unary.expr, depth + 1);
             break;
         }
         case Subexpr::SUBEXPR_FUNCTION_CALL : {
@@ -358,8 +358,8 @@ static void printParseTree(Node *const current, int depth = 0){
         }
         case Subexpr::SUBEXPR_CAST : {
             printTabs(depth + 1);
-            std::cout<<"CAST TO: " <<dataTypePrintf(s->to) << "\n";
-            printParseTree(s->expr, depth + 1);
+            std::cout<<"CAST TO: " <<dataTypePrintf(s->cast.to) << "\n";
+            printParseTree(s->cast.expr, depth + 1);
             break;
         }
         case Subexpr::SUBEXPR_INITIALIZER_LIST : {

@@ -20,7 +20,7 @@ bool Arena::allocFromOS(size_t capacity){
 #if defined(_WIN32)
     map[currentMap].mem = VirtualAlloc(0, capacity, MEM_COMMIT|MEM_RESERVE, PAGE_READWRITE);
 #elif defined(__linux__)
-    map[currentMap].mem = mmap();
+    map[currentMap].mem = mmap(0, capacity, PROT_READ|PROT_WRITE, MAP_PRIVATE|MAP_ANONYMOUS, -1, 0);
 #endif
 
     if (!map[currentMap].mem){
@@ -44,7 +44,7 @@ void  Arena::destroy(){
 #if defined(_WIN32)
         VirtualFree(map[i].mem, map[i].capacity, MEM_RELEASE);
 #elif defined(__linux__)
-        munmap();
+        munmap(map[i].mem, map[i].capacity);
 #endif
 
 
@@ -58,7 +58,6 @@ void  Arena::destroy(){
 void  Arena::init(size_t capacity){
     mapAllocSize = alignUpPowerOf2(capacity, PAGE_SIZE);
     currentMap = 0;
-
     allocFromOS(mapAllocSize);
 }
 

@@ -2,6 +2,7 @@
 
 #include <string.h>
 #include <unordered_map>
+#include <vector>
 #include <tokenizer/str.h>
 
 

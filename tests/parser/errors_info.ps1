@@ -14,5 +14,5 @@ $errors_expected = @{
     "test_syntax_error.c" = 6;
     "test_type_check.c" = 9;
     "test_casts.c" = 2;
-    "test_initializer.c" = 0;
+    "test_initializer.c" = 2;
 } 

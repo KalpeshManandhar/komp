@@ -577,13 +577,13 @@ Token Parser::getSubexprToken(Subexpr *expr) {
             return expr->leaf; 
         
         case Subexpr::SUBEXPR_BINARY_OP:
-            return expr->op;
+            return expr->binary.op;
 
         case Subexpr::SUBEXPR_UNARY:
-            return expr->unaryOp;
+            return expr->unary.op;
 
         case Subexpr::SUBEXPR_CAST:
-            return getSubexprToken(expr->expr);
+            return getSubexprToken(expr->cast.expr);
 
         case Subexpr::SUBEXPR_FUNCTION_CALL:
             return expr->functionCall->funcName;
@@ -799,7 +799,7 @@ bool Parser::isValidLvalue(DataType leftOperandType, Subexpr *leftOperand){
     };
 
     if (leftOperand->subtag == Subexpr::SUBEXPR_BINARY_OP){
-        return matchv(leftOperand->op, lvalueOp, ARRAY_COUNT(lvalueOp));
+        return matchv(leftOperand->binary.op, lvalueOp, ARRAY_COUNT(lvalueOp));
     }
     
     // single variable identifier
@@ -831,17 +831,17 @@ DataType Parser::checkSubexprType(Subexpr *expr, StatementBlock *scope){
         switch (expr->subtag){
         
         case Subexpr::SUBEXPR_CAST: {
-            DataType from = checkSubexprType(expr->expr, scope);
+            DataType from = checkSubexprType(expr->cast.expr, scope);
             
-            if (!canBeConverted(expr->expr, from, expr->to, scope)){
-                logErrorMessage(getSubexprToken(expr->expr), "Cannot convert expression of type \"%s\" to type \"%s\".", 
-                    dataTypePrintf(from), dataTypePrintf(expr->to)
+            if (!canBeConverted(expr->cast.expr, from, expr->cast.to, scope)){
+                logErrorMessage(getSubexprToken(expr->cast.expr), "Cannot convert expression of type \"%s\" to type \"%s\".", 
+                    dataTypePrintf(from), dataTypePrintf(expr->cast.to)
                 );
                 errors++;
                 return DataTypes::Error;
             }
 
-            return expr->to;
+            return expr->cast.to;
         }
 
         case Subexpr::SUBEXPR_INITIALIZER_LIST: {
@@ -859,37 +859,37 @@ DataType Parser::checkSubexprType(Subexpr *expr, StatementBlock *scope){
 
         case Subexpr::SUBEXPR_BINARY_OP:{
             
-            DataType left = checkSubexprType(expr->left, scope);
+            DataType left = checkSubexprType(expr->binary.left, scope);
 
             // okay this is a pain in the ass cause the right operand (member name) will not have a type from the identifier itself
             // that member name should not be checked for declaration by itself. 
             // so a valid memberName right operand will require to not be checked and hence, only left operand is checked at first for struct accesses 
             
             // struct accesses: struct.member and struct_ptr->member
-            if (matchv(expr->op, STRUCT_ACCESS_OP, ARRAY_COUNT(STRUCT_ACCESS_OP))){
+            if (matchv(expr->binary.op, STRUCT_ACCESS_OP, ARRAY_COUNT(STRUCT_ACCESS_OP))){
                 if (left.tag == DataType::TAG_ERROR){
                     return DataTypes::Error;
                 }
                 
                 // left must be of type struct
                 if (left.getBaseType().tag != DataType::TAG_STRUCT){
-                    logErrorMessage(expr->op, "Not a valid struct.");
+                    logErrorMessage(expr->binary.op, "Not a valid struct.");
                     errors++;
                     return DataTypes::Error;
                 }
                 
                 // left must be struct if .
-                if (match(expr->op, TOKEN_DOT)){
+                if (match(expr->binary.op, TOKEN_DOT)){
                     if (left.indirectionLevel() != 0){
-                        logErrorMessage(expr->op, "Not a valid struct.");
+                        logErrorMessage(expr->binary.op, "Not a valid struct.");
                         errors++;
                         return DataTypes::Error;
                     }
                 }
                 // left must be struct * if ->
-                if (match(expr->op, TOKEN_ARROW)){
+                if (match(expr->binary.op, TOKEN_ARROW)){
                     if (left.indirectionLevel() != 1){
-                        logErrorMessage(expr->op, "Not a valid struct pointer.");
+                        logErrorMessage(expr->binary.op, "Not a valid struct pointer.");
                         errors++;
                         return DataTypes::Error;
                     }
@@ -899,24 +899,24 @@ DataType Parser::checkSubexprType(Subexpr *expr, StatementBlock *scope){
                 StatementBlock *structDeclScope = scope->findStructDeclaration(baseStructType.structName);
 
                 if (!structDeclScope){
-                    logErrorMessage(expr->op, "Not a valid struct.");
+                    logErrorMessage(expr->binary.op, "Not a valid struct.");
                     errors++;
                     return DataTypes::Error;
                 }
                 
                 // the right operand must be valid member name, ie, identifier
-                if (!(expr->right->subtag == Subexpr::SUBEXPR_LEAF && expr->right->leaf.type == TOKEN_IDENTIFIER)){
-                    logErrorMessage(expr->op, "Not a valid member identifier.");
+                if (!(expr->binary.right->subtag == Subexpr::SUBEXPR_LEAF && expr->binary.right->leaf.type == TOKEN_IDENTIFIER)){
+                    logErrorMessage(expr->binary.op, "Not a valid member identifier.");
                     errors++;
                     return DataTypes::Error;
                 }
                 
-                Splice memberName = expr->right->leaf.string;
+                Splice memberName = expr->binary.right->leaf.string;
                 Struct st = structDeclScope->structs.getInfo(baseStructType.structName.string).info;
                 
                 // the right identifier must be a valid member name in the struct
                 if (!st.members.existKey(memberName)){
-                    logErrorMessage(expr->right->leaf, "No \"%.*s\" member exists in struct \"%.*s\".",
+                    logErrorMessage(expr->binary.right->leaf, "No \"%.*s\" member exists in struct \"%.*s\".",
                                     splicePrintf(memberName), splicePrintf(st.structName.string));
                     errors++;
                     return DataTypes::Error;
@@ -930,7 +930,7 @@ DataType Parser::checkSubexprType(Subexpr *expr, StatementBlock *scope){
 
 
 
-            DataType right = checkSubexprType(expr->right, scope);
+            DataType right = checkSubexprType(expr->binary.right, scope);
             
             
             // if error, just return; dont log any errors
@@ -940,17 +940,17 @@ DataType Parser::checkSubexprType(Subexpr *expr, StatementBlock *scope){
             // void types cannot be used in operations
             if ((left.tag == DataType::TAG_VOID && left.indirectionLevel() == 0)
                 || right.tag == DataType::TAG_VOID && right.indirectionLevel() == 0){
-                logErrorMessage(expr->op, "Cannot perform operation \"%.*s\" with void type.", 
-                                    splicePrintf(expr->op.string));
+                logErrorMessage(expr->binary.op, "Cannot perform operation \"%.*s\" with void type.", 
+                                    splicePrintf(expr->binary.op.string));
                 errors++;
                 return DataTypes::Error;
             }
 
 
             // indexing only works with integers
-            if (match(expr->op, TOKEN_SQUARE_OPEN)){
+            if (match(expr->binary.op, TOKEN_SQUARE_OPEN)){
                 if (!match(right.type,TOKEN_INT)){
-                    logErrorMessage(expr->op, "Indexing only works with integer type.");
+                    logErrorMessage(expr->binary.op, "Indexing only works with integer type.");
                     errors++;
                     return DataTypes::Error;
                 }
@@ -960,11 +960,11 @@ DataType Parser::checkSubexprType(Subexpr *expr, StatementBlock *scope){
 
 
             // check for lvalue validity
-            else if (matchv(expr->op, ASSIGNMENT_OP, ARRAY_COUNT(ASSIGNMENT_OP))){
+            else if (matchv(expr->binary.op, ASSIGNMENT_OP, ARRAY_COUNT(ASSIGNMENT_OP))){
                 
 
-                if (!isValidLvalue(left, expr->left)){
-                    logErrorMessage(expr->op, "Not a valid lvalue.");
+                if (!isValidLvalue(left, expr->binary.left)){
+                    logErrorMessage(expr->binary.op, "Not a valid lvalue.");
                     errors++;
                 }
                 
@@ -988,8 +988,8 @@ DataType Parser::checkSubexprType(Subexpr *expr, StatementBlock *scope){
                     TOKEN_BITWISE_NOT,
                 };
 
-                if (matchv(expr->op, invalidOpForFloatingTypes, ARRAY_COUNT(invalidOpForFloatingTypes))){
-                    logErrorMessage(expr->op, "The operation \"%.*s\" cannot be used with floating point types.", splicePrintf(expr->op.string));
+                if (matchv(expr->binary.op, invalidOpForFloatingTypes, ARRAY_COUNT(invalidOpForFloatingTypes))){
+                    logErrorMessage(expr->binary.op, "The operation \"%.*s\" cannot be used with floating point types.", splicePrintf(expr->binary.op.string));
                     errors++;
                     return DataTypes::Error;
                 }
@@ -1005,30 +1005,30 @@ DataType Parser::checkSubexprType(Subexpr *expr, StatementBlock *scope){
                     // pointer arithmetic 
                     // (ptr + int)/(ptr - int)/(ptr += int)/(ptr -= int)
                     if (left.indirectionLevel() > 0 && (match(right.type, TOKEN_INT) || match(right.type, TOKEN_CHAR))){ 
-                        if (match(expr->op, TOKEN_PLUS) || match(expr->op, TOKEN_MINUS) 
-                        || match(expr->op, TOKEN_PLUS_ASSIGN) || match(expr->op, TOKEN_MINUS_ASSIGN) ){
+                        if (match(expr->binary.op, TOKEN_PLUS) || match(expr->binary.op, TOKEN_MINUS) 
+                        || match(expr->binary.op, TOKEN_PLUS_ASSIGN) || match(expr->binary.op, TOKEN_MINUS_ASSIGN) ){
                             return left;
                         }
-                        else if (match(expr->op, TOKEN_ASSIGNMENT)){
-                            logWarningMessage(expr->op, "Incompatible conversion from integer to pointer.");
+                        else if (match(expr->binary.op, TOKEN_ASSIGNMENT)){
+                            logWarningMessage(expr->binary.op, "Incompatible conversion from integer to pointer.");
                             return left;
                         }
                     }
                     // (int + ptr) 
                     else if (right.indirectionLevel() > 0 && (match(left.type, TOKEN_INT) || match(left.type, TOKEN_CHAR))){
-                        if (match(expr->op, TOKEN_PLUS)){
+                        if (match(expr->binary.op, TOKEN_PLUS)){
                             return right;
                         }
-                        if (match(expr->op, TOKEN_ASSIGNMENT)){
-                            logWarningMessage(expr->op, "Incompatible conversion from pointer to integer.");
+                        if (match(expr->binary.op, TOKEN_ASSIGNMENT)){
+                            logWarningMessage(expr->binary.op, "Incompatible conversion from pointer to integer.");
                             return right;
                         }
                     }
                     // both pointers of different level of indirection
                     // can only assign but log a warning
                     else if (left.indirectionLevel() > 0 && right.indirectionLevel() > 0){
-                        if (match(expr->op, TOKEN_ASSIGNMENT)){
-                            if (canBeConverted(expr->right, right, left, scope)){}
+                        if (match(expr->binary.op, TOKEN_ASSIGNMENT)){
+                            if (canBeConverted(expr->binary.right, right, left, scope)){}
 
                             return left;
                         }
@@ -1041,15 +1041,15 @@ DataType Parser::checkSubexprType(Subexpr *expr, StatementBlock *scope){
                     // both are pointers
                     if (left.indirectionLevel() > 0){
                         // can assign, but log error if of different types
-                        if (match(expr->op, TOKEN_ASSIGNMENT)){
-                            if (canBeConverted(expr->right, right, left, scope)){}
+                        if (match(expr->binary.op, TOKEN_ASSIGNMENT)){
+                            if (canBeConverted(expr->binary.right, right, left, scope)){}
                             
                             return left;
                         }
 
                         if (left == right){
                             // ptr difference: (ptr - ptr)
-                            if (match(expr->op, TOKEN_MINUS)){
+                            if (match(expr->binary.op, TOKEN_MINUS)){
                                 return DataTypes::Long_Long;
                             }
                         }
@@ -1059,7 +1059,7 @@ DataType Parser::checkSubexprType(Subexpr *expr, StatementBlock *scope){
                     // same type but not pointers
                     else if (left == right){
                         // assignment is defined for all operands of the same type  
-                        if (match(expr->op, TOKEN_ASSIGNMENT)){
+                        if (match(expr->binary.op, TOKEN_ASSIGNMENT)){
                             return left;
                         }
                         
@@ -1083,7 +1083,7 @@ DataType Parser::checkSubexprType(Subexpr *expr, StatementBlock *scope){
                     else if (left.tag == DataType::TAG_PRIMARY && right.tag == DataType::TAG_PRIMARY){
                         
                         // for valid assignment operations, the resultant type is the type of the left operand
-                        if (matchv(expr->op, ASSIGNMENT_OP, ARRAY_COUNT(ASSIGNMENT_OP))){
+                        if (matchv(expr->binary.op, ASSIGNMENT_OP, ARRAY_COUNT(ASSIGNMENT_OP))){
                             return left;
                         }
 
@@ -1163,8 +1163,8 @@ DataType Parser::checkSubexprType(Subexpr *expr, StatementBlock *scope){
                 }
 
                 if (didError){
-                    logErrorMessage(expr->op, "No \"%.*s\" operator defined for type \"%s\" and \"%s\".", 
-                                    splicePrintf(expr->op.string),
+                    logErrorMessage(expr->binary.op, "No \"%.*s\" operator defined for type \"%s\" and \"%s\".", 
+                                    splicePrintf(expr->binary.op.string),
                                     dataTypePrintf(left), dataTypePrintf(right));
                     errors++;
                     return DataTypes::Error;
@@ -1180,33 +1180,33 @@ DataType Parser::checkSubexprType(Subexpr *expr, StatementBlock *scope){
             
         case Subexpr::SUBEXPR_UNARY:{
 
-            DataType operand = checkSubexprType(expr->unarySubexpr, scope);
+            DataType operand = checkSubexprType(expr->unary.expr, scope);
             // *ptr
-            if (match(expr->unaryOp, TOKEN_STAR)){
+            if (match(expr->unary.op, TOKEN_STAR)){
                 if (operand.indirectionLevel() > 0){
                     return *(operand.ptrTo);
                 }
                 else{
-                    logErrorMessage(expr->unaryOp, "Cannot be dereferenced. Not a valid pointer.");
+                    logErrorMessage(expr->unary.op, "Cannot be dereferenced. Not a valid pointer.");
                     errors++;
                     return DataTypes::Error;
                 }
             }
             // &var
-            else if (match(expr->unaryOp, TOKEN_AMPERSAND)){
+            else if (match(expr->unary.op, TOKEN_AMPERSAND)){
                 // cannot get the address of an address
                 if (operand.tag == DataType::TAG_ADDRESS){
-                    logErrorMessage(expr->unaryOp, "Cannot get the address of an address literal.");
+                    logErrorMessage(expr->unary.op, "Cannot get the address of an address literal.");
                     errors++;
                     return DataTypes::Error;
                 }
                 
                 // cannot get the address of a literal
-                if (expr->unarySubexpr->subtag == Subexpr::SUBEXPR_LEAF && 
-                    matchv(expr->unarySubexpr->leaf, LITERAL_TOKEN_TYPES, ARRAY_COUNT(LITERAL_TOKEN_TYPES))){
+                if (expr->unary.expr->subtag == Subexpr::SUBEXPR_LEAF && 
+                    matchv(expr->unary.expr->leaf, LITERAL_TOKEN_TYPES, ARRAY_COUNT(LITERAL_TOKEN_TYPES))){
                     
-                    logErrorMessage(expr->unaryOp, "\"%.*s\" is not a valid identifier. Cannot get the address of a literal.",
-                                    splicePrintf(expr->unarySubexpr->leaf.string));
+                    logErrorMessage(expr->unary.op, "\"%.*s\" is not a valid identifier. Cannot get the address of a literal.",
+                                    splicePrintf(expr->unary.expr->leaf.string));
                     errors++;
                     return DataTypes::Error;
                 }
@@ -1214,17 +1214,17 @@ DataType Parser::checkSubexprType(Subexpr *expr, StatementBlock *scope){
                 // &val is valid only if &identifier, &struct.member, &array[i]
                 bool isValid = false;
                 
-                if (expr->unarySubexpr->subtag == Subexpr::SUBEXPR_LEAF && match(expr->unarySubexpr->leaf, TOKEN_IDENTIFIER)){
+                if (expr->unary.expr->subtag == Subexpr::SUBEXPR_LEAF && match(expr->unary.expr->leaf, TOKEN_IDENTIFIER)){
                     isValid = true;
                 }
-                else if (expr->unarySubexpr->subtag == Subexpr::SUBEXPR_BINARY_OP){
+                else if (expr->unary.expr->subtag == Subexpr::SUBEXPR_BINARY_OP){
                     TokenType VALID_OP[] = {
                         TOKEN_SQUARE_OPEN,
                         TOKEN_DOT,
                         TOKEN_ARROW,
                     };
                     
-                    isValid = isValid || matchv(expr->unarySubexpr->op, VALID_OP, ARRAY_COUNT(VALID_OP));
+                    isValid = isValid || matchv(expr->unary.expr->binary.op, VALID_OP, ARRAY_COUNT(VALID_OP));
                 }
                 
                 if (isValid){
@@ -1236,7 +1236,7 @@ DataType Parser::checkSubexprType(Subexpr *expr, StatementBlock *scope){
                     return d;
                 }
                 else{
-                    logErrorMessage(expr->unaryOp, "Not a valid identifier.");
+                    logErrorMessage(expr->unary.op, "Not a valid identifier.");
                     errors++;
                     return DataTypes::Error;
                 }
@@ -1304,7 +1304,7 @@ DataType Parser::checkSubexprType(Subexpr *expr, StatementBlock *scope){
             Function foo = ir->functions.getInfo(fooCall->funcName.string).info;
             // check for number of arguments
             if (foo.parameters.size() != fooCall->arguments.size()){
-                logErrorMessage(fooCall->funcName, "In function \"%.*s\", required %llu but found %llu arguments.", 
+                logErrorMessage(fooCall->funcName, "In function \"%.*s\", required %" PRIu64 " but found %" PRIu64 " arguments.", 
                             splicePrintf(fooCall->funcName.string), foo.parameters.size(), fooCall->arguments.size());
                 errors++;
             }
@@ -1377,21 +1377,21 @@ Subexpr* Parser::parseSubexpr(int precedence, StatementBlock *scope){
         s = (Subexpr*) arena->alloc(sizeof(Subexpr));
         s->tag = Node::NODE_SUBEXPR;
         
-        s->left = left;
-        s->op = consumeToken();
+        s->binary.left = left;
+        s->binary.op = consumeToken();
         
 
         Subexpr *next;
         // for array indexing []
-        if (match(s->op,TOKEN_SQUARE_OPEN)){
+        if (match(s->binary.op,TOKEN_SQUARE_OPEN)){
             next = parseSubexpr(INT32_MAX, scope);
             expect(TOKEN_SQUARE_CLOSE);
         }
         else{
-            next = parseSubexpr(getPrecedence(s->op), scope);
+            next = parseSubexpr(getPrecedence(s->binary.op), scope);
         }
         
-        s->right  = next;
+        s->binary.right  = next;
         s->subtag = Subexpr::SUBEXPR_BINARY_OP;
         
         if (next->tag == Node::NODE_ERROR){
@@ -1421,11 +1421,11 @@ Subexpr* Parser::parsePrimary(StatementBlock *scope){
             || matchv(TYPE_MODIFIER_TOKENS, ARRAY_COUNT(TYPE_MODIFIER_TOKENS))
             || matchv(TYPE_QUALIFIER_TOKENS, ARRAY_COUNT(TYPE_QUALIFIER_TOKENS))){
             
-            s->to = parseDataType(scope);
+            s->cast.to = parseDataType(scope);
             s->subtag = Subexpr::SUBEXPR_CAST;
             expect(TOKEN_PARENTHESIS_CLOSE);
             
-            s->expr = parsePrimary(scope);
+            s->cast.expr = parsePrimary(scope);
         }
         else {
             s->inside = parseSubexpr(INT32_MAX, scope);
@@ -1462,9 +1462,9 @@ Subexpr* Parser::parsePrimary(StatementBlock *scope){
     }
     // unary 
     else if (matchv(UNARY_OP_TOKENS, ARRAY_COUNT(UNARY_OP_TOKENS))){
-        s->unaryOp = consumeToken();
+        s->unary.op = consumeToken();
 
-        s->unarySubexpr = parseSubexpr(getPrecedence(s->unaryOp, true), scope);
+        s->unary.expr = parseSubexpr(getPrecedence(s->unary.op, true), scope);
         s->subtag = Subexpr::SUBEXPR_UNARY;
     }
     // identifiers
@@ -1545,11 +1545,11 @@ bool Parser::canResolveToConstant(Subexpr *s, StatementBlock *scope){
         return matchv(s->leaf, VALID_LITERALS, ARRAY_COUNT(VALID_LITERALS));
     }
     case Subexpr::SUBEXPR_BINARY_OP:{
-        if (matchv(s->op, ASSIGNMENT_OP, ARRAY_COUNT(ASSIGNMENT_OP))){
+        if (matchv(s->binary.op, ASSIGNMENT_OP, ARRAY_COUNT(ASSIGNMENT_OP))){
             return false;
         }
 
-        return canResolveToConstant(s->left, scope) &&  canResolveToConstant(s->right, scope);
+        return canResolveToConstant(s->binary.left, scope) &&  canResolveToConstant(s->binary.right, scope);
     }
     case Subexpr::SUBEXPR_UNARY:{
         TokenType INVALID_OP[] = {
@@ -1559,18 +1559,18 @@ bool Parser::canResolveToConstant(Subexpr *s, StatementBlock *scope){
             TOKEN_MINUS_MINUS,
         };
         
-        if (matchv(s->unaryOp, INVALID_OP, ARRAY_COUNT(INVALID_OP))){
+        if (matchv(s->unary.op, INVALID_OP, ARRAY_COUNT(INVALID_OP))){
             return false;
         }
 
-        return canResolveToConstant(s->unarySubexpr, scope);
+        return canResolveToConstant(s->unary.expr, scope);
     }
 
     case Subexpr::SUBEXPR_RECURSE_PARENTHESIS:{
         return canResolveToConstant(s->inside, scope);
     }
     case Subexpr::SUBEXPR_CAST:{
-        return canResolveToConstant(s->expr, scope);
+        return canResolveToConstant(s->cast.expr, scope);
     }
     case Subexpr::SUBEXPR_INITIALIZER_LIST:{
         for (auto const &val : s->initList->values){
@@ -1690,7 +1690,7 @@ Node* Parser::parseDeclaration(StatementBlock *scope){
                     auto checkMatch = [&](Function prevFoo, Function newFoo) -> bool{
                         // check num of parameters 
                         if (prevFoo.parameters.size() != newFoo.parameters.size()){
-                            logErrorMessage(foo.funcName, "Number of arguments %llu doesn't match with that in declaration %llu of function \"%.*s\".", 
+                            logErrorMessage(foo.funcName, "Number of arguments %" PRIu64 " doesn't match with that in declaration %" PRIu64 " of function \"%.*s\".", 
                                             newFoo.parameters.size(), prevFoo.parameters.size(), splicePrintf(foo.funcName.string));
                             errors++;
                             return false;
@@ -1698,7 +1698,7 @@ Node* Parser::parseDeclaration(StatementBlock *scope){
                         
                         // check types of parameters 
                         for (int i=0; i< prevFoo.parameters.size(); i++){
-                            if (prevFoo.parameters[i].type != newFoo.parameters[i].type){
+                            if (!(prevFoo.parameters[i].type == newFoo.parameters[i].type)){
                                 logErrorMessage(foo.funcName, "Conflicting types of parameter \"%.*s\": \"%s\" and \"%s\".", 
                                                 splicePrintf(foo.parameters[i].identifier.string), 
                                                 dataTypePrintf(prevFoo.parameters[i].type), dataTypePrintf(newFoo.parameters[i].type));
@@ -1708,7 +1708,7 @@ Node* Parser::parseDeclaration(StatementBlock *scope){
                         }
                         
                         // check return type 
-                        if (prevFoo.returnType != newFoo.returnType){
+                        if (!(prevFoo.returnType == newFoo.returnType)){
                             logErrorMessage(foo.funcName, "Conflicting return type of function \"%.*s\": \"%s\" and \"%s\".", 
                                             splicePrintf(foo.funcName.string),
                                             dataTypePrintf(prevFoo.returnType), dataTypePrintf(newFoo.returnType));
@@ -2079,7 +2079,7 @@ AST *Parser::parseProgram(){
         checkContext(foo.block, &ir->global);
     }
     
-    fprintf(stdout, "[Parser] %llu errors generated.\n", errors);
+    fprintf(stdout, "[Parser] %" PRIu64 " errors generated.\n", errors);
     return (errors == 0)? ir : NULL;
 
 }

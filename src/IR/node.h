@@ -61,7 +61,7 @@ struct Subexpr: public Node{
             Subexpr *left; 
             Token op; 
             Subexpr *right; 
-        };
+        }binary;
         
         // leaf 
         Token leaf;
@@ -71,15 +71,15 @@ struct Subexpr: public Node{
         
         // unary: unaryOp unarySubexpr
         struct {
-            Token unaryOp;
-            Subexpr *unarySubexpr;
-        };
+            Token op;
+            Subexpr *expr;
+        }unary;
         
         // cast 
         struct {
             DataType to;
             Subexpr* expr;
-        };
+        }cast;
         
 
         InitializerList *initList;        
@@ -87,6 +87,7 @@ struct Subexpr: public Node{
         
     };
 };
+
 
 struct InitializerList {
     std::vector <Subexpr*> values;

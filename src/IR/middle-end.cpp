@@ -32,7 +32,7 @@ struct MiddleEnd {
 
 Splice MiddleEnd :: copySplice(Splice s, Arena* arena){
     char* str = (char*) arena->alloc(s.len + 1);
-    memcpy_s(str, s.len, s.data, s.len);
+    memcpy(str, s.data, s.len);
     str[s.len] = 0;
     return Splice{.data = str, .len = s.len};
 }
@@ -316,7 +316,7 @@ MIR_Primitives MiddleEnd :: transformSubexpr(const Subexpr* expr, StatementBlock
 
 
     case Subexpr::SUBEXPR_BINARY_OP :{
-        if (_match(expr->op, TOKEN_DOT)){
+        if (_match(expr->binary.op, TOKEN_DOT)){
             /*
                 Struct member load is expanded into 
                 a.x
@@ -332,21 +332,21 @@ MIR_Primitives MiddleEnd :: transformSubexpr(const Subexpr* expr, StatementBlock
             */ 
 
 
-            MIR_Primitives exprs = transformSubexpr(expr->left, scope, arena);
+            MIR_Primitives exprs = transformSubexpr(expr->binary.left, scope, arena);
             assert(exprs.n == 1);
             d = (MIR_Expr*)exprs.primitives[0];
 
-            DataType structType = expr->left->type;
+            DataType structType = expr->binary.left->type;
             assert(structType.tag == DataType::TAG_STRUCT);
-            assert(expr->right->subtag == Subexpr::SUBEXPR_LEAF);
+            assert(expr->binary.right->subtag == Subexpr::SUBEXPR_LEAF);
 
             StatementBlock *structDeclScope = scope->findStructDeclaration(structType.structName);
             
             assert(structDeclScope != NULL);
             Struct &structInfo = structDeclScope->structs.getInfo(structType.structName.string).info;
             
-            assert(structInfo.members.existKey(expr->right->leaf.string));
-            Struct::MemberInfo member = structInfo.members.getInfo(expr->right->leaf.string).info;
+            assert(structInfo.members.existKey(expr->binary.right->leaf.string));
+            Struct::MemberInfo member = structInfo.members.getInfo(expr->binary.right->leaf.string).info;
             
             // d->type = member.type;
             d->_type = convertToLowerLevelType(member.type, scope);
@@ -360,7 +360,7 @@ MIR_Primitives MiddleEnd :: transformSubexpr(const Subexpr* expr, StatementBlock
             break;
         }
         
-        if (_match(expr->op, TOKEN_ARROW)){
+        if (_match(expr->binary.op, TOKEN_ARROW)){
             /*
                 Struct member load through pointer is expanded into 
                 a->x
@@ -379,23 +379,23 @@ MIR_Primitives MiddleEnd :: transformSubexpr(const Subexpr* expr, StatementBlock
                                     a 
             */ 
             
-            MIR_Primitives exprs = transformSubexpr(expr->left, scope, arena);
+            MIR_Primitives exprs = transformSubexpr(expr->binary.left, scope, arena);
             assert(exprs.n == 1);
             d->load.base = (MIR_Expr*)exprs.primitives[0];
             
-            DataType structType = expr->left->type.getBaseType();
+            DataType structType = expr->binary.left->type.getBaseType();
 
             // DataType structType = d->load.base->type.getBaseType();
             assert(structType.tag == DataType::TAG_STRUCT);
-            assert(expr->right->subtag == Subexpr::SUBEXPR_LEAF);
+            assert(expr->binary.right->subtag == Subexpr::SUBEXPR_LEAF);
 
             StatementBlock *structDeclScope = scope->findStructDeclaration(structType.structName);
             
             assert(structDeclScope != NULL);
             Struct &structInfo = structDeclScope->structs.getInfo(structType.structName.string).info;
             
-            assert(structInfo.members.existKey(expr->right->leaf.string));
-            Struct::MemberInfo member = structInfo.members.getInfo(expr->right->leaf.string).info;
+            assert(structInfo.members.existKey(expr->binary.right->leaf.string));
+            Struct::MemberInfo member = structInfo.members.getInfo(expr->binary.right->leaf.string).info;
             
             d->type = member.type;
             d->_type = convertToLowerLevelType(member.type, scope);
@@ -411,7 +411,7 @@ MIR_Primitives MiddleEnd :: transformSubexpr(const Subexpr* expr, StatementBlock
         }
 
 
-        if (_match(expr->op, TOKEN_SQUARE_OPEN)){
+        if (_match(expr->binary.op, TOKEN_SQUARE_OPEN)){
             /*
                 Pointer indexing is expanded into 
                 a[i]
@@ -453,22 +453,22 @@ MIR_Primitives MiddleEnd :: transformSubexpr(const Subexpr* expr, StatementBlock
             */ 
             
             
-            MIR_Primitives exprLeft = transformSubexpr(expr->left, scope, arena);
+            MIR_Primitives exprLeft = transformSubexpr(expr->binary.left, scope, arena);
             assert(exprLeft.n == 1);
             MIR_Expr *left = (MIR_Expr*) exprLeft.primitives[0];
 
-            MIR_Primitives exprRight = transformSubexpr(expr->right, scope, arena);
+            MIR_Primitives exprRight = transformSubexpr(expr->binary.right, scope, arena);
             assert(exprRight.n == 1);
             MIR_Expr *right = (MIR_Expr*) exprRight.primitives[0];
             
-            assert(expr->left->type.tag == DataType::TAG_PTR || 
-                    expr->left->type.tag == DataType::TAG_ARRAY ||
-                    expr->left->type.tag == DataType::TAG_ADDRESS);
+            assert(expr->binary.left->type.tag == DataType::TAG_PTR || 
+                    expr->binary.left->type.tag == DataType::TAG_ARRAY ||
+                    expr->binary.left->type.tag == DataType::TAG_ADDRESS);
         
 
             d->tag = MIR_Expr::EXPR_LOAD;
             
-            DataType dt = *(expr->left->type.ptrTo);
+            DataType dt = *(expr->binary.left->type.ptrTo);
             d->type = dt;
             d->_type = convertToLowerLevelType(dt, scope);
 
@@ -476,7 +476,7 @@ MIR_Primitives MiddleEnd :: transformSubexpr(const Subexpr* expr, StatementBlock
             int64_t loadOffset = 0;
 
             // if an array, then the address is implicit, so there is no need to load the array 
-            if (expr->left->type.tag == DataType::TAG_ARRAY){
+            if (expr->binary.left->type.tag == DataType::TAG_ARRAY){
                 // remove the load but save the offset
                 assert(left->tag == MIR_Expr::EXPR_LOAD);
                 loadOffset = left->load.offset;
@@ -506,17 +506,17 @@ MIR_Primitives MiddleEnd :: transformSubexpr(const Subexpr* expr, StatementBlock
 
 
 
-        bool isAssignment = _matchv(expr->op, ASSIGNMENT_OP, ARRAY_COUNT(ASSIGNMENT_OP));
+        bool isAssignment = _matchv(expr->binary.op, ASSIGNMENT_OP, ARRAY_COUNT(ASSIGNMENT_OP));
         
         // assignments are converted into stores
         if (isAssignment){
-            MIR_Primitives exprLeft = transformSubexpr(expr->left, scope, arena);
+            MIR_Primitives exprLeft = transformSubexpr(expr->binary.left, scope, arena);
             assert(exprLeft.n == 1);
             MIR_Expr *left = (MIR_Expr*) exprLeft.primitives[0];
 
 
-            if (expr->right->subtag == Subexpr::SUBEXPR_INITIALIZER_LIST){
-                return resolveInitializerLists(expr->right, expr->left->type, left, 0, scope, arena);
+            if (expr->binary.right->subtag == Subexpr::SUBEXPR_INITIALIZER_LIST){
+                return resolveInitializerLists(expr->binary.right, expr->binary.left->type, left, 0, scope, arena);
             }
 
 
@@ -550,12 +550,12 @@ MIR_Primitives MiddleEnd :: transformSubexpr(const Subexpr* expr, StatementBlock
 
 
 
-            MIR_Primitives exprRight = transformSubexpr(expr->right, scope, arena);
+            MIR_Primitives exprRight = transformSubexpr(expr->binary.right, scope, arena);
             assert(exprRight.n == 1);
             MIR_Expr* right = (MIR_Expr*) exprRight.primitives[0];
 
             
-            switch (expr->op.type){
+            switch (expr->binary.op.type){
             case TOKEN_ASSIGNMENT:{
                 break;
             }
@@ -566,7 +566,7 @@ MIR_Primitives MiddleEnd :: transformSubexpr(const Subexpr* expr, StatementBlock
                 MIR_Expr *addLeft = (MIR_Expr*)arena->alloc(sizeof(MIR_Expr));
                 
                 
-                DataType addType = getResultantType(expr->left->type, expr->right->type, expr->op);
+                DataType addType = getResultantType(expr->binary.left->type, expr->binary.right->type, expr->binary.op);
                 
                 add->type = addType;
                 add->_type = convertToLowerLevelType(add->type, scope);
@@ -635,16 +635,16 @@ MIR_Primitives MiddleEnd :: transformSubexpr(const Subexpr* expr, StatementBlock
         */
         
         // expand left and right 
-        MIR_Primitives exprLeft = transformSubexpr(expr->left, scope, arena);
+        MIR_Primitives exprLeft = transformSubexpr(expr->binary.left, scope, arena);
         assert(exprLeft.n == 1);
         MIR_Expr *left = (MIR_Expr*) exprLeft.primitives[0];
 
-        MIR_Primitives exprRight = transformSubexpr(expr->right, scope, arena);
+        MIR_Primitives exprRight = transformSubexpr(expr->binary.right, scope, arena);
         assert(exprRight.n == 1);
         MIR_Expr *right = (MIR_Expr*) exprRight.primitives[0];
         
         // get resultant type
-        DataType dt = getResultantType(expr->left->type, expr->right->type, expr->op);
+        DataType dt = getResultantType(expr->binary.left->type, expr->binary.right->type, expr->binary.op);
         d->type = dt;
         d->_type = convertToLowerLevelType(dt, scope);
                 
@@ -656,7 +656,7 @@ MIR_Primitives MiddleEnd :: transformSubexpr(const Subexpr* expr, StatementBlock
 
         bool isIntegerOperation = isIntegerType(d->_type);
 
-        switch (expr->op.type){
+        switch (expr->binary.op.type){
         case TOKEN_PLUS:{
             d->binary.op = (isIntegerOperation)? MIR_Expr::BinaryOp::EXPR_IADD : MIR_Expr::BinaryOp::EXPR_FADD;
             break;
@@ -855,11 +855,11 @@ MIR_Primitives MiddleEnd :: transformSubexpr(const Subexpr* expr, StatementBlock
 
     case Subexpr::SUBEXPR_UNARY: {
         
-        MIR_Primitives exprs = transformSubexpr(expr->unarySubexpr, scope, arena);
+        MIR_Primitives exprs = transformSubexpr(expr->unary.expr, scope, arena);
         assert(exprs.n == 1);
         MIR_Expr* operand = (MIR_Expr*)exprs.primitives[0];
         
-        if (_match(expr->unaryOp, TOKEN_STAR)){
+        if (_match(expr->unary.op, TOKEN_STAR)){
             /*
                 *x is expanded to
 
@@ -870,7 +870,7 @@ MIR_Primitives MiddleEnd :: transformSubexpr(const Subexpr* expr, StatementBlock
             */
             d->tag = MIR_Expr::EXPR_LOAD;
 
-            DataType dt = *(expr->unarySubexpr->type.ptrTo);
+            DataType dt = *(expr->unary.expr->type.ptrTo);
 
             d->type = dt;
             d->_type = convertToLowerLevelType(dt, scope);
@@ -885,7 +885,7 @@ MIR_Primitives MiddleEnd :: transformSubexpr(const Subexpr* expr, StatementBlock
             break;
         }
 
-        else if(_match(expr->unaryOp, TOKEN_AMPERSAND)){
+        else if(_match(expr->unary.op, TOKEN_AMPERSAND)){
             /*
                 &x is expanded to
 
@@ -906,7 +906,7 @@ MIR_Primitives MiddleEnd :: transformSubexpr(const Subexpr* expr, StatementBlock
             
             dt.tag = DataType::TAG_ADDRESS;
             dt.ptrTo = (DataType*) arena->alloc(sizeof(DataType));
-            *(dt.ptrTo) = expr->unarySubexpr->type;
+            *(dt.ptrTo) = expr->unary.expr->type;
             d->type = dt;
             d->_type = convertToLowerLevelType(dt, scope);
 
@@ -927,9 +927,9 @@ MIR_Primitives MiddleEnd :: transformSubexpr(const Subexpr* expr, StatementBlock
         */
         
         d->tag = MIR_Expr::EXPR_UNARY;
-        d->unary.unarySubexpr = operand; 
+        d->unary.expr = operand; 
         
-        DataType dt = expr->unarySubexpr->type;
+        DataType dt = expr->unary.expr->type;
         
         d->type = dt;
         d->_type = convertToLowerLevelType(dt, scope);
@@ -938,7 +938,7 @@ MIR_Primitives MiddleEnd :: transformSubexpr(const Subexpr* expr, StatementBlock
         bool isIntegerOperation = isIntegerType(d->_type);
 
 
-        switch (expr->unaryOp.type){
+        switch (expr->unary.op.type){
 
         case TOKEN_PLUS:
             break;
@@ -1009,10 +1009,10 @@ MIR_Primitives MiddleEnd :: transformSubexpr(const Subexpr* expr, StatementBlock
     }
     
     case Subexpr::SUBEXPR_CAST:{
-        d->cast._from = convertToLowerLevelType(expr->expr->type, scope);
-        d->cast._to = convertToLowerLevelType(expr->to, scope);
+        d->cast._from = convertToLowerLevelType(expr->cast.expr->type, scope);
+        d->cast._to = convertToLowerLevelType(expr->cast.to, scope);
         
-        MIR_Primitives exprs = transformSubexpr(expr->expr, scope, arena);
+        MIR_Primitives exprs = transformSubexpr(expr->cast.expr, scope, arena);
         assert(exprs.n == 1);
 
         d->cast.expr = (MIR_Expr*)exprs.primitives[0];
@@ -1097,9 +1097,9 @@ MIR_Primitives MiddleEnd :: transformNode(const Node* current, StatementBlock *s
                 Subexpr assignment = Subexpr {0};
                 assignment.tag = Node::NODE_SUBEXPR;
                 assignment.subtag = Subexpr::SUBEXPR_BINARY_OP;
-                assignment.op = Token{.type = TOKEN_ASSIGNMENT};
-                assignment.left = &left;
-                assignment.right = decln.initValue;
+                assignment.binary.op = Token{.type = TOKEN_ASSIGNMENT};
+                assignment.binary.left = &left;
+                assignment.binary.right = decln.initValue;
                 assignment.type = decln.type;
 
                 MIR_Primitives convertedExprs = transformSubexpr(&assignment, scope, arena);

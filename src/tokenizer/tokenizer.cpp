@@ -2,6 +2,8 @@
 #include "tokenizer.h"
 #include <logger/logger.h>
 
+#include <utils/utils.h>
+
 #include <ctype.h>
 #include <fstream>
 
@@ -388,7 +390,7 @@ void Tokenizer::loadFileToBuffer(const char *filepath){
     this->cursor = 0;
     f.close();
 
-    strcpy_s(this->fileName, filepath);
+    strncpy(this->fileName, filepath, min(sizeof(this->fileName), strlen(filepath)));
 }
 
 

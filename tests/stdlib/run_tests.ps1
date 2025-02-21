@@ -17,7 +17,7 @@ $test_folder = ".\tests\stdlib"
 # $qemu = $gcc_toolchain + "/bin/qemu-riscv64"
 # $sysroot = $gcc_toolchain + "/sysroot"
 
-. "$test_folder/path_info.ps1"
+. "./path_info.ps1"
 
 
 . "$test_folder/expected_info.ps1"
@@ -49,37 +49,70 @@ function Convert-WindowsPathToLinux {
     return $linuxPath
 }
 
+
 $cwd = Get-Item -Path .
-$cwdLinux = Convert-WindowsPathToLinux($cwd)
-Write-Host $cwdLinux
 
-foreach ($file in $files){  
-
-    Write-Host "Test: " $file.Name -ForegroundColor Cyan
+#  ------------ LINUX ---------------
+if ($isLinux){
+    $cwdLinux = $cwd
     
-    $linuxPath = Convert-WindowsPathToLinux($file.FullName)
-    Write-Host $linuxPath
+    
+    foreach ($file in $files){  
+        $linuxPath = $file.FullName
+
+        Write-Host "Test: " $file.Name -ForegroundColor Cyan
 
 
-    Write-Host "Invoking preprocessor.." -ForegroundColor Yellow
-    Start-Process "wsl" -ArgumentList "--distribution", "Ubuntu", "$riscv_cpp -I $cwdLinux/stdlib/include -P $linuxPath -o $cwdLinux/preprocessed.i" -NoNewWindow -Wait
-    
-    Write-Host "Generating asm.." -ForegroundColor Yellow  
-    & "$exec_path"  $cwd/preprocessed.i
-    
-    Write-Host "Compiling into RV64 obj.." -ForegroundColor Yellow  
-    Start-Process "wsl" -ArgumentList "--distribution", "Ubuntu", "$riscv_gcc -nostdlib -c $cwdLinux/codegen_output.s -o $cwdLinux/codegen_output.o" -NoNewWindow -Wait
-    
-    Write-Host "Linking into RV64-ELF.." -ForegroundColor Yellow  
-    Start-Process "wsl" -ArgumentList "--distribution", "Ubuntu", 
-                "$riscv_ld $cwdLinux/codegen_output.o $cwdLinux/stdlib/lib/entry.o $cwdLinux/stdlib/lib/stdlib.so -o $cwdLinux/codegen_output --dynamic-linker /lib/ld-linux-riscv64-lp64d.so.1" `
-                -NoNewWindow -Wait
+        Write-Host "Invoking preprocessor.." -ForegroundColor Yellow
+        & $riscv_cpp -I $cwdLinux/stdlib/include -P $linuxPath -o $cwdLinux/preprocessed.i
+        
+        Write-Host "Generating asm.." -ForegroundColor Yellow  
+        & "$exec_path"  $cwd/preprocessed.i
+        
+        Write-Host "Compiling into RV64 obj.." -ForegroundColor Yellow  
+        & $riscv_gcc -nostdlib -c $cwdLinux/codegen_output.s -o $cwdLinux/codegen_output.o
+        
+        Write-Host "Linking into RV64-ELF.." -ForegroundColor Yellow  
+        & $riscv_ld $cwdLinux/codegen_output.o $cwdLinux/stdlib/lib/entry.o $cwdLinux/stdlib/lib/stdlib.so -o $cwdLinux/codegen_output --dynamic-linker /lib/ld-linux-riscv64-lp64d.so.1                   
 
-    Write-Host "Running on qemu.." -ForegroundColor Yellow
-    & "wsl" --distribution Ubuntu $qemu -L $sysroot $cwdLinux/codegen_output @($arguments[$file.Name])
-      
-    $found_values[$file.Name] = $LASTEXITCODE
-} 
+        Write-Host "Running on qemu.." -ForegroundColor Yellow
+        & $qemu -L $sysroot $cwdLinux/codegen_output @($arguments[$file.Name])
+        
+        $found_values[$file.Name] = $LASTEXITCODE
+    } 
+}
+# ---------------- WINDOWS -------------------
+elseif ($isWindows) {
+    $cwdLinux = Convert-WindowsPathToLinux($cwd)
+    
+    foreach ($file in $files){  
+
+        Write-Host "Test: " $file.Name -ForegroundColor Cyan
+        
+        $linuxPath = Convert-WindowsPathToLinux($file.FullName)
+        Write-Host $linuxPath
+
+
+        Write-Host "Invoking preprocessor.." -ForegroundColor Yellow
+        Start-Process "wsl" -ArgumentList "--distribution", "Ubuntu", "$riscv_cpp -I $cwdLinux/stdlib/include -P $linuxPath -o $cwdLinux/preprocessed.i" -NoNewWindow -Wait
+        
+        Write-Host "Generating asm.." -ForegroundColor Yellow  
+        & "$exec_path"  $cwd/preprocessed.i
+        
+        Write-Host "Compiling into RV64 obj.." -ForegroundColor Yellow  
+        Start-Process "wsl" -ArgumentList "--distribution", "Ubuntu", "$riscv_gcc -nostdlib -c $cwdLinux/codegen_output.s -o $cwdLinux/codegen_output.o" -NoNewWindow -Wait
+        
+        Write-Host "Linking into RV64-ELF.." -ForegroundColor Yellow  
+        Start-Process "wsl" -ArgumentList "--distribution", "Ubuntu", 
+                    "$riscv_ld $cwdLinux/codegen_output.o $cwdLinux/stdlib/lib/entry.o $cwdLinux/stdlib/lib/stdlib.so -o $cwdLinux/codegen_output --dynamic-linker /lib/ld-linux-riscv64-lp64d.so.1" `
+                    -NoNewWindow -Wait
+
+        Write-Host "Running on qemu.." -ForegroundColor Yellow
+        & "wsl" --distribution Ubuntu $qemu -L $sysroot $cwdLinux/codegen_output @($arguments[$file.Name])
+        
+        $found_values[$file.Name] = $LASTEXITCODE
+    } 
+}
 
 foreach ($file in $files){    
     if ($found_values[$file.Name] -eq $expected_values[$file.Name]){

@@ -233,7 +233,7 @@ struct MIR_Expr : public MIR_Primitive{
         */
         struct {
             UnaryOp op;
-            MIR_Expr *unarySubexpr;
+            MIR_Expr *expr;
         }unary;
         
         /*

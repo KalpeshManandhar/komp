@@ -1,6 +1,7 @@
 #pragma once
 
 #include <stdint.h>
+#include <inttypes.h>
 #include <assert.h>
 
 static int max(int a, int b){

@@ -111,7 +111,7 @@ static int getDepth(const MIR_Expr *expr){
         return max(left, right) + 1;
     }
     case MIR_Expr::EXPR_UNARY: {
-        int operand = getDepth(expr->unary.unarySubexpr);
+        int operand = getDepth(expr->unary.expr);
         return operand + 1;
     }
     case MIR_Expr::EXPR_CALL: {
@@ -1098,7 +1098,7 @@ void CodeGenerator::generateExprMIR(MIR_Expr *current, Register dest, ScopeInfo 
     }
     case MIR_Expr::EXPR_UNARY:{
         // load the expr into register
-        generateExprMIR(current->unary.unarySubexpr, dest, storageScope);
+        generateExprMIR(current->unary.expr, dest, storageScope);
 
         const char *destName = RV64_RegisterName[regAlloc.resolveRegister(dest)];
         
