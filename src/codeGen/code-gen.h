@@ -6,7 +6,6 @@
 
 
 #include "storage.h"
-#include "label.h"
 
 
 struct SymbolInfo {

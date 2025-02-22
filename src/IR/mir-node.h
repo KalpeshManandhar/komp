@@ -5,6 +5,7 @@
 #include "mir-datatype.h"
 #include <arena/arena.h>
 
+#include "label.h"
 
 struct MIR_Primitive {
     enum PrimitiveType{
@@ -19,6 +20,10 @@ struct MIR_Primitive {
         PRIM_EXPR,
         PRIM_SCOPE,
 
+        PRIM_LABEL,
+        
+        // only for intermediate
+        PRIM_UNSPECIFIED,
         PRIM_COUNT,
     }ptag;
 };
@@ -257,7 +262,8 @@ struct MIR_Scope : public MIR_Primitive{
     std::vector<MIR_Primitive*> statements;
     SymbolTableOrdered<MIR_Datatype> symbols;
 
-    MIR_Scope* parent;
+    MIR_Scope* parent;  
+    MIR_Primitive* extraInfo;
 };
 
 
@@ -265,16 +271,32 @@ struct MIR_If : public MIR_Primitive{
     MIR_Expr* condition;
     MIR_If* next;
     MIR_Scope* scope;
+
+    Label falseLabel;
+    Label endLabel;
 };
 
 struct MIR_Loop : public MIR_Primitive{
     MIR_Expr* condition;
+    MIR_Expr* update;
     MIR_Scope* scope;
+
+    Label startLabel;
+    Label updateLabel;
+    Label endLabel;
 };
 
 struct MIR_Return : public MIR_Primitive{
     MIR_Expr* returnValue;
     Splice funcName;
+};
+
+struct MIR_Jump : public MIR_Primitive {
+    Label jumpLabel;
+};
+
+struct MIR_Label: public MIR_Primitive {
+    Label labelName;
 };
 
 
@@ -290,8 +312,6 @@ struct MIR_Function : public MIR_Scope{
     std::vector<Parameter> parameters;
 
 };
-
-
 
 
 

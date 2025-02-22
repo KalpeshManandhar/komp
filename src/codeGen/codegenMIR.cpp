@@ -192,7 +192,6 @@ void CodeGenerator :: generatePrimitiveMIR(MIR_Primitive* p, MIR_Scope* scope, S
         case MIR_Primitive::PRIM_IF:{
             MIR_If* inode = (MIR_If*) p;
             
-            size_t ifEndLabel = labeller.label();
 
             while (inode){
                 if (inode->condition){
@@ -203,10 +202,8 @@ void CodeGenerator :: generatePrimitiveMIR(MIR_Primitive* p, MIR_Scope* scope, S
                 
                     const char *regName = RV64_RegisterName[regAlloc.resolveRegister(condition)];
                 
-                    // if final in chain then use the endLabel as the false label
-                    size_t falseLabel = (inode->next)? labeller.label() : ifEndLabel;
                     // branch if condition is false
-                    buffer << "    beqz " << regName << ", " << ".if_L"<< falseLabel <<"\n";
+                    buffer << "    beqz " << regName << ", " << ".L"<< inode->falseLabel <<"\n";
 
                     regAlloc.freeRegister(condition);
                     
@@ -215,18 +212,18 @@ void CodeGenerator :: generatePrimitiveMIR(MIR_Primitive* p, MIR_Scope* scope, S
                     
                     // only jump if there is something between the label and code block
                     if (inode->next){
-                        buffer << "    j " << ".if_L"<< ifEndLabel<<"\n";
+                        buffer << "    j " << ".L"<< inode->endLabel<<"\n";
                     }
                     
                     // the label for if the condition is false
-                    buffer << ".if_L" << falseLabel << ":\n";
+                    buffer << ".L" << inode->falseLabel << ":\n";
                     
                 }
                 else{
                     assert(inode->next == NULL && "Else cannot have a 'next' branch block. Must be NULL.");
                     generatePrimitiveMIR(inode->scope, scope, storageScope);
 
-                    buffer << ".if_L" << ifEndLabel << ":\n";
+                    buffer << ".L" << inode->endLabel << ":\n";
                 }
 
                 inode = inode->next;
@@ -239,30 +236,34 @@ void CodeGenerator :: generatePrimitiveMIR(MIR_Primitive* p, MIR_Scope* scope, S
         
             Register condition = regAlloc.allocVRegister(REG_SAVED);
 
-            size_t startLabel = labeller.label();
-            size_t falseLabel = labeller.label();
             
             // start of while loop 
-            buffer << ".while_L" << startLabel << ":\n";
+            buffer << ".L" << lnode->startLabel << ":\n";
             
             // check condition
             generateExprMIR(lnode->condition, condition, storageScope);
-
+            
             const char *regName = RV64_RegisterName[regAlloc.resolveRegister(condition)];
-                    
+            
             // break out if condition is false
-            buffer << "    beqz " << regName << ", " << ".while_L"<< falseLabel <<"\n";
-
+            buffer << "    beqz " << regName << ", " << ".L"<< lnode->endLabel <<"\n";
+            
             regAlloc.freeRegister(condition);
             
             // generate the block
             generatePrimitiveMIR(lnode->scope, scope, storageScope);
             
-            // jump to loop start
-            buffer << "    j " << ".while_L"<< startLabel<<"\n";
             
+            Register update = regAlloc.allocVRegister(REG_SAVED);
+            buffer << ".L" << lnode->updateLabel << ":\n";
+            
+            generateExprMIR(lnode->update, update, storageScope);
+            
+            // jump to loop start
+            buffer << "    j " << ".L"<< lnode->startLabel<<"\n";
+
             // out of loop
-            buffer << ".while_L" << falseLabel << ":\n";
+            buffer << ".L" << lnode->endLabel << ":\n";
             
             break;
         }
@@ -305,6 +306,8 @@ void CodeGenerator :: generatePrimitiveMIR(MIR_Primitive* p, MIR_Scope* scope, S
             break;
         }
         case MIR_Primitive::PRIM_JUMP:{
+            MIR_Jump* jnode = (MIR_Jump*) p;
+            buffer << "    j .L" << jnode->jumpLabel << "\n";
             break;
         }
         case MIR_Primitive::PRIM_EXPR:{
@@ -574,6 +577,10 @@ void CodeGenerator :: generateAssemblyFromMIR(MIR *mir){
 
 */
 void CodeGenerator::generateExprMIR(MIR_Expr *current, Register dest, ScopeInfo *storageScope){
+    if (!current){
+        return;
+    }
+
     switch (current->tag)
     {
     case MIR_Expr::EXPR_LOAD_IMMEDIATE:{

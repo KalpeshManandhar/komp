@@ -12,6 +12,16 @@ static void printMIRPrimitive(MIR_Primitive* p, int depth){
     };
 
     switch (p->ptag){
+    case MIR_Primitive::PRIM_JUMP: {
+        MIR_Jump* jnode = (MIR_Jump*) p;
+
+        printTabs(depth);
+        std::cout << "jump: \n";
+        printTabs(depth + 1);
+        std::cout << "to: .L"<<jnode->jumpLabel << "\n";
+        
+        break;
+    }    
     case MIR_Primitive::PRIM_IF:{
         MIR_If* inode = (MIR_If*) p;
         
@@ -64,10 +74,6 @@ static void printMIRPrimitive(MIR_Primitive* p, int depth){
         
         printMIRPrimitive(rnode->returnValue, depth + 1);
     
-        break;
-    }
-    case MIR_Primitive::PRIM_JUMP:{
-        assert(false && "Implement jump print");
         break;
     }
     case MIR_Primitive::PRIM_EXPR:{

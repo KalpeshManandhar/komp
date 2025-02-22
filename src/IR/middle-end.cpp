@@ -13,10 +13,18 @@ struct MIR_Primitives {
 };
 
 
+struct MIR_Intermediate : MIR_Primitive{
+    enum {
+        PRIM_INTERMEDIATE_JUMP_CONTINUE,
+        PRIM_INTERMEDIATE_JUMP_BREAK,
+    }tag;
+};
+
 
 struct MiddleEnd {
     AST* ast;
     MIR* mir;
+    Labeller labeller;
 
     MIR_Expr* typeCastTo(MIR_Expr* expr, MIR_Datatype to, Arena* arena);
     MIR_Datatype convertToLowerLevelType(DataType d, StatementBlock *scope);
@@ -26,7 +34,9 @@ struct MiddleEnd {
     MIR_Primitives resolveInitializerLists(const Subexpr* expr, DataType d, MIR_Expr* left, size_t offset, StatementBlock* scope, Arena* arena);
     Splice copySplice(Splice s, Arena* arena);
     MIR_Expr* getStoreNode(MIR_Expr* left, MIR_Expr* right, MIR_Datatype dt, size_t storeOffset, Arena* arena);
-
+    MIR_Primitive* resolveJumpLabels(MIR_Primitive* p, MIR_Scope* mScope, Arena *arena);
+    void resolveJumps (MIR_Primitive *p, MIR_Scope* mScope, Arena* arena);
+    
 };
 
 
@@ -1039,6 +1049,9 @@ MIR_Primitives MiddleEnd :: transformSubexpr(const Subexpr* expr, StatementBlock
 
 
 
+
+
+
 /*
     Fill in the offsets of each member of each struct within a scope.
 */
@@ -1175,6 +1188,9 @@ MIR_Primitives MiddleEnd :: transformNode(const Node* current, StatementBlock *s
         
         MIR_If* start = NULL;
         MIR_If** inode = &start;
+
+        Label endLabel = labeller.label();
+
         while (AST_current){
             *inode = (MIR_If*) arena->alloc(sizeof(MIR_If));
 
@@ -1194,6 +1210,10 @@ MIR_Primitives MiddleEnd :: transformNode(const Node* current, StatementBlock *s
             (*inode)->condition = typeCastTo(condition, MIR_Datatypes::_bool, arena);
             (*inode)->scope = (MIR_Scope*) stmts.primitives[0]; 
             (*inode)->next = NULL;
+            (*inode)->scope->extraInfo = *inode;
+            
+            (*inode)->falseLabel = (AST_current->nextIf)? labeller.label() : endLabel;
+            (*inode)->endLabel = endLabel;
             
             inode = &(*inode)->next;
             AST_current = AST_current->nextIf;
@@ -1220,8 +1240,16 @@ MIR_Primitives MiddleEnd :: transformNode(const Node* current, StatementBlock *s
         
         loop->ptag = MIR_Primitive::PRIM_LOOP;
         loop->condition = typeCastTo(condition, MIR_Datatypes::_bool, arena);
+        loop->update = 0;
+
         loop->scope = (MIR_Scope*) stmts.primitives[0];
-        
+        loop->scope->extraInfo = loop;
+
+        loop->startLabel = labeller.label(); 
+        loop->updateLabel = labeller.label(); 
+        loop->endLabel = labeller.label(); 
+
+
         scratchPad[0] = loop;
         return MIR_Primitives{.primitives = (MIR_Primitive**)&scratchPad[0], .n = 1};
         break;
@@ -1247,27 +1275,44 @@ MIR_Primitives MiddleEnd :: transformNode(const Node* current, StatementBlock *s
         assert(stmts.primitives[0]->ptag == MIR_Primitive::PRIM_SCOPE);
         
         loop->ptag = MIR_Primitive::PRIM_LOOP;
-        loop->scope = (MIR_Scope*) stmts.primitives[0];
         loop->condition = typeCastTo(condition, MIR_Datatypes::_bool, arena);
-
+        loop->update = update;
         
-        // add the update statement to the loop body
-        loop->scope->statements.push_back(update);
+        loop->scope = (MIR_Scope*) stmts.primitives[0];
+        loop->scope->extraInfo = loop;
+        
+        loop->startLabel = labeller.label(); 
+        loop->updateLabel = labeller.label(); 
+        loop->endLabel = labeller.label();
 
         // the init statement
         stmts = transformNode(AST_fnode->init, scope, arena, mScope);
         assert(stmts.n == 1);
         MIR_Primitive* initStmt = stmts.primitives[0];
-        
+
+
         scratchPad[0] = initStmt;
         scratchPad[1] = loop;
         return MIR_Primitives{.primitives = (MIR_Primitive**)&scratchPad[0], .n = 2};
         break;
     }
     
-    case Node::NODE_BREAK:
+    case Node::NODE_BREAK:{
+        MIR_Intermediate* jmp = (MIR_Intermediate*)arena->alloc(sizeof(MIR_Intermediate));
+        jmp->ptag = MIR_Primitive::PRIM_UNSPECIFIED;
+        jmp->tag = MIR_Intermediate::PRIM_INTERMEDIATE_JUMP_BREAK;
+        
+        scratchPad[0] = jmp;
+        return MIR_Primitives{.primitives = (MIR_Primitive**)&scratchPad[0], .n = 1};
+        break;
+    }
     case Node::NODE_CONTINUE:{
-        assert(false && "break and continue havent been supported huhu");
+        MIR_Intermediate* jmp = (MIR_Intermediate*)arena->alloc(sizeof(MIR_Intermediate));
+        jmp->ptag = MIR_Primitive::PRIM_UNSPECIFIED;
+        jmp->tag = MIR_Intermediate::PRIM_INTERMEDIATE_JUMP_CONTINUE;
+        
+        scratchPad[0] = jmp;
+        return MIR_Primitives{.primitives = (MIR_Primitive**)&scratchPad[0], .n = 1};
         break;
     }
 
@@ -1279,7 +1324,91 @@ MIR_Primitives MiddleEnd :: transformNode(const Node* current, StatementBlock *s
     return MIR_Primitives{.n = 0};
 }
 
+MIR_Primitive* MiddleEnd :: resolveJumpLabels(MIR_Primitive* p, MIR_Scope* mScope, Arena *arena){
+    if (!p){
+        return p;
+    }
 
+    if (p->ptag != MIR_Primitive::PRIM_UNSPECIFIED){
+        return p;
+    }
+    MIR_Intermediate* unresolvedJmp = (MIR_Intermediate*) p;
+
+    switch (unresolvedJmp->tag) {
+    case MIR_Intermediate:: PRIM_INTERMEDIATE_JUMP_CONTINUE:
+    case MIR_Intermediate:: PRIM_INTERMEDIATE_JUMP_BREAK:{
+        MIR_Scope* MIR_current = mScope;
+        
+        while (MIR_current){
+            if (MIR_current->extraInfo && 
+                MIR_current->extraInfo->ptag == MIR_Primitive::PRIM_LOOP){
+                break;
+            }
+            MIR_current = MIR_current->parent;
+        }
+        
+        assert(MIR_current != NULL);
+        
+        MIR_Loop* loop = (MIR_Loop*) MIR_current->extraInfo;
+        
+        MIR_Jump* jmp = (MIR_Jump*)arena->alloc(sizeof(MIR_Jump));
+        jmp->ptag = MIR_Primitive::PRIM_JUMP;
+
+        if (unresolvedJmp->tag == MIR_Intermediate::PRIM_INTERMEDIATE_JUMP_CONTINUE){
+            jmp->jumpLabel = loop->updateLabel;
+        }
+        else if (unresolvedJmp->tag == MIR_Intermediate::PRIM_INTERMEDIATE_JUMP_BREAK){
+            jmp->jumpLabel = loop->endLabel;
+        }
+        
+        return jmp;
+        break;
+    }
+    
+    default:
+        break;
+    }
+    
+    assert(false && "Should be unreachable");
+    return NULL;
+}
+
+
+
+void MiddleEnd :: resolveJumps (MIR_Primitive *p, MIR_Scope* mScope, Arena* arena){
+    if (!p){
+        return;
+    }
+
+    switch (p->ptag) {
+    case MIR_Primitive::PRIM_SCOPE :{
+        MIR_Scope* snode = (MIR_Scope*) p;
+        for (int i=0; i<snode->statements.size(); i++){
+            if (snode->statements[i]->ptag != MIR_Primitive::PRIM_UNSPECIFIED){
+                resolveJumps(snode->statements[i], snode, arena);
+            }
+            else {
+                snode->statements[i] = resolveJumpLabels(snode->statements[i], snode, arena);
+            }
+        }
+        break;
+    }
+    case MIR_Primitive::PRIM_IF :{
+        MIR_If* inode = (MIR_If*) p;
+        resolveJumps(inode->scope, mScope, arena);
+        break;
+    }
+    
+    case MIR_Primitive::PRIM_LOOP :{
+        MIR_Loop* lnode = (MIR_Loop*) p;
+        resolveJumps(lnode->scope, mScope, arena);
+        break;
+    }
+    
+    default:
+        break;
+    }
+}
 
 
 
@@ -1288,6 +1417,7 @@ MIR* transform(AST *ast, Arena *arena){
     MiddleEnd middleEnd;
     middleEnd.ast = ast;
     middleEnd.mir = new MIR;
+    middleEnd.labeller = Labeller{0};
     
     MIR_Primitives global = middleEnd.transformNode(&ast->global, NULL, arena, NULL);
     assert(global.n == 1 && global.primitives[0]->ptag == MIR_Primitive::PRIM_SCOPE);
@@ -1296,7 +1426,6 @@ MIR* transform(AST *ast, Arena *arena){
 
     for (auto &func: ast->functions.entries){
         Function foo = func.second.info;
-        
         
         MIR_Function f;
         f.funcName = foo.funcName.string;
@@ -1315,9 +1444,13 @@ MIR* transform(AST *ast, Arena *arena){
             MIR_Primitives scopeNode = middleEnd.transformNode(foo.block, &ast->global, arena, middleEnd.mir->global);
             assert(scopeNode.n == 1 && scopeNode.primitives[0]->ptag == MIR_Primitive::PRIM_SCOPE);
             MIR_Scope* scope = (MIR_Scope*) scopeNode.primitives[0];
+            
+            middleEnd.resolveJumps(scope, middleEnd.mir->global, arena);
+
             f.parent = scope->parent;
             f.statements = scope->statements;
             f.symbols = scope->symbols;
+            
 
 
             f.ptag = MIR_Primitive::PRIM_SCOPE;
