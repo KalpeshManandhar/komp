@@ -4,7 +4,7 @@
 */
 
 int strlen(const char* str){
-    char *start = str;
+    const char *start = str;
     while (*str != 0){
         str = str + 1;
     }

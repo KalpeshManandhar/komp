@@ -37,10 +37,10 @@ For the code generator, the tests are run using the [**riscv-gnu-toolchain**](ht
 ```powershell
 # the riscv toolchain gcc executable in linux
 $gnu_toolchain = "path/to/gnu-toolchain"
-$riscv_cpp = $gcc_toolchain + "/bin/riscv64-unknown-linux-gnu-cpp"
-$riscv_gcc = $gcc_toolchain + "/bin/riscv64-unknown-linux-gnu-gcc"
-$riscv_ld = $gcc_toolchain + "/bin/riscv64-unknown-linux-gnu-ld"
-$qemu = $gcc_toolchain + "/bin/qemu-riscv64"
-$sysroot = $gcc_toolchain + "/sysroot"
+$riscv_cpp = $gnu_toolchain + "/bin/riscv64-unknown-linux-gnu-cpp"
+$riscv_gcc = $gnu_toolchain + "/bin/riscv64-unknown-linux-gnu-gcc"
+$riscv_ld = $gnu_toolchain + "/bin/riscv64-unknown-linux-gnu-ld"
+$qemu = $gnu_toolchain + "/bin/qemu-riscv64"
+$sysroot = $gnu_toolchain + "/sysroot"
 ```
 
