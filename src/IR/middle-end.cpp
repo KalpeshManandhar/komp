@@ -61,11 +61,10 @@ MIR_Expr* MiddleEnd :: typeCastTo(MIR_Expr* expr, MIR_Datatype to, Arena* arena)
     MIR_Expr* e = expr;
     
     // if conversion from array to pointer, just change the load to a load address 
-    if (e->_type.tag == MIR_Datatype::TYPE_ARRAY && to.tag == MIR_Datatype::TYPE_PTR){
+    if (e->_type.tag == MIR_Datatype::TYPE_ARRAY && isIntegerType(to)){
         if (e->tag == MIR_Expr::EXPR_LOAD){
-            assert(e->tag == MIR_Expr::EXPR_LOAD);
             assert(e->load.base->tag == MIR_Expr::EXPR_ADDRESSOF);
-
+            
             MIR_Expr loadAddressOfArray = {};
             loadAddressOfArray.ptag = MIR_Primitive::PRIM_EXPR;
             loadAddressOfArray.tag = MIR_Expr::EXPR_LOAD_ADDRESS;
@@ -74,6 +73,9 @@ MIR_Expr* MiddleEnd :: typeCastTo(MIR_Expr* expr, MIR_Datatype to, Arena* arena)
             loadAddressOfArray._type = to;
             
             *e = loadAddressOfArray;
+        }
+        else if (e->tag == MIR_Expr::EXPR_LOAD_IMMEDIATE){
+            e->_type = MIR_Datatypes::_ptr;
         }
     }
     else{    
@@ -846,6 +848,7 @@ MIR_Primitives MiddleEnd :: transformSubexpr(const Subexpr* expr, StatementBlock
                 break;
             case TOKEN_STRING_LITERAL:
                 dt = DataTypes::String;
+                dt.arrayCount = expr->leaf.string.len + 1;
                 break;
             default:
                 break;
@@ -1098,6 +1101,8 @@ MIR_Primitives MiddleEnd :: transformNode(const Node* current, StatementBlock *s
     
     // convert initialization to assignment
     case Node::NODE_DECLARATION:{
+        std::vector <MIR_Primitive*> prims;
+        
         Declaration* d = (Declaration*) current;
         for (auto const &decln : d->decln){
             if (decln.initValue){
@@ -1116,12 +1121,17 @@ MIR_Primitives MiddleEnd :: transformNode(const Node* current, StatementBlock *s
                 assignment.type = decln.type;
 
                 MIR_Primitives convertedExprs = transformSubexpr(&assignment, scope, arena);
-
-                return convertedExprs;
+                
+                for (int i=0; i<convertedExprs.n; i++){
+                    prims.push_back(convertedExprs.primitives[i]);
+                }
             }
 
         }
-        return MIR_Primitives{.n = 0};
+        for (int i=0; i<prims.size(); i++){
+            scratchPad[i] = prims[i];
+        }
+        return MIR_Primitives{.primitives = (MIR_Primitive**)&scratchPad[0], .n = int(prims.size())};
         break;
     }
 

@@ -108,6 +108,8 @@ static void printMIRPrimitive(MIR_Primitive* p, int depth){
             printTabs(depth + 1);
             std::cout << "offset: " << enode->load.offset << "\n";
             printTabs(depth + 1);
+            std::cout << "type: " << int(enode->load.type) << "\n";
+            printTabs(depth + 1);
             std::cout << "base address of: \n";
             printMIRPrimitive(enode->load.base, depth + 1);
             break;
