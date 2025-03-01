@@ -37,34 +37,49 @@ int main(int argc, char **argv) {
 
         for (auto &pair : ir->functions.entries) {
             std::cout << "Function: " << pair.second.identifier << "{\n";
-            
-            // DOT file functionalities
+        
+            // Extract function name
             std::string functionName = std::string(pair.second.identifier.data, pair.second.identifier.len);
             int functionNode = nodeCounter++;
-            dotStream << "    node" << functionNode << " [label=\"Function: " << functionName << "\"];\n";
-            dotStream << "    node" << functionNode << " -> " << "node" + std::to_string(functionNode+1) << ";\n";
-            // 
-
+        
             Function *foo = &pair.second.info;
+            
             std::cout << "\tReturn type: " << dataTypePrintf(foo->returnType) << "\n";
             std::cout << "\tParameters: {\n";
+        
+            // Buffer to store the parameters strings
+            std::string paramBuffer;
+        
             for (auto &param : foo->parameters) {
                 std::cout << "\t\t" << param.identifier.string << " : " << dataTypePrintf(param.type) << "\n";
+        
+                // Append each parameter with a newline
+                paramBuffer += std::string(dataTypePrintf(param.type)) + " " +
+                               std::string(param.identifier.string.data, param.identifier.string.len) +
+                               ", ";
             }
+            // Remove the trailing comma and space
+            if (!paramBuffer.empty()) {
+                paramBuffer.pop_back();
+                paramBuffer.pop_back();
+            }
+        
             std::cout << "\t}\n";
-
+        
+            // Generate DOT node using HTML label
+            dotStream << "    node" << functionNode << " [shape=rect, label=<"
+                      << "<B>Function:</B> " << functionName << "<BR/>"
+                      << "<B>Params:</B> " << paramBuffer << "<BR/>"
+                      << "<B>Return:</B> " << dataTypePrintf(foo->returnType)
+                      << ">];\n";
+        
+            // Connect to the next node
+            dotStream << "    node" << functionNode << " -> " << "node" + std::to_string(functionNode + 1) << ";\n";
+        
             printParseTree(foo->block, 1, &dotStream);
             std::cout << "}\n";
         }
-
-
-
-        if (ir->global.symbols.count() > 0) {
-            std::cout << "Symbol table:\n";
-            for (auto &pair : ir->global.symbols.entries) {
-                std::cout << "\t" << pair.second.identifier << ": " << dataTypePrintf(pair.second.info) << "\n";
-            }
-        }
+        
 
         if (ir->global.structs.count() > 0) {
             std::cout << "Struct table:\n";

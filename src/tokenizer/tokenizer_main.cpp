@@ -1,8 +1,6 @@
 #include "tokenizer.h"
 #include <iostream>
 
-
-
 int main(int argc, char ** argv){
     if (argc < 2){
         std::cout<<"[USAGE] tokenizer.exe <path to c file to tokenize>";
@@ -32,7 +30,6 @@ int main(int argc, char ** argv){
     }
 
     mdFile.close();
-    return 0;
-    
+    return 0;   
     
 }
