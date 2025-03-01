@@ -135,9 +135,11 @@ enum TokenType{
     
     
     TOKEN_EOF,
-    
-    
 
+    // postfix
+    TOKEN_PLUS_PLUS_POSTFIX, // ++
+    TOKEN_MINUS_MINUS_POSTFIX, // --
+    
     TOKEN_COUNT
 };
 
@@ -269,6 +271,9 @@ static const char *TOKEN_TYPE_STRING[] = {
     
     "TOKEN_EOF",
     
+    // postfix
+    "TOKEN_PLUS_PLUS_POSTFIX", // ++
+    "TOKEN_MINUS_MINUS_POSTFIX", // --
     
 
     "TOKEN_COUNT"
@@ -367,8 +372,6 @@ static TokenType DATA_TYPE_TOKENS[] = {
 };
 
 static TokenType STORAGE_CLASS_SPECIFIER_TOKENS[] = {
-    TOKEN_VOLATILE,
-    TOKEN_CONST,
     TOKEN_EXTERN,
     TOKEN_STATIC,
     TOKEN_INLINE,
@@ -386,6 +389,15 @@ static TokenType TYPE_QUALIFIER_TOKENS[] = {
     TOKEN_CONST,
 };
 
+static TokenType TYPE_PREFIX_OPERATORS [] = {
+    TOKEN_PLUS_PLUS,
+    TOKEN_MINUS_MINUS,
+};
+
+static TokenType TYPE_POSTFIX_OPERATORS [] = {
+    TOKEN_PLUS_PLUS_POSTFIX,
+    TOKEN_MINUS_MINUS_POSTFIX,
+};
 
 
 static bool _match(Token token, TokenType type){

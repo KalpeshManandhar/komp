@@ -867,6 +867,86 @@ MIR_Primitives MiddleEnd :: transformSubexpr(const Subexpr* expr, StatementBlock
     }
 
     case Subexpr::SUBEXPR_UNARY: {
+
+        if (_matchv(expr->unary.op, TYPE_POSTFIX_OPERATORS, ARRAY_COUNT(TYPE_POSTFIX_OPERATORS))){
+            /*
+                a++ is changed to (a = a+1) - 1
+            */
+            bool isInc = (_match(expr->unary.op, TOKEN_PLUS_PLUS_POSTFIX));
+
+            Subexpr one = {0};
+            one.leaf = Token{ .type = TOKEN_NUMERIC_DEC, .string = {.data = "1", .len = 1}};
+            one.tag = Node::NODE_SUBEXPR;
+            one.subtag = Subexpr::SUBEXPR_LEAF;
+            one.type = DataTypes::Int;
+
+            
+            Subexpr inc = {0};
+            inc.binary.op = (isInc)? Token{.type = TOKEN_PLUS} : Token{.type = TOKEN_MINUS};
+            inc.binary.left = expr->unary.expr;
+            inc.binary.right = &one;
+            inc.tag = Node::NODE_SUBEXPR;
+            inc.subtag = Subexpr::SUBEXPR_BINARY_OP;
+            inc.type = expr->unary.expr->type;
+            
+            
+            Subexpr assignment = {0};
+            assignment.binary.op = Token{.type = TOKEN_ASSIGNMENT};
+            assignment.binary.left = expr->unary.expr; 
+            assignment.binary.right = &inc; 
+            assignment.tag = Node::NODE_SUBEXPR;
+            assignment.subtag = Subexpr::SUBEXPR_BINARY_OP;
+            assignment.type = expr->unary.expr->type;
+
+            
+            Subexpr dec = {0};
+            dec.binary.op = (isInc)? Token{.type = TOKEN_MINUS} : Token{.type = TOKEN_PLUS};
+            dec.binary.left = &assignment;
+            dec.binary.right = &one;
+            dec.tag = Node::NODE_SUBEXPR;
+            dec.subtag = Subexpr::SUBEXPR_BINARY_OP;
+            dec.type = expr->unary.expr->type;
+
+        
+            MIR_Primitives exprs = transformSubexpr(&dec, scope, arena);
+            assert(exprs.n == 1);
+            return exprs;
+        }
+        
+        if (_matchv(expr->unary.op, TYPE_PREFIX_OPERATORS, ARRAY_COUNT(TYPE_PREFIX_OPERATORS))){
+            /*
+                ++a is changed to (a = a+1)
+            */
+            bool isInc = (_match(expr->unary.op, TOKEN_PLUS_PLUS));
+
+            Subexpr one = {0};
+            one.leaf = Token{ .type = TOKEN_NUMERIC_DEC, .string = {.data = "1", .len = 1}};
+            one.tag = Node::NODE_SUBEXPR;
+            one.subtag = Subexpr::SUBEXPR_LEAF;
+            one.type = DataTypes::Int;
+            
+            Subexpr inc = {0};
+            inc.binary.op = (isInc)? Token{.type = TOKEN_PLUS} : Token{.type = TOKEN_MINUS};
+            inc.binary.left = expr->unary.expr;
+            inc.binary.right = &one;
+            inc.tag = Node::NODE_SUBEXPR;
+            inc.subtag = Subexpr::SUBEXPR_BINARY_OP;
+            inc.type = expr->unary.expr->type;
+            
+            
+            Subexpr assignment = {0};
+            assignment.binary.op = Token{.type = TOKEN_ASSIGNMENT};
+            assignment.binary.left = expr->unary.expr; 
+            assignment.binary.right = &inc; 
+            assignment.tag = Node::NODE_SUBEXPR;
+            assignment.subtag = Subexpr::SUBEXPR_BINARY_OP;
+            assignment.type = expr->unary.expr->type;
+            
+            MIR_Primitives exprs = transformSubexpr(&assignment, scope, arena);
+            assert(exprs.n == 1);
+            return exprs;
+        }
+
         
         MIR_Primitives exprs = transformSubexpr(expr->unary.expr, scope, arena);
         assert(exprs.n == 1);
@@ -967,10 +1047,6 @@ MIR_Primitives MiddleEnd :: transformSubexpr(const Subexpr* expr, StatementBlock
         }
         case TOKEN_BITWISE_NOT:
             d->unary.op = MIR_Expr::UnaryOp::EXPR_IBITWISE_NOT;
-            break;
-        case TOKEN_PLUS_PLUS:
-            break;
-        case TOKEN_MINUS_MINUS:
             break;
         
         default:

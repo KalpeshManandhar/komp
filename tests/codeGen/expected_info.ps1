@@ -12,4 +12,5 @@ $expected_values = @{
     "test_fp.c" = 255;
     "test_initializer.c" = 24;
     "test_jumps.c" = 80;
+    "test_postfix_prefix.c" = 1;
 } 
