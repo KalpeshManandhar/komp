@@ -15,4 +15,6 @@ $errors_expected = @{
     "test_type_check.c" = 9;
     "test_casts.c" = 2;
     "test_initializer.c" = 2;
+    "test_postfix_prefix.c" = 0;
+    "test_typedef.c" = 0;
 } 

@@ -428,3 +428,10 @@ static DataType getResultantType(DataType left, DataType right, Token op){
     return DataTypes::Int;
 };
 
+
+
+
+struct TypedefInfo{
+    Splice identifier;
+    DataType aliasFor;
+};

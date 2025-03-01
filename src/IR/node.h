@@ -140,6 +140,7 @@ struct StatementBlock: public Node{
     std::vector<Node *> statements;
     SymbolTableOrdered<DataType> symbols;
     SymbolTableOrdered<Struct> structs;
+    SymbolTable<TypedefInfo> typedefs;
     StatementBlock *parent;
 
 
@@ -173,6 +174,17 @@ struct StatementBlock: public Node{
         StatementBlock *currentScope = this;
         while(currentScope){
             if (currentScope->symbols.existKey(name)){
+                return currentScope;
+            }
+            currentScope = currentScope->parent;
+        }
+        return NULL;
+    };
+
+    StatementBlock * findTypedef(Splice name) {
+        StatementBlock *currentScope = this;
+        while(currentScope){
+            if (currentScope->typedefs.existKey(name)){
                 return currentScope;
             }
             currentScope = currentScope->parent;

@@ -439,15 +439,14 @@ DataType Parser::parsePointerType(StatementBlock *scope, DataType baseType){
     (const int) * a;
 */
 DataType Parser::parseBaseDataType(StatementBlock *scope){
-    assert(matchv(DATA_TYPE_TOKENS, ARRAY_COUNT(DATA_TYPE_TOKENS)) 
-            || matchv(TYPE_MODIFIER_TOKENS, ARRAY_COUNT(TYPE_MODIFIER_TOKENS))
-            || matchv(TYPE_QUALIFIER_TOKENS, ARRAY_COUNT(TYPE_QUALIFIER_TOKENS)));
+    assert(isStartOfType(scope));
 
     bool didError = false;
 
     DataType d;
     d.flags = DataType::Specifiers::NONE;
-
+    
+    int flags = DataType::Specifiers::NONE;
 
     
     // type modifiers: signed unsigned long and short
@@ -455,33 +454,34 @@ DataType Parser::parseBaseDataType(StatementBlock *scope){
         || matchv(TYPE_QUALIFIER_TOKENS, ARRAY_COUNT(TYPE_QUALIFIER_TOKENS))
     ){
         if (match(TOKEN_CONST)){
-            d.flags |= DataType::Specifiers::CONST;
+            flags |= DataType::Specifiers::CONST;
         }
         
         if (match(TOKEN_UNSIGNED)){
-            didError = didError || (d.flags & DataType::Specifiers::UNSIGNED);
-            d.flags |= DataType::Specifiers::UNSIGNED;
+            didError = didError || (flags & DataType::Specifiers::UNSIGNED);
+            flags |= DataType::Specifiers::UNSIGNED;
         }
         else if (match(TOKEN_SIGNED)){
-            didError = didError || (d.flags & DataType::Specifiers::SIGNED);
-            d.flags |= DataType::Specifiers::SIGNED;
+            didError = didError || (flags & DataType::Specifiers::SIGNED);
+            flags |= DataType::Specifiers::SIGNED;
         }
         else if (match(TOKEN_LONG)){
-            didError = didError || (d.flags & DataType::Specifiers::LONG_LONG);
-            if (d.flags & DataType::Specifiers::LONG){
-                d.flags |= DataType::Specifiers::LONG_LONG;
-                d.flags ^= DataType::Specifiers::LONG;
+            didError = didError || (flags & DataType::Specifiers::LONG_LONG);
+            if (flags & DataType::Specifiers::LONG){
+                flags |= DataType::Specifiers::LONG_LONG;
+                flags ^= DataType::Specifiers::LONG;
             }
             else{
-                d.flags |= DataType::Specifiers::LONG;
+                flags |= DataType::Specifiers::LONG;
             }
         }
         else if (match(TOKEN_SHORT)){
-            didError = didError || (d.flags & DataType::Specifiers::SHORT);
-            d.flags |= DataType::Specifiers::SHORT;
+            didError = didError || (flags & DataType::Specifiers::SHORT);
+            flags |= DataType::Specifiers::SHORT;
         }
         consumeToken();
     }
+    d.flags = flags;
 
     // long and short conflict
     if ((d.flags & (DataType::Specifiers::LONG | DataType::Specifiers::LONG_LONG) )
@@ -494,22 +494,29 @@ DataType Parser::parseBaseDataType(StatementBlock *scope){
         didError = true;
     }
 
-    // default type is int if there are specifiers but no type
-    if (!matchv(DATA_TYPE_TOKENS, ARRAY_COUNT(DATA_TYPE_TOKENS))){
-        d.type = DataTypes::Int.type;
-        d.tag = DataType::TAG_PRIMARY;
-    }
+    
     // if struct then parse the struct type or struct definition as well
-    else if (match(TOKEN_STRUCT)){
+    if (match(TOKEN_STRUCT)){
         d.structName = parseStructDefinition(scope);
         d.tag = DataType::TAG_STRUCT;
     }
+    // if is a typedef alias
+    else if (scope->findTypedef(peekToken().string)){
+        StatementBlock* typedefScope = scope->findTypedef(peekToken().string);
+        d = typedefScope->typedefs.getInfo(peekToken().string).info.aliasFor;
+        consumeToken();
+    }
     // else other primary data type
-    else{
+    else if (matchv(DATA_TYPE_TOKENS, ARRAY_COUNT(DATA_TYPE_TOKENS))){
         d.type = consumeToken();
         d.tag = DataType::TAG_PRIMARY;
     }
-    
+    // default type is int if there are specifiers but no type
+    else{
+        d.type = DataTypes::Int.type;
+        d.tag = DataType::TAG_PRIMARY;
+    }
+
     // cannot use type modifiers with floats and doubles 
     if ((d.isSet(DataType::Specifiers::LONG_LONG) || d.isSet(DataType::Specifiers::LONG)
         || d.isSet(DataType::Specifiers::SHORT) || d.isSet(DataType::Specifiers::SIGNED)
@@ -811,6 +818,30 @@ bool Parser::isValidLvalue(DataType leftOperandType, Subexpr *leftOperand){
     return true;
 
 };
+
+
+void Parser :: parseTypedef(StatementBlock *scope){
+    assert(match(TOKEN_TYPEDEF));
+    
+    consumeToken();
+    
+    TypedefInfo alias;
+    // the datatype being aliased
+    alias.aliasFor = parseDataType(scope);
+    
+    if (!match(TOKEN_IDENTIFIER)){
+        logErrorMessage(peekToken(), "Typedef requires a name for the alias.");
+        errors++;
+        return;
+    }
+    
+    alias.identifier = consumeToken().string;
+
+    scope->typedefs.add(alias.identifier, alias);
+    expect(TOKEN_SEMI_COLON);
+}
+
+
 
 
 
@@ -1673,9 +1704,7 @@ Node* Parser::parseDeclaration(StatementBlock *scope){
         foo.block = NULL;
         
         // parse parameters
-        while (matchv(DATA_TYPE_TOKENS, ARRAY_COUNT(DATA_TYPE_TOKENS))
-            || matchv(TYPE_MODIFIER_TOKENS, ARRAY_COUNT(TYPE_MODIFIER_TOKENS))
-            || matchv(TYPE_QUALIFIER_TOKENS, ARRAY_COUNT(TYPE_QUALIFIER_TOKENS))){
+        while (isStartOfType(scope)){
             Function::Parameter p;
             p.type = parseDataType(scope);
             
@@ -1848,6 +1877,14 @@ Node* Parser::parseDeclaration(StatementBlock *scope){
     }
 }
 
+bool Parser :: isStartOfType(StatementBlock* scope){
+    return matchv(DATA_TYPE_TOKENS, ARRAY_COUNT(DATA_TYPE_TOKENS))
+        || matchv(TYPE_MODIFIER_TOKENS, ARRAY_COUNT(TYPE_MODIFIER_TOKENS))
+        || matchv(TYPE_QUALIFIER_TOKENS, ARRAY_COUNT(TYPE_QUALIFIER_TOKENS))
+        || scope->findTypedef(peekToken().string);
+}
+
+
 
 /*
     Parses different types of statements allowed.
@@ -1855,15 +1892,16 @@ Node* Parser::parseDeclaration(StatementBlock *scope){
 Node* Parser::parseStatement(StatementBlock *scope){
     didError = false;
 
-    Node *statement;
-    // is declaration if starts with datatype token
-    if (matchv(DATA_TYPE_TOKENS, ARRAY_COUNT(DATA_TYPE_TOKENS))
-        || matchv(TYPE_MODIFIER_TOKENS, ARRAY_COUNT(TYPE_MODIFIER_TOKENS))
-        || matchv(TYPE_QUALIFIER_TOKENS, ARRAY_COUNT(TYPE_QUALIFIER_TOKENS))){
+    Node *statement = 0;
+    // is declaration if starts with datatype token or a storage class specifier
+    if (isStartOfType(scope) || matchv(STORAGE_CLASS_SPECIFIER_TOKENS, ARRAY_COUNT(STORAGE_CLASS_SPECIFIER_TOKENS))){
         statement = parseDeclaration(scope);
     }
     else if (match(TOKEN_IF)){
         statement = parseIf(scope);
+    }
+    else if (match(TOKEN_TYPEDEF)){
+        parseTypedef(scope);
     }
     else if (match(TOKEN_WHILE)){
         statement = parseWhile(scope);
@@ -2095,14 +2133,15 @@ Node* Parser::parseFor(StatementBlock *scope){
 */
 AST *Parser::parseProgram(){
     while (peekToken().type != TOKEN_EOF){
-        if (matchv(DATA_TYPE_TOKENS, ARRAY_COUNT(DATA_TYPE_TOKENS))
-        || matchv(TYPE_MODIFIER_TOKENS, ARRAY_COUNT(TYPE_MODIFIER_TOKENS))
-        || matchv(TYPE_QUALIFIER_TOKENS, ARRAY_COUNT(TYPE_QUALIFIER_TOKENS))){
+        if (isStartOfType(&ir->global)){
             Node *stmt = this->parseDeclaration(&ir->global);
             if (stmt){
                 ir->global.statements.push_back(stmt);
                 checkContext(stmt, &ir->global);
             }
+        }
+        else if (match(TOKEN_TYPEDEF)){
+            parseTypedef(&ir->global);
         }
         else if (match(TOKEN_SEMI_COLON)){
             consumeToken();

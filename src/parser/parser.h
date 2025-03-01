@@ -32,6 +32,7 @@ struct Parser{
     // checks
     Token getSubexprToken(Subexpr *expr);
     bool isExprStart();
+    bool isStartOfType(StatementBlock* scope);
     
     // type/context checking
     bool canBeConverted(Subexpr *from, DataType fromType, DataType toType, StatementBlock* scope);
@@ -53,7 +54,7 @@ struct Parser{
     DataType parseArrayType(StatementBlock *scope, DataType baseType);
     DataType parseDataType(StatementBlock *scope);
 
-    Token parseTypedef(StatementBlock *scope);
+    void parseTypedef(StatementBlock *scope);
     Token parseStructDefinition(StatementBlock *scope);
     Subexpr* parsePrimary(StatementBlock *scope);
     Subexpr* parseSubexpr(int precedence, StatementBlock *scope); 
