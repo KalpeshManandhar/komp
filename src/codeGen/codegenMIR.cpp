@@ -371,24 +371,46 @@ void CodeGenerator :: generateFunctionMIR(MIR_Function *foo, MIR_Scope* global, 
         return;
     }
     
-    // function prologue
-    std::stringstream prologue;
-    prologue << "    .globl " << foo->funcName << "\n";
-    prologue << foo->funcName << ":\n";
-    
-
-    prologue << "    addi sp, sp, -16\n"; // allocate stack space for return address and previous frame pointer.
-    prologue << "    sd ra, 8(sp)\n";     // save return address
-    prologue << "    sd fp, 0(sp)\n";     // save prev frame pointer
-    prologue << "    mv fp, sp\n";        // save current stack pointer 
-    
-    
     // allocate stack space for parameters and local variables
     ScopeInfo storage;
     storage.parent = storageScope;
 
     size_t totalSize = allocStackSpaceMIR((MIR_Scope*) foo, &storage);
     
+    for (auto &prim : foo->statements){
+        generatePrimitiveMIR(prim, (MIR_Scope*) foo, &storage);
+    }
+
+    
+    // function prologue
+    std::stringstream prologue;
+    int64_t prologueOffset = 16;
+    
+    
+    
+    // save the callee saved registers which were actually used by the function
+    RegisterState isUsedX = regAlloc.getRegisterUsage(RegisterType(REG_CALLEE_SAVED));
+    RegisterState isUsedF = regAlloc.getRegisterUsage(RegisterType(REG_CALLEE_SAVED | REG_FLOATING_POINT));
+    RegisterState state = {0};
+    
+    int count = 0;
+    for (int i=0; i<REG_COUNT; i++){
+        state.reg[i] = isUsedX.reg[i].occupied? isUsedX.reg[i] : isUsedF.reg[i];
+        if (state.reg[i].occupied) 
+        count++;
+    }
+    
+    prologue << "    .globl " << foo->funcName << "\n";
+    prologue << foo->funcName << ":\n";
+    
+    prologue << "    addi sp, sp, " << -prologueOffset << "\n"; // allocate stack space for return address and previous frame pointer.
+    prologue << "    sd ra, 8(sp)\n";     // save return address
+    prologue << "    sd fp, 0(sp)\n";     // save prev frame pointer
+    saveRegisters(state, prologue);
+    
+    prologue << "    mv fp, sp\n";        // save current stack pointer 
+    
+    // allocate space for local variables
     if (totalSize > 0)
         prologue << "    addi sp, sp, -" << totalSize << "\n"; 
     
@@ -400,79 +422,88 @@ void CodeGenerator :: generateFunctionMIR(MIR_Function *foo, MIR_Scope* global, 
     int totalAvailableFA = (REG_FA7 - REG_FA0 + 1);
     int occupiedXA = 0;
     int occupiedFA = 0;
+
+
+    int64_t stackOffset = prologueOffset + alignUpPowerOf2(count * XLEN, 16);
+
     // copy parameters from registers to stack
     for (int paramNo = 0; paramNo < foo->parameters.size(); paramNo++){
         MIR_Datatype typeOfParam = foo->parameters[paramNo].type;
         size_t sizeOfParam = typeOfParam.size;
         
         StorageInfo sInfo = storage.symbols.getInfo(foo->parameters[paramNo].identifier).info;
+        
+        int *registerFileInUse = 0;
+        int registerSize = 0;
+        int totalAvailable = 0;
+        RV64_Register registerFileStart = REG_A0;
+        const char* prefix = "";
 
         // integer types
         if (isIntegerType(typeOfParam)){
-            int nRegistersRequired = alignUpPowerOf2(sizeOfParam, XLEN)/XLEN;
-            
-            // pass in registers
-            if (nRegistersRequired <= 2){
-                assert(nRegistersRequired != 2 && "Multiple registers load isnt currently supported.");
+            registerFileInUse = &occupiedXA;
+            registerSize = XLEN;
+            registerFileStart = REG_A0;
+            totalAvailable = totalAvailableXA;
+        }
+        // floating point types
+        else if (isFloatType(typeOfParam)){
+            registerFileInUse = &occupiedFA;
+            registerSize = FLEN;
+            registerFileStart = REG_FA0;
+            totalAvailable = totalAvailableFA;
+            prefix = "f";
+        }
+        else {
+            registerFileInUse = &occupiedXA;
+            registerSize = XLEN;
+            registerFileStart = REG_A0;
+            totalAvailable = totalAvailableXA;
+        }
+
+        int nRegistersRequired = alignUpPowerOf2(sizeOfParam, registerSize) / registerSize;
+
+        
+        // for each reglen required
+        for (int i=0; i<nRegistersRequired; i++){
+            int64_t destOffset = stackAlloc.offsetFromBase(sInfo.memAddress) + i*registerSize;
+            int64_t remaining = max(sizeOfParam - i * registerSize, 0); 
+            int64_t sizeToUse = min(remaining, registerSize);
+
+            // if doesnt fit in 2*RLEN, it is in memory
+            // OR if fits in 2*RLEN but out of arg registers, it is in memory
+            if (nRegistersRequired > 2 || *registerFileInUse == totalAvailable){
+                Register value = regAlloc.allocVRegister(REG_ANY);
+                const char* regName = RV64_RegisterName[regAlloc.resolveRegister(value)];
                 
-                Register argRegister = regAlloc.allocRegister(RV64_Register(REG_A0 + occupiedXA));
-                const char* argRegName = RV64_RegisterName[regAlloc.resolveRegister(argRegister)];
+                // load from memory to register
+                stackOffset = alignUpPowerOf2(stackOffset, typeOfParam.alignment);
+                int64_t srcOffset = stackOffset;
+                prologue << "    l" << iInsIntegerSuffix(sizeToUse) << " " << regName << ", " << srcOffset << "(fp)\n";
                 
+                // put into temp region 
+                prologue << "    s" << iInsIntegerSuffix(sizeToUse) << " " << regName << ", " << destOffset << "(fp)\n"; 
                 
-                int64_t offset = stackAlloc.offsetFromBase(sInfo.memAddress);
-                buffer << "    s" << iInsIntegerSuffix(sizeOfParam) << " " << argRegName << ", " << offset << "(fp)\n"; 
-                regAlloc.freeRegister(argRegister);
-                occupiedXA++;
-                
+                regAlloc.freeRegister(value);
+                stackOffset += sizeToUse;
             }
+            // argument is in register, so store to temp region 
             else {
-                assert(false && "Integer types should fit in one XLEN length register.");
-            }
-
-            
-        }
-        // floating types
-        else if(isFloatType(typeOfParam)){
-            int nRegistersRequired = alignUpPowerOf2(sizeOfParam, FLEN)/FLEN;
-            
-            if (nRegistersRequired <= 2){
-                assert(nRegistersRequired != 2 && "Multiple registers load isnt currently supported.");
-                
-                Register argRegister = regAlloc.allocRegister(RV64_Register(REG_FA0 + occupiedFA));
-                
+                Register argRegister = regAlloc.allocRegister(RV64_Register(registerFileStart + (*registerFileInUse)));
                 const char* argRegName = RV64_RegisterName[regAlloc.resolveRegister(argRegister)];
-                
-                int64_t offset = stackAlloc.offsetFromBase(sInfo.memAddress);
-                buffer << "    fs" << iInsIntegerSuffix(sizeOfParam) << " " << argRegName << ", " << offset << "(fp)\n";
+                    
+                prologue << "    " << prefix << "s" << iInsIntegerSuffix(sizeToUse) << " " << argRegName << ", " << destOffset << "(fp)\n"; 
                 regAlloc.freeRegister(argRegister);
-                occupiedFA++;
+                
+                (*registerFileInUse)++;
             }
-            else {
-                assert(false && "Float types should fit in one FLEN length register.");
-            }
-        }
-        // struct types
-        else{
-            assert(false && "Struct arguments are not supported yet.");
+
         }
 
-    }
-
-    for (auto &prim : foo->statements){
-        generatePrimitiveMIR(prim, (MIR_Scope*) foo, &storage);
     }
 
     
-    
-    // save the callee saved registers which were actually used by the function
-    RegisterState isUsedX = regAlloc.getRegisterUsage(RegisterType(REG_CALLEE_SAVED));
-    RegisterState isUsedF = regAlloc.getRegisterUsage(RegisterType(REG_CALLEE_SAVED | REG_FLOATING_POINT));
-    RegisterState state = {0};
 
-    for (int i=0; i<REG_COUNT; i++){
-        state.reg[i] = isUsedX.reg[i].occupied? isUsedX.reg[i] : isUsedF.reg[i];
-    }
-    saveRegisters(state, prologue);
 
     
     
@@ -480,19 +511,21 @@ void CodeGenerator :: generateFunctionMIR(MIR_Function *foo, MIR_Scope* global, 
     std::stringstream epilogue;
     epilogue << "."<<foo->funcName << "_ep:\n";
 
-    // restore the callee saved registers
-    restoreRegisters(state, epilogue);
-
+    
     // deallocate stack space
     stackAlloc.deallocate(totalSize);
     if (totalSize > 0)
         epilogue << "    addi sp, sp, " << totalSize << "\n"; 
-
+    
     
     epilogue << "    mv sp, fp\n";       // restore stack pointer
+
+    // restore the callee saved registers
+    restoreRegisters(state, epilogue);
+
     epilogue << "    ld fp, 0(sp)\n";    // restore previous frame pointer
     epilogue << "    ld ra, 8(sp)\n";    // restore return address
-    epilogue << "    addi sp, sp, 16\n"; // deallocate stack space
+    epilogue << "    addi sp, sp, " << prologueOffset << "\n"; // deallocate stack space
     epilogue << "    ret\n\n\n";             // return from function
     
 
@@ -553,6 +586,7 @@ void CodeGenerator :: generateAssemblyFromMIR(MIR *mir){
             break;
         }
         // string
+        case MIR_Datatype::TYPE_PTR:
         case MIR_Datatype::TYPE_ARRAY:{
             rodataSection << "    .string " << symbol.value << "\n";
             break;
@@ -1141,22 +1175,19 @@ void CodeGenerator::generateExprMIR(MIR_Expr *current, Register dest, ScopeInfo 
         break;
     }
     case MIR_Expr::EXPR_CALL:{
-        // move return value into destination register
-        RV64_Register destReg = regAlloc.resolveRegister(dest);
-        const char *destName = RV64_RegisterName[destReg];
-
-
+        
+        
         RegisterState Xstate = regAlloc.getRegisterState(REG_CALLER_SAVED);
         RegisterState Fstate = regAlloc.getRegisterState(RegisterType(REG_CALLER_SAVED | REG_FLOATING_POINT));
         RegisterState state = {0};
-
+        
         // the number of caller saved registers in use
         int count = 0;
         for (int i = 0; i<RV64_Register::REG_COUNT; i++){
             // dont get state of destination register as it will be overwritten anyway, and should not be restored as well
-            if (i == destReg){
-                continue;
-            }
+            // if (i == destReg){
+                //     continue;
+                // }
             count += (Xstate.reg[i].occupied)? 1 : 0;
             count += (Fstate.reg[i].occupied)? 1 : 0;
             state.reg[i] = (Xstate.reg[i].occupied)? Xstate.reg[i] : Fstate.reg[i];
@@ -1173,69 +1204,158 @@ void CodeGenerator::generateExprMIR(MIR_Expr *current, Register dest, ScopeInfo 
         int occupiedXA = 0;
         int occupiedFA = 0;
         
+        // calculate stack space required
+        int stackSpaceRequired = 0;
+        for (int argNo = 0; argNo < current->functionCall->arguments.size(); argNo++){
+            MIR_Expr* arg = current->functionCall->arguments[argNo];
+            size_t sizeOfArg = arg->_type.size;
+            
+            int *registerFileInUse = 0;
+            int registerSize = 0;
+            int totalAvailable = 0;
+
+            // integer types
+            if (isIntegerType(arg->_type)){
+                registerFileInUse = &occupiedXA;
+                registerSize = XLEN;
+                totalAvailable = totalAvailableXA;
+            }
+            // floating point types
+            else if (isFloatType(arg->_type)){
+                registerFileInUse = &occupiedFA;
+                registerSize = FLEN;
+                totalAvailable = totalAvailableFA;
+            }
+            else {
+                registerFileInUse = &occupiedXA;
+                registerSize = XLEN;
+                totalAvailable = totalAvailableXA;
+            }
+
+            int nRegistersRequired = alignUpPowerOf2(sizeOfArg, registerSize) / registerSize;
+
+            MIR_Expr argCopy = *arg;
+            // for each reglen required
+            for (int i=0; i<nRegistersRequired; i++){
+                // if doesnt fit in 2*RLEN, put it into memory
+                // OR if fits in 2*RLEN but out of arg registers, put it into memory
+                if (nRegistersRequired > 2 || (*registerFileInUse) == totalAvailable){
+                    int64_t remaining = max(sizeOfArg - i*registerSize, 0);
+                    int64_t sizeToUse = min(remaining, registerSize);
+                    stackSpaceRequired = alignUpPowerOf2(stackSpaceRequired, arg->_type.alignment);
+                    stackSpaceRequired += sizeToUse;
+                }
+
+                // registers are available, so put in registers
+                else {
+                    (*registerFileInUse)++;
+                }
+
+            }
+        }
+        stackSpaceRequired = alignUpPowerOf2(stackSpaceRequired, 16);
+        
+        // allocate stack space if needed
+        MemBlock stackSpace = stackAlloc.allocate(stackSpaceRequired);
+        if (stackSpaceRequired > 0){
+            buffer << "    addi sp, sp, " << -stackSpaceRequired << "\n";
+        }
+
+        
+        // pass the arguments in registers/memory
+        occupiedXA = 0;
+        occupiedFA = 0;
+        
+        
         Register argRegisters[16];
+        int64_t stackOffset = 0;
 
         for (int argNo = 0; argNo < current->functionCall->arguments.size(); argNo++){
             MIR_Expr* arg = current->functionCall->arguments[argNo];
             size_t sizeOfArg = arg->_type.size;
             
+            int *registerFileInUse = 0;
+            int registerSize = 0;
+            int totalAvailable = 0;
+            RV64_Register registerFileStart = REG_A0;
+            const char* prefix = "";
+
             // integer types
             if (isIntegerType(arg->_type)){
-                int nRegistersRequired = alignUpPowerOf2(sizeOfArg, XLEN)/XLEN;
+                registerFileInUse = &occupiedXA;
+                registerSize = XLEN;
+                registerFileStart = REG_A0;
+                totalAvailable = totalAvailableXA;
+            }
+            // floating point types
+            else if (isFloatType(arg->_type)){
+                registerFileInUse = &occupiedFA;
+                registerSize = FLEN;
+                registerFileStart = REG_FA0;
+                totalAvailable = totalAvailableFA;
+                prefix = "f";
+            }
+            else {
+                registerFileInUse = &occupiedXA;
+                registerSize = XLEN;
+                registerFileStart = REG_A0;
+                totalAvailable = totalAvailableXA;
+            }
+
+            int nRegistersRequired = alignUpPowerOf2(sizeOfArg, registerSize) / registerSize;
+
+            MIR_Expr argCopy = *arg;
+            // for each reglen required
+            for (int i=0; i<nRegistersRequired; i++){
+                int64_t remaining = max(sizeOfArg - i*registerSize, 0);
+                int64_t sizeToUse = min(remaining, registerSize);
+    
+                if (arg->tag == MIR_Expr::EXPR_LOAD){
+                    *arg = argCopy;
+                    arg->load.offset += i * registerSize;
+                    arg->load.size = sizeToUse;
+                }
                 
-                // pass in registers
-                if (nRegistersRequired <= 2){
-                    assert(nRegistersRequired != 2 && "Multiple registers load isnt currently supported.");
+                // if doesnt fit in 2*RLEN, put it into memory
+                // OR if fits in 2*RLEN but out of arg registers, put it into memory
+                if (nRegistersRequired > 2 || (*registerFileInUse) == totalAvailable){
+                    // load value into temporary register
+                    Register value = regAlloc.allocVRegister(REG_ANY);
+                    generateExprMIR(arg, value, storageScope);
                     
-                    Register argRegister = regAlloc.allocRegister(RV64_Register(REG_A0 + occupiedXA));
+                    const char* regName = RV64_RegisterName[regAlloc.resolveRegister(value)];
+                    
+                    // get offset 
+                    stackOffset = alignUpPowerOf2(stackOffset, arg->_type.alignment);
+                    int64_t offset = stackAlloc.offsetFromBase(stackSpace) + stackOffset;
+
+                    // store value in stack
+                    buffer << "    " << prefix << "s" << iInsIntegerSuffix(sizeToUse) << " " << regName << ", " << offset << "(fp)\n";
+
+                    regAlloc.freeRegister(value);
+                    stackOffset += sizeToUse;
+                }
+
+                // registers are available, so put in registers
+                else {
+                    Register argRegister = regAlloc.allocRegister(RV64_Register(registerFileStart + (*registerFileInUse)));
+                    
                     generateExprMIR(arg, argRegister, storageScope);
                     
                     argRegisters[occupiedXA + occupiedFA] = argRegister;
-                    occupiedXA++;
-                    
-                }
-                else {
-                    assert(false && "Integer types should fit in one XLEN length register.");
+                    (*registerFileInUse)++;
                 }
 
-                
             }
-            // floating types
-            else if(isFloatType(arg->_type)){
-                int nRegistersRequired = alignUpPowerOf2(sizeOfArg, FLEN)/FLEN;
-                
-                if (nRegistersRequired <= 2){
-                    assert(nRegistersRequired != 2 && "Multiple registers load isnt currently supported.");
-                    
-                    Register argRegister = regAlloc.allocRegister(RV64_Register(REG_FA0 + occupiedFA));
-                    generateExprMIR(arg, argRegister, storageScope);
-
-                    argRegisters[occupiedXA + occupiedFA] = argRegister;
-                    occupiedFA++;
-
-                }
-                else {
-                    assert(false && "Float types should fit in one FLEN length register.");
-                }
-            }
-            // struct types
-            else{
-                assert(false && "Struct arguments are not supported yet.");
-                // int nRegistersRequired = alignUpPowerOf2(sizeOfArg, XLEN)/XLEN;
-                
-                // if (nRegistersRequired > 2){
-                //     Register argRegister = regAlloc.allocRegister(RV64_Register(REG_A0 + occupiedXA));
-                //     generateExprMIR(arg, argRegister, scope, storageScope);
-                //     regAlloc.freeRegister(argRegister);
-                //     occupiedXA++;
-                // }
-
-                // assert(false && "Float types should fit in one FLEN length register.");
-            }
-
         }
 
         buffer << "    call " << current->functionCall->funcName << "\n";
+        
+        // deallocate stack space if any allocated
+        stackAlloc.deallocate(stackSpaceRequired);
+        if (stackSpaceRequired > 0){
+            buffer << "    addi sp, sp, " << stackSpaceRequired << "\n";
+        }
 
         // free the argument registers
         for (int i=0; i<occupiedXA + occupiedFA; i++){
@@ -1265,7 +1385,10 @@ void CodeGenerator::generateExprMIR(MIR_Expr *current, Register dest, ScopeInfo 
 
             const char *returnValInName = RV64_RegisterName[regAlloc.resolveRegister(returnValIn)];
 
-            
+            // move return value into destination register
+            RV64_Register destReg = regAlloc.resolveRegister(dest);
+            const char *destName = RV64_RegisterName[destReg];
+
             buffer << "    " << prefix << "mv" << suffix1 << suffix2 << " " << destName << ", " << returnValInName << "\n";
         
             regAlloc.freeRegister(returnValIn);
@@ -1296,25 +1419,26 @@ void CodeGenerator :: saveRegisters(RegisterState &rState, std::stringstream &bu
         count += (rState.reg[i].occupied)? 1 : 0;
     }
 
-
-    int allocSize = count * XLEN;
+    int n = 0;
+    int allocSize = alignUpPowerOf2(count * XLEN, 16);
+    MemBlock memAddress = stackAlloc.allocate(allocSize);
     if (count > 0){
         buffer << "    addi sp, sp, -" << allocSize << "\n";
-
+        
         for (int i = 0; i<RV64_Register::REG_COUNT; i++){
             // if (i == destReg){
-            //     continue;
-            // }
+                //     continue;
+                // }
             if(rState.reg[i].occupied){
-                MemBlock memAddress = stackAlloc.allocate(XLEN);
-                int64_t offset = stackAlloc.offsetFromBase(memAddress); 
-
+                int64_t offset = n * XLEN; 
+                    
                 bool isFloatReg = (RV64Registers[i].type & REG_FLOATING_POINT) != 0;
                 const char* prefix = isFloatReg? "f": "";
                 
-                buffer << "    " << prefix << "s"<< iInsIntegerSuffix(XLEN) << " " << RV64_RegisterName[i] << ", "<< offset << "(fp) \n";
+                buffer << "    " << prefix << "s"<< iInsIntegerSuffix(XLEN) << " " << RV64_RegisterName[i] << ", "<< offset << "(sp) \n";
                 // buffer << "    " << prefix << "s"<< iInsIntegerSuffix(XLEN) << " " << RV64_RegisterName[i] << ", "<< (n-1)*XLEN << "(sp) \n";
                 regAlloc.freeRegister(Register{.id = size_t(i)});
+                n++;
             }
         }
     }
@@ -1330,8 +1454,9 @@ void CodeGenerator :: restoreRegisters(RegisterState &rState, std::stringstream 
         count += (rState.reg[i].occupied)? 1 : 0;
     }
     
-    
-    int allocSize = XLEN * count;
+    int n = count - 1;
+    int allocSize = alignUpPowerOf2(XLEN * count, 16);
+    MemBlock memAddress = stackAlloc.deallocate(allocSize);
     if (count > 0){
         for (int i = 0; i<RV64_Register::REG_COUNT; i++){
             int regIndex = RV64_Register::REG_COUNT - i - 1;
@@ -1341,14 +1466,14 @@ void CodeGenerator :: restoreRegisters(RegisterState &rState, std::stringstream 
 
 
             if(rState.reg[regIndex].occupied){
-                MemBlock memAddress = stackAlloc.deallocate(XLEN);
-                int64_t offset = stackAlloc.offsetFromBase(memAddress); 
+                int64_t offset = n * XLEN; 
 
                 bool isFloatReg = (RV64Registers[regIndex].type & REG_FLOATING_POINT) != 0;
                 const char* prefix = isFloatReg? "f": "";
                 
-                buffer << "    " << prefix << "l"<< iInsIntegerSuffix(XLEN) << " " << RV64_RegisterName[regIndex] << ", "<< offset << "(fp) \n";
+                buffer << "    " << prefix << "l"<< iInsIntegerSuffix(XLEN) << " " << RV64_RegisterName[regIndex] << ", "<< offset << "(sp) \n";
                 // buffer << "    " << prefix << "l"<< iInsIntegerSuffix(XLEN) << " " << RV64_RegisterName[i] << ", "<< (n-1)*XLEN << "(sp) \n";
+                n--;
             }
         }
         buffer << "    addi sp, sp, " << allocSize << "\n";

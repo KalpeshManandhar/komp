@@ -61,11 +61,10 @@ MIR_Expr* MiddleEnd :: typeCastTo(MIR_Expr* expr, MIR_Datatype to, Arena* arena)
     MIR_Expr* e = expr;
     
     // if conversion from array to pointer, just change the load to a load address 
-    if (e->_type.tag == MIR_Datatype::TYPE_ARRAY && to.tag == MIR_Datatype::TYPE_PTR){
+    if (e->_type.tag == MIR_Datatype::TYPE_ARRAY && isIntegerType(to)){
         if (e->tag == MIR_Expr::EXPR_LOAD){
-            assert(e->tag == MIR_Expr::EXPR_LOAD);
             assert(e->load.base->tag == MIR_Expr::EXPR_ADDRESSOF);
-
+            
             MIR_Expr loadAddressOfArray = {};
             loadAddressOfArray.ptag = MIR_Primitive::PRIM_EXPR;
             loadAddressOfArray.tag = MIR_Expr::EXPR_LOAD_ADDRESS;
@@ -74,6 +73,9 @@ MIR_Expr* MiddleEnd :: typeCastTo(MIR_Expr* expr, MIR_Datatype to, Arena* arena)
             loadAddressOfArray._type = to;
             
             *e = loadAddressOfArray;
+        }
+        else if (e->tag == MIR_Expr::EXPR_LOAD_IMMEDIATE){
+            e->_type = MIR_Datatypes::_ptr;
         }
     }
     else{    
@@ -846,6 +848,7 @@ MIR_Primitives MiddleEnd :: transformSubexpr(const Subexpr* expr, StatementBlock
                 break;
             case TOKEN_STRING_LITERAL:
                 dt = DataTypes::String;
+                dt.arrayCount = expr->leaf.string.len + 1;
                 break;
             default:
                 break;
@@ -864,6 +867,86 @@ MIR_Primitives MiddleEnd :: transformSubexpr(const Subexpr* expr, StatementBlock
     }
 
     case Subexpr::SUBEXPR_UNARY: {
+
+        if (_matchv(expr->unary.op, TYPE_POSTFIX_OPERATORS, ARRAY_COUNT(TYPE_POSTFIX_OPERATORS))){
+            /*
+                a++ is changed to (a = a+1) - 1
+            */
+            bool isInc = (_match(expr->unary.op, TOKEN_PLUS_PLUS_POSTFIX));
+
+            Subexpr one = {0};
+            one.leaf = Token{ .type = TOKEN_NUMERIC_DEC, .string = {.data = "1", .len = 1}};
+            one.tag = Node::NODE_SUBEXPR;
+            one.subtag = Subexpr::SUBEXPR_LEAF;
+            one.type = DataTypes::Int;
+
+            
+            Subexpr inc = {0};
+            inc.binary.op = (isInc)? Token{.type = TOKEN_PLUS} : Token{.type = TOKEN_MINUS};
+            inc.binary.left = expr->unary.expr;
+            inc.binary.right = &one;
+            inc.tag = Node::NODE_SUBEXPR;
+            inc.subtag = Subexpr::SUBEXPR_BINARY_OP;
+            inc.type = expr->unary.expr->type;
+            
+            
+            Subexpr assignment = {0};
+            assignment.binary.op = Token{.type = TOKEN_ASSIGNMENT};
+            assignment.binary.left = expr->unary.expr; 
+            assignment.binary.right = &inc; 
+            assignment.tag = Node::NODE_SUBEXPR;
+            assignment.subtag = Subexpr::SUBEXPR_BINARY_OP;
+            assignment.type = expr->unary.expr->type;
+
+            
+            Subexpr dec = {0};
+            dec.binary.op = (isInc)? Token{.type = TOKEN_MINUS} : Token{.type = TOKEN_PLUS};
+            dec.binary.left = &assignment;
+            dec.binary.right = &one;
+            dec.tag = Node::NODE_SUBEXPR;
+            dec.subtag = Subexpr::SUBEXPR_BINARY_OP;
+            dec.type = expr->unary.expr->type;
+
+        
+            MIR_Primitives exprs = transformSubexpr(&dec, scope, arena);
+            assert(exprs.n == 1);
+            return exprs;
+        }
+        
+        if (_matchv(expr->unary.op, TYPE_PREFIX_OPERATORS, ARRAY_COUNT(TYPE_PREFIX_OPERATORS))){
+            /*
+                ++a is changed to (a = a+1)
+            */
+            bool isInc = (_match(expr->unary.op, TOKEN_PLUS_PLUS));
+
+            Subexpr one = {0};
+            one.leaf = Token{ .type = TOKEN_NUMERIC_DEC, .string = {.data = "1", .len = 1}};
+            one.tag = Node::NODE_SUBEXPR;
+            one.subtag = Subexpr::SUBEXPR_LEAF;
+            one.type = DataTypes::Int;
+            
+            Subexpr inc = {0};
+            inc.binary.op = (isInc)? Token{.type = TOKEN_PLUS} : Token{.type = TOKEN_MINUS};
+            inc.binary.left = expr->unary.expr;
+            inc.binary.right = &one;
+            inc.tag = Node::NODE_SUBEXPR;
+            inc.subtag = Subexpr::SUBEXPR_BINARY_OP;
+            inc.type = expr->unary.expr->type;
+            
+            
+            Subexpr assignment = {0};
+            assignment.binary.op = Token{.type = TOKEN_ASSIGNMENT};
+            assignment.binary.left = expr->unary.expr; 
+            assignment.binary.right = &inc; 
+            assignment.tag = Node::NODE_SUBEXPR;
+            assignment.subtag = Subexpr::SUBEXPR_BINARY_OP;
+            assignment.type = expr->unary.expr->type;
+            
+            MIR_Primitives exprs = transformSubexpr(&assignment, scope, arena);
+            assert(exprs.n == 1);
+            return exprs;
+        }
+
         
         MIR_Primitives exprs = transformSubexpr(expr->unary.expr, scope, arena);
         assert(exprs.n == 1);
@@ -964,10 +1047,6 @@ MIR_Primitives MiddleEnd :: transformSubexpr(const Subexpr* expr, StatementBlock
         }
         case TOKEN_BITWISE_NOT:
             d->unary.op = MIR_Expr::UnaryOp::EXPR_IBITWISE_NOT;
-            break;
-        case TOKEN_PLUS_PLUS:
-            break;
-        case TOKEN_MINUS_MINUS:
             break;
         
         default:
@@ -1098,6 +1177,8 @@ MIR_Primitives MiddleEnd :: transformNode(const Node* current, StatementBlock *s
     
     // convert initialization to assignment
     case Node::NODE_DECLARATION:{
+        std::vector <MIR_Primitive*> prims;
+        
         Declaration* d = (Declaration*) current;
         for (auto const &decln : d->decln){
             if (decln.initValue){
@@ -1116,12 +1197,17 @@ MIR_Primitives MiddleEnd :: transformNode(const Node* current, StatementBlock *s
                 assignment.type = decln.type;
 
                 MIR_Primitives convertedExprs = transformSubexpr(&assignment, scope, arena);
-
-                return convertedExprs;
+                
+                for (int i=0; i<convertedExprs.n; i++){
+                    prims.push_back(convertedExprs.primitives[i]);
+                }
             }
 
         }
-        return MIR_Primitives{.n = 0};
+        for (int i=0; i<prims.size(); i++){
+            scratchPad[i] = prims[i];
+        }
+        return MIR_Primitives{.primitives = (MIR_Primitive**)&scratchPad[0], .n = int(prims.size())};
         break;
     }
 

@@ -6,7 +6,7 @@ int main(){
     char *envp[1] = {0};
     int ret = execve("/bin/ls", argv, envp);
     
-    if (ret < -1){
+    if (ret < 0){
         write(1, "something went wrong\n", 21);
     }
 

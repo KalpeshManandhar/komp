@@ -36,3 +36,4 @@ wait4:
     li a7, 260
     ecall
     ret
+    

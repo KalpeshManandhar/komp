@@ -65,7 +65,9 @@
 ## Code generator
 - Fully support allocation for all registers - somewhat done?
 - Proper support for function calls
-    - Support for struct arguments - remaining
+    - Struct return values - remaining
+    - Pass args in memory - done
+    - Support for struct arguments - done
     - Callee saved registers - done
     - Caller saved registers - done
     - Can be made more efficient through better register assignment

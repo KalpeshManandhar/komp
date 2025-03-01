@@ -31,7 +31,6 @@ struct Parser{
 
     // checks
     Token getSubexprToken(Subexpr *expr);
-    bool isValidLvalue(Subexpr *expr);
     bool isExprStart();
     
     // type/context checking
@@ -62,7 +61,6 @@ struct Parser{
     ContinueNode* parseContinue(StatementBlock *scope);
     BreakNode* parseBreak(StatementBlock *scope);
     StatementBlock* parseStatementBlock(StatementBlock *scope);
-
 
 public:
         

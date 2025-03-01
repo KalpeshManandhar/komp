@@ -1241,6 +1241,20 @@ DataType Parser::checkSubexprType(Subexpr *expr, StatementBlock *scope){
                     return DataTypes::Error;
                 }
             }
+            else if (matchv(TYPE_PREFIX_OPERATORS, ARRAY_COUNT(TYPE_PREFIX_OPERATORS)) 
+                    || matchv(TYPE_POSTFIX_OPERATORS, ARRAY_COUNT(TYPE_POSTFIX_OPERATORS))){
+                
+                bool isOperandIntegerType = !(operand == DataTypes::Int);
+                bool isOperandVariable =  (expr->unary.expr->subtag != Subexpr::SUBEXPR_LEAF) 
+                                        && _match(expr->unary.expr->leaf, TOKEN_IDENTIFIER);
+                if (!isOperandIntegerType || !isOperandVariable){
+                    logErrorMessage(getSubexprToken(expr->unary.expr), "Postfix and prefix operators can only be used with integer variables.");
+                    errors++;
+                    return DataTypes::Error;
+                }
+                
+                return operand;
+            }
             // if struct then, no other unary operator other than & are defined
             else if (operand.tag == DataType::TAG_STRUCT){
                 return DataTypes::Error;
@@ -1506,6 +1520,22 @@ Subexpr* Parser::parsePrimary(StatementBlock *scope){
             s->subtag = Subexpr::SUBEXPR_LEAF;
             s->leaf = identifier;
             
+            if (matchv(TYPE_PREFIX_OPERATORS, ARRAY_COUNT(TYPE_PREFIX_OPERATORS))){
+                Subexpr *leaf = (Subexpr*)arena->alloc(sizeof(Subexpr));
+                *leaf = *s;
+
+                s->subtag = Subexpr::SUBEXPR_UNARY;
+                if (match(TOKEN_PLUS_PLUS)){
+                    s->unary.op = consumeToken();
+                    s->unary.op.type = TOKEN_PLUS_PLUS_POSTFIX;
+                }
+                else if (match(TOKEN_MINUS_MINUS)){
+                    s->unary.op = consumeToken();
+                    s->unary.op.type = TOKEN_MINUS_MINUS_POSTFIX;
+                }
+                s->unary.expr = leaf;
+            }
+            
         }
 
     }
@@ -1600,6 +1630,18 @@ bool Parser::canResolveToConstant(Subexpr *s, StatementBlock *scope){
     Parses variable declaration, function declaration/definition and struct declaration/definition.
 */
 Node* Parser::parseDeclaration(StatementBlock *scope){
+    // parse storage class
+    {
+        int i=0;
+        while (match(TOKEN_STATIC) || match(TOKEN_EXTERN)){
+            Token t = consumeToken();
+            if (i == 1){
+                logErrorMessage(t, "Can only have one storage class.");
+                errors++;
+            }
+            i++;
+        }
+    }
 
     DataType type = parseDataType(scope);
     
