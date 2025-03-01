@@ -372,10 +372,10 @@ static std::string generateDotNode(Node *node, std::ostringstream &dotStream) {
             break;
     }
 
-    // Create the current node
+    // Initializer for Dot File
     dotStream << "    node" << currentNode << " [label=\"" << nodeLabel << "\"];\n";
 
-    // Recursively process child nodes and create edges
+    // Yoinked from Kelp printParse
     switch (node->tag) {
         case Node::NODE_SUBEXPR: {
             Subexpr *s = (Subexpr *)node;
@@ -404,6 +404,11 @@ static std::string generateDotNode(Node *node, std::ostringstream &dotStream) {
                         std::string valNode = generateDotNode(val, dotStream);
                         dotStream << "    node" << currentNode << " -> " << valNode << ";\n";
                     }
+                    break;
+                }
+                case Subexpr::SUBEXPR_RECURSE_PARENTHESIS: {
+                    std::string insideNode = generateDotNode(s->inside, dotStream);
+                    dotStream << "    node" << currentNode << " -> " << insideNode << ";\n";
                     break;
                 }
                 default:
@@ -474,6 +479,7 @@ static std::string generateDotNode(Node *node, std::ostringstream &dotStream) {
     }
 
     return "node" + std::to_string(currentNode);
+
 }
 
 static void printParseTree(Node *const current, int depth = 0,std::ostringstream *dotStream = nullptr){
