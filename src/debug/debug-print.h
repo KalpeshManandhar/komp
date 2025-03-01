@@ -331,6 +331,8 @@ static std::string generateDotNode(Node *node, std::ostringstream &dotStream) {
                 case Subexpr::SUBEXPR_INITIALIZER_LIST:
                     nodeLabel = "init_list";
                     break;
+                case Subexpr::SUBEXPR_RECURSE_PARENTHESIS:
+                    return generateDotNode(s->inside, dotStream);
                 default:
                     nodeLabel = "subexpr";
                     break;
@@ -367,6 +369,7 @@ static std::string generateDotNode(Node *node, std::ostringstream &dotStream) {
             nodeLabel = "return";
             break;
         }
+
         default:
             nodeLabel = "node";
             break;

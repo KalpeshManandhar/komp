@@ -37,6 +37,14 @@ int main(int argc, char **argv) {
 
         for (auto &pair : ir->functions.entries) {
             std::cout << "Function: " << pair.second.identifier << "{\n";
+            
+            // DOT file functionalities
+            std::string functionName = std::string(pair.second.identifier.data, pair.second.identifier.len);
+            int functionNode = nodeCounter++;
+            dotStream << "    node" << functionNode << " [label=\"Function: " << functionName << "\"];\n";
+            dotStream << "    node" << functionNode << " -> " << "node" + std::to_string(functionNode+1) << ";\n";
+            // 
+
             Function *foo = &pair.second.info;
             std::cout << "\tReturn type: " << dataTypePrintf(foo->returnType) << "\n";
             std::cout << "\tParameters: {\n";
@@ -48,6 +56,8 @@ int main(int argc, char **argv) {
             printParseTree(foo->block, 1, &dotStream);
             std::cout << "}\n";
         }
+
+
 
         if (ir->global.symbols.count() > 0) {
             std::cout << "Symbol table:\n";
