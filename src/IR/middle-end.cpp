@@ -1462,13 +1462,3 @@ MIR* transform(AST *ast, Arena *arena){
 
     return middleEnd.mir;
 }
-
-
-
-
-
-
-
-
-
-

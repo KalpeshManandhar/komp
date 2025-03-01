@@ -1,5 +1,6 @@
 #pragma once
 
+#include <sstream>
 #include "node.h"
 #include "symbol-table.h"
 

@@ -299,8 +299,182 @@ static void printMIR(MIR *mir){
 }
 
 
+static int nodeCounter = 0;
 
-static void printParseTree(Node *const current, int depth = 0){
+static std::string generateDotNode(Node *node, std::ostringstream &dotStream) {
+    if (!node) return "";
+
+    int currentNode = nodeCounter++;
+    std::string nodeLabel;
+
+    switch (node->tag) {
+        case Node::NODE_SUBEXPR: {
+            Subexpr *s = (Subexpr *)node;
+            switch (s->subtag) {
+                case Subexpr::SUBEXPR_BINARY_OP:
+                    nodeLabel = std::string(s->binary.op.string.data, s->binary.op.string.len); // Direct conversion
+                    break;
+                case Subexpr::SUBEXPR_LEAF:
+                    nodeLabel = std::string(s->leaf.string.data, s->leaf.string.len); // Direct conversion
+                    break;
+                case Subexpr::SUBEXPR_UNARY:
+                    nodeLabel = std::string(s->unary.op.string.data, s->unary.op.string.len); // Direct conversion
+                    break;
+                case Subexpr::SUBEXPR_FUNCTION_CALL:
+                    nodeLabel = std::string(s->functionCall->funcName.string.data, s->functionCall->funcName.string.len); // Direct conversion
+                    break;
+                case Subexpr::SUBEXPR_CAST:
+                    nodeLabel = "cast";
+                    break;
+                case Subexpr::SUBEXPR_INITIALIZER_LIST:
+                    nodeLabel = "init_list";
+                    break;
+                default:
+                    nodeLabel = "subexpr";
+                    break;
+            }
+            break;
+        }
+        case Node::NODE_DECLARATION: {
+            Declaration *d = (Declaration *)node;
+            nodeLabel = "decl";
+            break;
+        }
+        case Node::NODE_STMT_BLOCK: {
+            StatementBlock *b = (StatementBlock *)node;
+            nodeLabel = "block";
+            break;
+        }
+        case Node::NODE_IF_BLOCK: {
+            IfNode *i = (IfNode *)node;
+            nodeLabel = "if";
+            break;
+        }
+        case Node::NODE_WHILE: {
+            WhileNode *w = (WhileNode *)node;
+            nodeLabel = "while";
+            break;
+        }
+        case Node::NODE_FOR: {
+            ForNode *f = (ForNode *)node;
+            nodeLabel = "for";
+            break;
+        }
+        case Node::NODE_RETURN: {
+            ReturnNode *r = (ReturnNode *)node;
+            nodeLabel = "return";
+            break;
+        }
+        default:
+            nodeLabel = "node";
+            break;
+    }
+
+    // Create the current node
+    dotStream << "    node" << currentNode << " [label=\"" << nodeLabel << "\"];\n";
+
+    // Recursively process child nodes and create edges
+    switch (node->tag) {
+        case Node::NODE_SUBEXPR: {
+            Subexpr *s = (Subexpr *)node;
+            switch (s->subtag) {
+                case Subexpr::SUBEXPR_BINARY_OP: {
+                    std::string leftNode = generateDotNode(s->binary.left, dotStream);
+                    std::string rightNode = generateDotNode(s->binary.right, dotStream);
+                    dotStream << "    node" << currentNode << " -> " << leftNode << ";\n";
+                    dotStream << "    node" << currentNode << " -> " << rightNode << ";\n";
+                    break;
+                }
+                case Subexpr::SUBEXPR_UNARY: {
+                    std::string exprNode = generateDotNode(s->unary.expr, dotStream);
+                    dotStream << "    node" << currentNode << " -> " << exprNode << ";\n";
+                    break;
+                }
+                case Subexpr::SUBEXPR_FUNCTION_CALL: {
+                    for (auto &arg : s->functionCall->arguments) {
+                        std::string argNode = generateDotNode(arg, dotStream);
+                        dotStream << "    node" << currentNode << " -> " << argNode << ";\n";
+                    }
+                    break;
+                }
+                case Subexpr::SUBEXPR_INITIALIZER_LIST: {
+                    for (auto &val : s->initList->values) {
+                        std::string valNode = generateDotNode(val, dotStream);
+                        dotStream << "    node" << currentNode << " -> " << valNode << ";\n";
+                    }
+                    break;
+                }
+                default:
+                    break;
+            }
+            break;
+        }
+        case Node::NODE_DECLARATION: {
+            Declaration *d = (Declaration *)node;
+            for (auto &decl : d->decln) {
+                std::string varNode = "node" + std::to_string(nodeCounter++);
+                dotStream << "    " << varNode << " [label=\"" << std::string(decl.identifier.string.data, decl.identifier.string.len) << "\"];\n";
+                dotStream << "    node" << currentNode << " -> " << varNode << ";\n";
+
+                if (decl.initValue) {
+                    std::string initNode = generateDotNode(decl.initValue, dotStream);
+                    dotStream << "    node" << currentNode << " -> " << initNode << ";\n";
+                }
+            }
+            break;
+        }
+        case Node::NODE_STMT_BLOCK: {
+            StatementBlock *b = (StatementBlock *)node;
+            for (auto &stmt : b->statements) {
+                std::string stmtNode = generateDotNode(stmt, dotStream);
+                dotStream << "    node" << currentNode << " -> " << stmtNode << ";\n";
+            }
+            break;
+        }
+        case Node::NODE_IF_BLOCK: {
+            IfNode *i = (IfNode *)node;
+            std::string condNode = generateDotNode(i->condition, dotStream);
+            dotStream << "    node" << currentNode << " -> " << condNode << ";\n";
+            std::string blockNode = generateDotNode(i->block, dotStream);
+            dotStream << "    node" << currentNode << " -> " << blockNode << ";\n";
+            break;
+        }
+        case Node::NODE_WHILE: {
+            WhileNode *w = (WhileNode *)node;
+            std::string condNode = generateDotNode(w->condition, dotStream);
+            dotStream << "    node" << currentNode << " -> " << condNode << ";\n";
+            std::string blockNode = generateDotNode(w->block, dotStream);
+            dotStream << "    node" << currentNode << " -> " << blockNode << ";\n";
+            break;
+        }
+        case Node::NODE_FOR: {
+            ForNode *f = (ForNode *)node;
+            std::string initNode = generateDotNode(f->init, dotStream);
+            dotStream << "    node" << currentNode << " -> " << initNode << ";\n";
+            std::string condNode = generateDotNode(f->exitCondition, dotStream);
+            dotStream << "    node" << currentNode << " -> " << condNode << ";\n";
+            std::string updateNode = generateDotNode(f->update, dotStream);
+            dotStream << "    node" << currentNode << " -> " << updateNode << ";\n";
+            std::string blockNode = generateDotNode(f->block, dotStream);
+            dotStream << "    node" << currentNode << " -> " << blockNode << ";\n";
+            break;
+        }
+        case Node::NODE_RETURN: {
+            ReturnNode *r = (ReturnNode *)node;
+            if (r->returnVal) {
+                std::string retNode = generateDotNode(r->returnVal, dotStream);
+                dotStream << "    node" << currentNode << " -> " << retNode << ";\n";
+            }
+            break;
+        }
+        default:
+            break;
+    }
+
+    return "node" + std::to_string(currentNode);
+}
+
+static void printParseTree(Node *const current, int depth = 0,std::ostringstream *dotStream = nullptr){
     if (!current){
         return;
     }
@@ -313,6 +487,10 @@ static void printParseTree(Node *const current, int depth = 0){
 
     printTabs(depth);
     printf("%s : {\n", NODE_TAG_STRINGS[current->tag]);
+
+    if (dotStream) {
+        generateDotNode(current, *dotStream);
+    }
 
     switch (current->tag){
     case Node::NODE_SUBEXPR:{
