@@ -203,6 +203,7 @@ struct Function: public Node{
         Token identifier;
     };
     std::vector<Parameter> parameters;
+    bool isVariadic;
 
     StatementBlock *block;
 };

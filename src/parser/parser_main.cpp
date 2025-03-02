@@ -44,6 +44,7 @@ int main(int argc, char **argv) {
                 std::cout << "\t\t" << param.identifier.string << " : " << dataTypePrintf(param.type) << "\n";
             }
             std::cout << "\t}\n";
+            std::cout << "\tVariadic: " << ((foo->isVariadic)? "true":"false") << "\n";
 
             printParseTree(foo->block, 1, &dotStream);
             std::cout << "}\n";

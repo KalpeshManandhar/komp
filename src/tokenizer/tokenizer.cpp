@@ -73,7 +73,7 @@ static bool isIdentifierChar(char c){
 }
 
 static bool isNumberChar(char c){
-    return isNumeric(c) || c == '.' || c == 'x' || isBetween(c, 'a', 'f') || isBetween(c, 'A', 'F');
+    return isNumeric(c) || c == '.' || c == 'x' || isBetween(c, 'a', 'f') || isBetween(c, 'A', 'F') || c == 'U' || c == 'L';
 }
 
 static bool isStringLiteralChar(char c){

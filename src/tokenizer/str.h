@@ -4,11 +4,16 @@
 #include <cstring>
 #include <iostream>
 #include <fstream>
-
+#include <string_view>
 
 struct Splice{
     const char *data;
     size_t len;
+
+    // Define equality operator so unordered_map can check for collisions
+    bool operator==(const Splice& other) const{
+        return len == other.len && strncmp(data, other.data, len) == 0;
+    }
 };
 
 static int copyToArr(Splice src, char *dest, int destSize){
@@ -23,6 +28,7 @@ static bool compare(Splice s, const char* str){
         return false; 
     return strncmp(s.data, str, s.len) == 0;
 }
+
 
 static bool compare(Splice a, Splice b){
     if (a.len != b.len) 

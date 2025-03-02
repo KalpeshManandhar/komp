@@ -1072,16 +1072,19 @@ MIR_Primitives MiddleEnd :: transformSubexpr(const Subexpr* expr, StatementBlock
         
         // convert the arguments
         for (int i=0; i<fooCall->arguments.size(); i++){
-            DataType reqType = foo.parameters[i].type;
-            MIR_Datatype mReqType = convertToLowerLevelType(reqType, scope);
-            
             // convert
             MIR_Primitives exprs = transformSubexpr(fooCall->arguments[i], scope, arena);
             assert(exprs.n == 1);
             MIR_Expr* mArg = (MIR_Expr*)exprs.primitives[0];
 
-            // type cast to required type
-            mArg = typeCastTo(mArg, mReqType, arena);
+            if (!(foo.isVariadic && i >= foo.parameters.size())){
+                DataType reqType = foo.parameters[i].type;
+                MIR_Datatype mReqType = convertToLowerLevelType(reqType, scope);
+                
+                // type cast to required type
+                mArg = typeCastTo(mArg, mReqType, arena);
+            }
+            
             mfooCall->arguments.push_back(mArg);
         }
 

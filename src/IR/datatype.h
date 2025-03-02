@@ -71,13 +71,9 @@ struct DataType{
     int flags = 0;
     
     int indirectionLevel(){
-        if (tag == TAG_ADDRESS){
-            return 1;
-        }
-
         int level = 0;
         DataType *current = this;
-        while (current->tag == TAG_PTR || current->tag == TAG_ARRAY){
+        while (current->tag == TAG_ADDRESS || current->tag == TAG_PTR || current->tag == TAG_ARRAY){
             current = current->ptrTo;
             level++;
         }
@@ -234,22 +230,16 @@ static bool operator==(DataType a, DataType b){
     if (a.flags != b.flags){
         return false;
     }
-
-    while (a.indirectionLevel() > 0){
-        a = *(a.ptrTo);
-    }
-    while (b.indirectionLevel() > 0){
-        b = *(b.ptrTo);
-    }
-    
-
     if (a.tag != b.tag){
         return false;
     }
-    if (!compare(a.type.string, b.type.string)){
-        return false;
+
+    if (a.indirectionLevel() > 0 && b.indirectionLevel() > 0){
+        return *a.ptrTo == *b.ptrTo;
     }
-    return true;
+    
+
+    return compare(a.type.string, b.type.string);
 }
 
 

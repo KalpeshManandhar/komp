@@ -7,22 +7,12 @@
 
 
 
-
-// yoinked with courtesy from https://en.wikipedia.org/wiki/Adler-32
-static uint32_t adler32(unsigned char *data, size_t len) 
-{
-    const uint32_t MOD_ADLER = 65521;
-    uint32_t a = 1, b = 0;
-    size_t index;
-    
-    for (index = 0; index < len; ++index)
-    {
-        a = (a + data[index]) % MOD_ADLER;
-        b = (b + a) % MOD_ADLER;
+// Custom hash function using std::string_view
+struct SpliceHash {
+    std::size_t operator()(const Splice& s) const {
+        return std::hash<std::string_view>{}(std::string_view(reinterpret_cast<const char*>(s.data), s.len));
     }
-    
-    return (b << 16) | a;
-}
+};
 
 
 template <typename T>
@@ -32,30 +22,24 @@ struct SymbolTable{
         T info;
     };
 
-    std::unordered_map<uint32_t, SymbolTableEntry> entries;
+    std::unordered_map<Splice, SymbolTableEntry, SpliceHash>entries;
 
     void add(Splice name, T info){
-        uint32_t hash = adler32((unsigned char *)name.data, name.len);
-
-        entries.insert({hash, {name, info}});
+        entries.insert({name, {name, info}});
     }
 
     bool existKey(Splice name){
-        uint32_t hash = adler32((unsigned char *)name.data, name.len);
-        return entries.contains(hash);
+        return entries.contains(name);
     }
 
     SymbolTableEntry &getInfo(Splice name){
-        uint32_t hash = adler32((unsigned char *)name.data, name.len);
-        return entries[hash];
+        return entries[name];
     }
     size_t count(){
         return entries.size();
     }
     void update(Splice name, T info){
-        uint32_t hash = adler32((unsigned char *)name.data, name.len);
-
-        entries[hash] = {name, info};
+        entries[name] = {name, info};
     }
 
 };
@@ -68,34 +52,26 @@ struct SymbolTableOrdered{
         T info;
     };
 
-    std::unordered_map<uint32_t, SymbolTableEntry> entries;
+    std::unordered_map<Splice, SymbolTableEntry, SpliceHash> entries;
     std::vector<Splice> order;
 
     void add(Splice name, T info){
-        uint32_t hash = adler32((unsigned char *)name.data, name.len);
-
-        entries.insert({hash, {name, info}});
+        entries.insert({name, {name, info}});
         order.push_back(name);
     }
 
     bool existKey(Splice name){
-        uint32_t hash = adler32((unsigned char *)name.data, name.len);
-
-        return entries.contains(hash);
+        return entries.contains(name);
     }
 
     SymbolTableEntry &getInfo(Splice name){
-        uint32_t hash = adler32((unsigned char *)name.data, name.len);
-
-        return entries[hash];
+        return entries[name];
     }
     size_t count(){
         return entries.size();
     }
     void update(Splice name, T info){
-        uint32_t hash = adler32((unsigned char *)name.data, name.len);
-
-        entries[hash] = {name, info};
+        entries[name] = {name, info};
     }
 
 };

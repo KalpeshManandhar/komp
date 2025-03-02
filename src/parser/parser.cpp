@@ -703,7 +703,7 @@ bool Parser::canBeConverted(Subexpr *from, DataType fromType, DataType toType, S
                 toType.getBaseType().tag == DataType::TAG_VOID){
                 return true;
             }
-            else if (fromType.indirectionLevel() != toType.indirectionLevel() || !(*fromType.ptrTo == *toType.ptrTo)){
+            else if (fromType.indirectionLevel() != toType.indirectionLevel() || !(*(fromType.ptrTo) == *(toType.ptrTo))){
                 logWarningMessage(subexprToken, "Conversion from pointer of type \"%s\" to \"%s\".",
                     dataTypePrintf(fromType), dataTypePrintf(toType)
                 );
@@ -773,9 +773,12 @@ bool Parser::canBeConverted(Subexpr *from, DataType fromType, DataType toType, S
         // integers can be converted to pointers but with warning
         if ((match(fromType.type, TOKEN_INT) || match(fromType.type, TOKEN_CHAR))
             && toType.indirectionLevel() > 0){
-            logWarningMessage(subexprToken, "Conversion from integer type \"%s\" to pointer type \"%s\".",
-                                dataTypePrintf(fromType), dataTypePrintf(toType));
-                return true;
+            if (toType.getBaseType().tag != DataType::TAG_VOID){
+                logWarningMessage(subexprToken, "Conversion from integer type \"%s\" to pointer type \"%s\".",
+                    dataTypePrintf(fromType), dataTypePrintf(toType));
+
+            }
+            return true;
         }
         
         // primary cannot be converted to structs
@@ -1348,8 +1351,13 @@ DataType Parser::checkSubexprType(Subexpr *expr, StatementBlock *scope){
 
             Function foo = ir->functions.getInfo(fooCall->funcName.string).info;
             // check for number of arguments
-            if (foo.parameters.size() != fooCall->arguments.size()){
+            if (!foo.isVariadic && foo.parameters.size() != fooCall->arguments.size()){
                 logErrorMessage(fooCall->funcName, "In function \"%.*s\", required %" PRIu64 " but found %" PRIu64 " arguments.", 
+                            splicePrintf(fooCall->funcName.string), foo.parameters.size(), fooCall->arguments.size());
+                errors++;
+            }
+            else if (foo.isVariadic && foo.parameters.size() > fooCall->arguments.size()){
+                logErrorMessage(fooCall->funcName, "In function \"%.*s\", required a minimum of %" PRIu64 " arguments but found %" PRIu64 ".", 
                             splicePrintf(fooCall->funcName.string), foo.parameters.size(), fooCall->arguments.size());
                 errors++;
             }
@@ -1664,13 +1672,16 @@ Node* Parser::parseDeclaration(StatementBlock *scope){
     // parse storage class
     {
         int i=0;
-        while (match(TOKEN_STATIC) || match(TOKEN_EXTERN)){
+        while (matchv(STORAGE_CLASS_SPECIFIER_TOKENS, ARRAY_COUNT(STORAGE_CLASS_SPECIFIER_TOKENS))
+            || matchv(INLINE_SPECIFIER_TOKENS, ARRAY_COUNT(INLINE_SPECIFIER_TOKENS))){
             Token t = consumeToken();
             if (i == 1){
                 logErrorMessage(t, "Can only have one storage class.");
                 errors++;
             }
-            i++;
+            if (matchv(STORAGE_CLASS_SPECIFIER_TOKENS, ARRAY_COUNT(STORAGE_CLASS_SPECIFIER_TOKENS))){   
+                i++;
+            }
         }
     }
 
@@ -1690,9 +1701,10 @@ Node* Parser::parseDeclaration(StatementBlock *scope){
         errors++;
     }
 
-
+    
     assert(match(TOKEN_IDENTIFIER));
     Token identifier = consumeToken();
+    
 
     // if ( is present, then it is func declaration/definition
     if (match(TOKEN_PARENTHESIS_OPEN)){
@@ -1702,15 +1714,25 @@ Node* Parser::parseDeclaration(StatementBlock *scope){
         foo.returnType = type;
         foo.funcName = identifier;
         foo.block = NULL;
+        foo.isVariadic = false;
         
+        bool isDeclOnly = false;
+
         // parse parameters
         while (isStartOfType(scope)){
             Function::Parameter p;
             p.type = parseDataType(scope);
+            if (p.type.tag == DataType::TAG_VOID) {
+                break;
+            }
             
-            assert(match(TOKEN_IDENTIFIER));
-            p.identifier = consumeToken();
-
+            if (!match(TOKEN_IDENTIFIER)){
+                isDeclOnly = true;
+            }
+            else {
+                p.identifier = consumeToken();
+            }
+            
             foo.parameters.push_back(p);
             
             
@@ -1720,16 +1742,22 @@ Node* Parser::parseDeclaration(StatementBlock *scope){
             else{
                 consumeToken();
             }
+
+            if (match(TOKEN_DOT_DOT_DOT)){
+                consumeToken();
+                foo.isVariadic = true;
+                break;
+            }
         };
 
         expect(TOKEN_PARENTHESIS_CLOSE);
         
         
         // if definition exists
-        if (match(TOKEN_CURLY_OPEN)){
+        if (!isDeclOnly && match(TOKEN_CURLY_OPEN)){
             
             // parse function body
-            foo.block = parseStatementBlock(scope);
+            foo.block = parseStatementBlock(scope, true);
             foo.block->subtag = StatementBlock::BLOCK_FUNCTION_BODY;
             foo.block->funcName = foo.funcName;
 
@@ -1920,7 +1948,7 @@ Node* Parser::parseStatement(StatementBlock *scope){
     }
     // { represents a new scope/statment block
     else if (match(TOKEN_CURLY_OPEN)){
-        statement = parseStatementBlock(scope);
+        statement = parseStatementBlock(scope, true);
     }
     else if (match(TOKEN_SEMI_COLON)){
         statement = NULL;
@@ -1985,7 +2013,7 @@ ContinueNode* Parser::parseContinue(StatementBlock *scope){
 
 
 
-StatementBlock* Parser::parseStatementBlock(StatementBlock *scope){
+StatementBlock* Parser::parseStatementBlock(StatementBlock *scope, bool blockMode){
     void *mem = arena->alloc(sizeof(StatementBlock));
     StatementBlock *block =  new (mem) StatementBlock;
     
@@ -1993,16 +2021,25 @@ StatementBlock* Parser::parseStatementBlock(StatementBlock *scope){
     block->parent = scope;
     block->subtag = StatementBlock::BLOCK_UNNAMED;
     
-    expect(TOKEN_CURLY_OPEN);
-
-    // parse statements
-    while (!match(TOKEN_CURLY_CLOSE)){
+    
+    if (blockMode){
+        expect(TOKEN_CURLY_OPEN);
+        
+        // parse statements
+        while (!match(TOKEN_CURLY_CLOSE)){
+            Node *stmt = parseStatement(block);
+            if (stmt){
+                block->statements.push_back(stmt);
+            }
+        }
+        expect(TOKEN_CURLY_CLOSE);
+    }
+    else {
         Node *stmt = parseStatement(block);
         if (stmt){
             block->statements.push_back(stmt);
         }
     }
-    expect(TOKEN_CURLY_CLOSE);
 
     return block;
 }
@@ -2039,8 +2076,10 @@ Node* Parser::parseIf(StatementBlock *scope){
     else{
         ifNode->subtag = IfNode::IfNodeType::ELSE_NODE;
     }
+    
+    bool isBlock = match(TOKEN_CURLY_OPEN);
 
-    ifNode->block = (StatementBlock *)parseStatementBlock(scope);
+    ifNode->block = (StatementBlock *)parseStatementBlock(scope, isBlock);
     ifNode->block->subtag = StatementBlock::BLOCK_IF;
     ifNode->block->scope  = ifNode;
 
@@ -2075,9 +2114,10 @@ Node* Parser::parseWhile(StatementBlock *scope){
         errors++;
     }
     expect(TOKEN_PARENTHESIS_CLOSE);
-
     
-    whileNode->block = (StatementBlock *)parseStatementBlock(scope);
+    bool isBlock = match(TOKEN_CURLY_OPEN);
+    
+    whileNode->block = (StatementBlock *)parseStatementBlock(scope, isBlock);
     whileNode->block->subtag = StatementBlock::BLOCK_WHILE;
     whileNode->block->scope  = whileNode;
     
@@ -2116,7 +2156,9 @@ Node* Parser::parseFor(StatementBlock *scope){
     }
     expect(TOKEN_PARENTHESIS_CLOSE);
     
-    forNode->block = (StatementBlock *)parseStatementBlock(scope);
+    bool isBlock = match(TOKEN_CURLY_OPEN);
+
+    forNode->block = (StatementBlock *)parseStatementBlock(scope, isBlock);
     forNode->block->subtag = StatementBlock::BLOCK_FOR;
     forNode->block->scope  = forNode;
     
@@ -2133,7 +2175,7 @@ Node* Parser::parseFor(StatementBlock *scope){
 */
 AST *Parser::parseProgram(){
     while (peekToken().type != TOKEN_EOF){
-        if (isStartOfType(&ir->global)){
+        if (isStartOfType(&ir->global) || matchv(STORAGE_CLASS_SPECIFIER_TOKENS, ARRAY_COUNT(STORAGE_CLASS_SPECIFIER_TOKENS))){
             Node *stmt = this->parseDeclaration(&ir->global);
             if (stmt){
                 ir->global.statements.push_back(stmt);

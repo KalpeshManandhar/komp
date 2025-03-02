@@ -133,12 +133,16 @@ enum TokenType{
     TOKEN_COMMA,
     TOKEN_HASH,
     
+    TOKEN_DOT_DOT_DOT, // ...
     
-    TOKEN_EOF,
-
     // postfix
     TOKEN_PLUS_PLUS_POSTFIX, // ++
     TOKEN_MINUS_MINUS_POSTFIX, // --
+    
+    TOKEN_EOF,
+
+
+
     
     TOKEN_COUNT
 };
@@ -268,12 +272,14 @@ static const char *TOKEN_TYPE_STRING[] = {
     "TOKEN_COMMA",
     "TOKEN_HASH",
     
-    
-    "TOKEN_EOF",
+    "TOKEN_DOT_DOT_DOT",
     
     // postfix
     "TOKEN_PLUS_PLUS_POSTFIX", // ++
     "TOKEN_MINUS_MINUS_POSTFIX", // --
+    
+    "TOKEN_EOF",
+
     
 
     "TOKEN_COUNT"
@@ -374,8 +380,9 @@ static TokenType DATA_TYPE_TOKENS[] = {
 static TokenType STORAGE_CLASS_SPECIFIER_TOKENS[] = {
     TOKEN_EXTERN,
     TOKEN_STATIC,
-    TOKEN_INLINE,
 };
+
+static TokenType INLINE_SPECIFIER_TOKENS[] = {TOKEN_INLINE};
 
 static TokenType TYPE_MODIFIER_TOKENS[] = {
     TOKEN_UNSIGNED,

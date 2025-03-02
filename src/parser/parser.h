@@ -61,7 +61,7 @@ struct Parser{
     ReturnNode* parseReturn(StatementBlock *scope);
     ContinueNode* parseContinue(StatementBlock *scope);
     BreakNode* parseBreak(StatementBlock *scope);
-    StatementBlock* parseStatementBlock(StatementBlock *scope);
+    StatementBlock* parseStatementBlock(StatementBlock *scope, bool blockMode);
 
 public:
         

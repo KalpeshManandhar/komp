@@ -1235,6 +1235,12 @@ void CodeGenerator::generateExprMIR(MIR_Expr *current, Register dest, ScopeInfo 
             int nRegistersRequired = alignUpPowerOf2(sizeOfArg, registerSize) / registerSize;
 
             MIR_Expr argCopy = *arg;
+
+            // if doesnt fit in 2*RLEN, then put pointer in register if available
+            if (nRegistersRequired > 2 && (*registerFileInUse) < totalAvailable){
+                (*registerFileInUse)++;
+            }
+
             // for each reglen required
             for (int i=0; i<nRegistersRequired; i++){
                 // if doesnt fit in 2*RLEN, put it into memory
@@ -1303,6 +1309,7 @@ void CodeGenerator::generateExprMIR(MIR_Expr *current, Register dest, ScopeInfo 
             }
 
             int nRegistersRequired = alignUpPowerOf2(sizeOfArg, registerSize) / registerSize;
+            int64_t stackOffsetStart = stackOffset;
 
             MIR_Expr argCopy = *arg;
             // for each reglen required
@@ -1347,6 +1354,18 @@ void CodeGenerator::generateExprMIR(MIR_Expr *current, Register dest, ScopeInfo 
                 }
 
             }
+
+            // if doesnt fit in 2*RLEN, then put pointer in register if available
+            if (nRegistersRequired > 2 && (*registerFileInUse) < totalAvailable){
+                Register argRegister = regAlloc.allocRegister(RV64_Register(REG_A0 + (*registerFileInUse)));
+                const char* regName = RV64_RegisterName[regAlloc.resolveRegister(argRegister)];
+                
+                // load address of the arg in stack in register
+                buffer << "    addi " << regName << ", fp, " << stackAlloc.offsetFromBase(stackSpace) + stackOffsetStart << "\n";
+                
+                (*registerFileInUse)++;
+            }
+
         }
 
         buffer << "    call " << current->functionCall->funcName << "\n";

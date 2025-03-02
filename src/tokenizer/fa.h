@@ -80,6 +80,12 @@ struct NumConstDFA: public DFA{
         STATE_DOUBLE,
         STATE_FLOAT,
 
+        STATE_L,
+        STATE_LL,
+        STATE_U,
+        STATE_UL,
+        STATE_ULL,
+
         STATE_COUNT,
     };
 
@@ -98,27 +104,41 @@ struct NumConstDFA: public DFA{
         this->addTransition(STATE_ZERO, "01234567", STATE_OCTAL);
         this->addTransition(STATE_ZERO, "89", STATE_INVALID_OCTAL);
         this->addTransition(STATE_ZERO, ".", STATE_DOUBLE);
+        this->addTransition(STATE_ZERO, "U", STATE_U);
+        this->addTransition(STATE_ZERO, "L", STATE_L);
 
+        
         this->addTransition(STATE_X, "0123456789abcdefABCDEF", STATE_HEX);
         this->addTransition(STATE_HEX, "0123456789abcdefABCDEF", STATE_HEX);
-
+        this->addTransition(STATE_HEX, "U", STATE_U);
+        this->addTransition(STATE_HEX, "L", STATE_L);
+        
         this->addTransition(STATE_B, "01", STATE_BINARY);
         this->addTransition(STATE_BINARY, "01", STATE_BINARY);
-
+        
         this->addTransition(STATE_INVALID_OCTAL, "0123456789", STATE_INVALID_OCTAL);
         this->addTransition(STATE_INVALID_OCTAL, ".", STATE_DOUBLE);
+        
         
         this->addTransition(STATE_OCTAL, "01234567", STATE_OCTAL);
         this->addTransition(STATE_OCTAL, "89", STATE_INVALID_OCTAL);
         this->addTransition(STATE_OCTAL, ".", STATE_DOUBLE);
-
+        this->addTransition(STATE_OCTAL, "U", STATE_U);
+        this->addTransition(STATE_OCTAL, "L", STATE_L);
+        
         this->addTransition(STATE_DECIMAL, "0123456789", STATE_DECIMAL);
         this->addTransition(STATE_DECIMAL, ".", STATE_DOUBLE);
-
+        this->addTransition(STATE_DECIMAL, "U", STATE_U);
+        this->addTransition(STATE_DECIMAL, "L", STATE_L);
+        
         
         this->addTransition(STATE_DOUBLE, "0123456789", STATE_DOUBLE);
         this->addTransition(STATE_DOUBLE, "f", STATE_FLOAT);
-
+        
+        this->addTransition(STATE_U, "L", STATE_UL);
+        this->addTransition(STATE_L, "L", STATE_LL);
+        
+        this->addTransition(STATE_UL, "L", STATE_ULL);
         
         this->setStartState(STATE_START);
         this->restart();
@@ -134,7 +154,7 @@ struct NumConstDFA: public DFA{
         case STATE_ZERO:  
         case STATE_DECIMAL:  
             t.type = TokenType::TOKEN_NUMERIC_DEC; break;
-        
+            
         case STATE_OCTAL:  
             t.type = TokenType::TOKEN_NUMERIC_OCT; break;
         
@@ -145,7 +165,12 @@ struct NumConstDFA: public DFA{
         
         case STATE_HEX:  
             t.type = TokenType::TOKEN_NUMERIC_HEX; break;
-        
+        case STATE_U:
+        case STATE_UL:
+        case STATE_ULL:
+        case STATE_L:
+        case STATE_LL:
+            t.type = TokenType::TOKEN_NUMERIC_DEC; break;
         default:
             t.type = TokenType::TOKEN_ERROR;
             break;
@@ -163,6 +188,7 @@ struct PunctuatorDFA: public DFA{
         // start and error states (non accepting) 
         STATE_ERROR = 0,
         STATE_START,
+        STATE_DOT_DOT,
         
         // start of accepting states, 
         // all following states are in same sequence as in their counterparts in 
@@ -236,7 +262,7 @@ struct PunctuatorDFA: public DFA{
         // currently havent supported these
         // ... # ##
         // <: :> <% %> %: %:%: digraphs and trigraphs
-
+        STATE_DOT_DOT_DOT,
 
         STATE_COUNT,
     };
@@ -255,6 +281,9 @@ struct PunctuatorDFA: public DFA{
         this->addTransition(STATE_START, "(", STATE_PARENTHESIS_OPEN);
         this->addTransition(STATE_START, ")", STATE_PARENTHESIS_CLOSE);
         this->addTransition(STATE_START, ".", STATE_DOT);
+        
+        this->addTransition(STATE_DOT, ".", STATE_DOT_DOT);
+        this->addTransition(STATE_DOT_DOT, ".", STATE_DOT_DOT_DOT);
 
         this->addTransition(STATE_START, "&", STATE_AMPERSAND);
         this->addTransition(STATE_START, "|", STATE_BITWISE_OR);
