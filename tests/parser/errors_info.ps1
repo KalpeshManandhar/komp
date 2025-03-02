@@ -17,4 +17,5 @@ $errors_expected = @{
     "test_initializer.c" = 2;
     "test_postfix_prefix.c" = 0;
     "test_typedef.c" = 0;
+    "test_variadic.c" = 1;
 } 

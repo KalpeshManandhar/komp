@@ -545,6 +545,44 @@ void CodeGenerator :: generateAssemblyFromMIR(MIR *mir){
     ScopeInfo s;
     s.parent = 0;
     
+    // add the global symbols to global symbol table
+    for (auto &symbolName : mir->global->symbols.order){
+        MIR_Datatype type = mir->global->symbols.getInfo(symbolName).info;
+        
+        Label label = labeller.label();
+        StorageInfo inDataSection;
+        inDataSection.tag = StorageInfo::STORAGE_LABEL;
+        inDataSection.label = label;
+        inDataSection.size = type.size;
+        s.symbols.add(symbolName, inDataSection);
+        
+        GlobalSymbolInfo gSymbol;
+        gSymbol.label = label;
+        gSymbol.type = type;
+        gSymbol.value = Splice{.data = "0", .len = 1};
+        data.add(symbolName, gSymbol);
+        
+    }
+    
+    // change the init values for each of the global symbols
+    for (auto &statement : mir->global->statements){
+        assert(statement->ptag == MIR_Primitive::PRIM_EXPR);
+        MIR_Expr* assignment = (MIR_Expr*) statement;
+        
+        assert(assignment->tag == MIR_Expr::EXPR_STORE);
+        assert(assignment->store.right->tag == MIR_Expr::EXPR_LOAD_IMMEDIATE);
+        
+        assert(assignment->store.left->tag == MIR_Expr::EXPR_ADDRESSOF);
+        MIR_Expr* addressOf = assignment->store.left;
+        
+        GlobalSymbolInfo symbol = data.getInfo(addressOf->addressOf.of->leaf.val).info;
+        symbol.value = assignment->store.right->immediate.val;
+
+        data.update(addressOf->addressOf.of->leaf.val, symbol);
+    }
+    
+
+
     textSection << "    .section     .text\n";
     
     // generate functions
@@ -567,7 +605,7 @@ void CodeGenerator :: generateAssemblyFromMIR(MIR *mir){
     
     // write out all the symbols in .rodata section
     for (auto &rodataSymbol : rodata.entries){
-        SymbolInfo symbol = rodataSymbol.second.info;
+        GlobalSymbolInfo symbol = rodataSymbol.second.info;
         
         rodataSection << ".symbol" << symbol.label << ":\n";
         
@@ -593,10 +631,58 @@ void CodeGenerator :: generateAssemblyFromMIR(MIR *mir){
         }
         default:
             break;
-        }
+        }        
+    }
 
-
+    // write out all the symbols in .rodata section
+    for (auto &dataSymbol : data.entries){
+        GlobalSymbolInfo symbol = dataSymbol.second.info;
         
+        dataSection << ".symbol" << symbol.label << ":\n";
+        
+        switch (symbol.type.tag) {
+        case MIR_Datatype::TYPE_U8:
+        case MIR_Datatype::TYPE_I8:{
+            dataSection << "    .byte "  << symbol.value << "\n";
+            break;
+        }
+        case MIR_Datatype::TYPE_U16:
+        case MIR_Datatype::TYPE_I16:{
+            dataSection << "    .half "  << symbol.value << "\n";
+            break;
+        }
+        case MIR_Datatype::TYPE_U32:
+        case MIR_Datatype::TYPE_I32:{
+            dataSection << "    .word "  << symbol.value << "\n";
+            break;
+        }
+        case MIR_Datatype::TYPE_U64:
+        case MIR_Datatype::TYPE_I64:{
+            dataSection << "    .dword "  << symbol.value << "\n";
+            break;
+        }
+        case MIR_Datatype::TYPE_F32:{
+            Number value = f32FromString(symbol.value.data);
+    
+            dataSection << "    .word "  << value.u32[0] << "\n";
+            break;
+        }
+        case MIR_Datatype::TYPE_F64:{
+            Number value = f64FromString(symbol.value.data);
+    
+            dataSection << "    .word "  << value.u32[0] << "\n";
+            dataSection << "    .word "  << value.u32[1] << "\n";
+            break;
+        }
+        // string
+        case MIR_Datatype::TYPE_PTR:
+        case MIR_Datatype::TYPE_ARRAY:{
+            dataSection << "    .string " << symbol.value << "\n";
+            break;
+        }
+        default:
+            break;
+        }        
     }
 
 }
@@ -627,10 +713,10 @@ void CodeGenerator::generateExprMIR(MIR_Expr *current, Register dest, ScopeInfo 
             // for string literal, load address
             if (current->_type.tag == MIR_Datatype::TYPE_PTR || current->_type.tag == MIR_Datatype::TYPE_ARRAY){
                 if (!rodata.existKey(current->immediate.val)){
-                    rodata.add(current->immediate.val, SymbolInfo{.label = labeller.label(), .value = current->immediate.val, .type = current->_type});
+                    rodata.add(current->immediate.val, GlobalSymbolInfo{.label = labeller.label(), .value = current->immediate.val, .type = current->_type});
                 }
                 
-                SymbolInfo stringLiteralInfo = rodata.getInfo(current->immediate.val).info;
+                GlobalSymbolInfo stringLiteralInfo = rodata.getInfo(current->immediate.val).info;
 
                 buffer << "    la " << destName << ", .symbol" << stringLiteralInfo.label << "\n";
             }
@@ -642,10 +728,10 @@ void CodeGenerator::generateExprMIR(MIR_Expr *current, Register dest, ScopeInfo 
         // since there is no instruction in RV64 to load a immediate value into a floating point register
         else if (isFloatType(current->_type)){
             if (!rodata.existKey(current->immediate.val)){
-                rodata.add(current->immediate.val, SymbolInfo{.label = labeller.label(), .value = current->immediate.val, .type = current->_type});
+                rodata.add(current->immediate.val, GlobalSymbolInfo{.label = labeller.label(), .value = current->immediate.val, .type = current->_type});
             }
             
-            SymbolInfo fpLiteralInfo = rodata.getInfo(current->immediate.val).info;
+            GlobalSymbolInfo fpLiteralInfo = rodata.getInfo(current->immediate.val).info;
 
             Register fpLiteralAddress = regAlloc.allocVRegister(RegisterType::REG_ANY);
             const char* fpLiteralAddressName = RV64_RegisterName[regAlloc.resolveRegister(fpLiteralAddress)];
@@ -875,6 +961,15 @@ void CodeGenerator::generateExprMIR(MIR_Expr *current, Register dest, ScopeInfo 
             case MIR_Expr::BinaryOp::EXPR_UDIV:
             case MIR_Expr::BinaryOp::EXPR_IDIV:{
                 buffer << "    div " << destName << ", " << leftName << ", " << rightName << "\n";
+                break;
+            }
+            
+            case MIR_Expr::BinaryOp::EXPR_UMOD:{
+                buffer << "    remu " << destName << ", " << leftName << ", " << rightName << "\n";
+                break;
+            }
+            case MIR_Expr::BinaryOp::EXPR_IMOD:{
+                buffer << "    rem " << destName << ", " << leftName << ", " << rightName << "\n";
                 break;
             }
 

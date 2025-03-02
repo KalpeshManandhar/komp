@@ -587,6 +587,7 @@ MIR_Primitives MiddleEnd :: transformSubexpr(const Subexpr* expr, StatementBlock
                 *addLeft = *left;
                 
                 // the new add node
+                add->ptag = MIR_Primitive::PRIM_EXPR;
                 add->tag = MIR_Expr::EXPR_BINARY;
                 add->binary.left = typeCastTo(addLeft, add->_type, arena);
                 add->binary.right = typeCastTo(right, add->_type, arena);
@@ -686,8 +687,7 @@ MIR_Primitives MiddleEnd :: transformSubexpr(const Subexpr* expr, StatementBlock
             break;
         } 
         case TOKEN_MODULO:{
-            assert(false);
-            d->binary.op = MIR_Expr::BinaryOp::EXPR_IDIV;
+            d->binary.op = MIR_Expr::BinaryOp::EXPR_IMOD;
             break;
         } 
         case TOKEN_AMPERSAND:{

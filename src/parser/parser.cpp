@@ -1728,6 +1728,7 @@ Node* Parser::parseDeclaration(StatementBlock *scope){
             
             if (!match(TOKEN_IDENTIFIER)){
                 isDeclOnly = true;
+                p.identifier = {.string = {.data = "", .len = 0}};
             }
             else {
                 p.identifier = consumeToken();

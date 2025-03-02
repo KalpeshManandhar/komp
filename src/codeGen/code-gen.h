@@ -8,7 +8,7 @@
 #include "storage.h"
 
 
-struct SymbolInfo {
+struct GlobalSymbolInfo {
     size_t label;
     Splice value;
     MIR_Datatype type;
@@ -16,7 +16,8 @@ struct SymbolInfo {
 
 struct CodeGenerator{
     
-    SymbolTable<SymbolInfo> rodata;
+    SymbolTable<GlobalSymbolInfo> data;
+    SymbolTable<GlobalSymbolInfo> rodata;
 
     std::stringstream rodataSection;
     std::stringstream dataSection;

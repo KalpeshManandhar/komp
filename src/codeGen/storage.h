@@ -485,12 +485,14 @@ struct StorageInfo{
     enum StorageTag{
         STORAGE_MEMORY,
         STORAGE_REGISTER,
+        STORAGE_LABEL,
     }tag;
     size_t size;
     
     union{
         Register reg;
         MemBlock memAddress;
+        Label label;
     };
 };
 

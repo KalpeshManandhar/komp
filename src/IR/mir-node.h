@@ -61,11 +61,13 @@ struct MIR_Expr : public MIR_Primitive{
         EXPR_ISUB,
         EXPR_IMUL,
         EXPR_IDIV,
+        EXPR_IMOD,
         EXPR_UADD,
         EXPR_USUB,
         EXPR_UMUL,
         EXPR_UDIV,
-
+        EXPR_UMOD,
+        
         EXPR_FADD,
         EXPR_FSUB,
         EXPR_FMUL,
