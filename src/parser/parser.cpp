@@ -16,9 +16,12 @@ int getPrecedence(Token opToken, bool isUnary = false){
     if (isUnary){
         switch (opToken.type)
         {        
+        case TOKEN_PLUS_PLUS_POSTFIX:
+        case TOKEN_MINUS_MINUS_POSTFIX:
+            return 1;
         case TOKEN_PLUS_PLUS:
         case TOKEN_MINUS_MINUS:
-            return 1;
+            return 2;
         case TOKEN_PLUS:
         case TOKEN_MINUS:
         case TOKEN_LOGICAL_NOT:
@@ -983,7 +986,7 @@ DataType Parser::checkSubexprType(Subexpr *expr, StatementBlock *scope){
 
             // indexing only works with integers
             if (match(expr->binary.op, TOKEN_SQUARE_OPEN)){
-                if (!match(right.type,TOKEN_INT)){
+                if (!match(right.type,TOKEN_INT) && !match(right.type,TOKEN_CHAR)){
                     logErrorMessage(expr->binary.op, "Indexing only works with integer type.");
                     errors++;
                     return DataTypes::Error;
@@ -1066,6 +1069,10 @@ DataType Parser::checkSubexprType(Subexpr *expr, StatementBlock *scope){
 
                             return left;
                         }
+                        if (match(expr->binary.op, TOKEN_EQUALITY_CHECK) ||
+                            match(expr->binary.op, TOKEN_NOT_EQUALS)){
+                            return DataTypes::Int;
+                        }
                     }
 
                     didError = true;
@@ -1079,6 +1086,11 @@ DataType Parser::checkSubexprType(Subexpr *expr, StatementBlock *scope){
                             if (canBeConverted(expr->binary.right, right, left, scope)){}
                             
                             return left;
+                        }
+
+                        if (match(expr->binary.op, TOKEN_EQUALITY_CHECK) || 
+                            match(expr->binary.op, TOKEN_NOT_EQUALS)){
+                            return DataTypes::Int;
                         }
 
                         if (left == right){
@@ -1364,13 +1376,15 @@ DataType Parser::checkSubexprType(Subexpr *expr, StatementBlock *scope){
             else{
                 // check if arguments are of correct type/can be implicitly converted to the correct type
                 auto matchArgType = [&](Function *foo, FunctionCall *fooCall){
-                    for (int i=0; i<foo->parameters.size(); i++){
+                    for (int i=0; i<fooCall->arguments.size(); i++){
                         DataType fromType = checkSubexprType(fooCall->arguments[i], scope);
                         
-                        if (!canBeConverted(fooCall->arguments[i], fromType, foo->parameters[i].type, scope)){
-                            logErrorMessage(getSubexprToken(fooCall->arguments[i]), "Cannot convert argument of type \"%s\" to \"%s\"",
-                                            dataTypePrintf(fromType), dataTypePrintf(foo->parameters[i].type));
-                            errors++;
+                        if (i < foo->parameters.size()){
+                            if (!canBeConverted(fooCall->arguments[i], fromType, foo->parameters[i].type, scope)){
+                                logErrorMessage(getSubexprToken(fooCall->arguments[i]), "Cannot convert argument of type \"%s\" to \"%s\"",
+                                                dataTypePrintf(fromType), dataTypePrintf(foo->parameters[i].type));
+                                errors++;
+                            }
                         }
                     }
                 };
@@ -1406,19 +1420,23 @@ DataType Parser::checkSubexprType(Subexpr *expr, StatementBlock *scope){
 Subexpr* Parser::parseSubexpr(int precedence, StatementBlock *scope){
     Subexpr *left = (Subexpr*)parsePrimary(scope);
 
+
     Subexpr *s = left;
     
     // while next token is an operator and its precedence is higher (value is lower) than current one, add to the tree 
-    while (matchv(BINARY_OP_TOKENS, ARRAY_COUNT(BINARY_OP_TOKENS))){
+    while (matchv(BINARY_OP_TOKENS, ARRAY_COUNT(BINARY_OP_TOKENS)) 
+        || matchv(TYPE_PREFIX_OPERATORS, ARRAY_COUNT(TYPE_PREFIX_OPERATORS))){
         bool isRtoLAssociative = matchv(ASSIGNMENT_OP, ARRAY_COUNT(ASSIGNMENT_OP));
-        // isRtoLAssociative = isRtoLAssociative || match(TOKEN_SQUARE_OPEN);
+        bool isUnary = matchv(TYPE_PREFIX_OPERATORS, ARRAY_COUNT(TYPE_PREFIX_OPERATORS));
         
+        // isRtoLAssociative = isRtoLAssociative || match(TOKEN_SQUARE_OPEN);
+        int currentOpPrecedence = isUnary? getPrecedence(Token{.type = TOKEN_PLUS_PLUS_POSTFIX}, isUnary) : getPrecedence(peekToken());
         
         // for left to right associativity, break out when next op has a lower or equal precedence than current one
-        if (getPrecedence(peekToken()) >= precedence){
+        if (currentOpPrecedence >= precedence){
             // right to left associativity for assignment operators, ie dont break out for same precedence
             if (isRtoLAssociative){
-                if (getPrecedence(peekToken()) > precedence)
+                if (currentOpPrecedence > precedence)
                     break;
             }
             else{
@@ -1430,31 +1448,50 @@ Subexpr* Parser::parseSubexpr(int precedence, StatementBlock *scope){
         s = (Subexpr*) arena->alloc(sizeof(Subexpr));
         s->tag = Node::NODE_SUBEXPR;
         
-        s->binary.left = left;
-        s->binary.op = consumeToken();
-        
+        if (isUnary){
+            Subexpr* postfix = (Subexpr*) arena->alloc(sizeof(Subexpr));
+            postfix->subtag = Subexpr::SUBEXPR_UNARY;
+            postfix->tag = Node::NODE_SUBEXPR;
+    
+            if (match(TOKEN_PLUS_PLUS)){
+                postfix->unary.op = consumeToken();
+                postfix->unary.op.type = TOKEN_PLUS_PLUS_POSTFIX;
+            }
+            else if (match(TOKEN_MINUS_MINUS)){
+                postfix->unary.op = consumeToken();
+                postfix->unary.op.type = TOKEN_MINUS_MINUS_POSTFIX;
+            }
+            postfix->unary.expr = left;
+            s = postfix;
+        }
+        else {
+            s->binary.left = left;
+            s->binary.op = consumeToken();
+            
+    
+            Subexpr *next;
+            // for array indexing []
+            if (match(s->binary.op,TOKEN_SQUARE_OPEN)){
+                next = parseSubexpr(INT32_MAX, scope);
+                expect(TOKEN_SQUARE_CLOSE);
+            }
+            else{
+                next = parseSubexpr(getPrecedence(s->binary.op), scope);
+            }
+            
+            s->binary.right  = next;
+            s->subtag = Subexpr::SUBEXPR_BINARY_OP;
 
-        Subexpr *next;
-        // for array indexing []
-        if (match(s->binary.op,TOKEN_SQUARE_OPEN)){
-            next = parseSubexpr(INT32_MAX, scope);
-            expect(TOKEN_SQUARE_CLOSE);
-        }
-        else{
-            next = parseSubexpr(getPrecedence(s->binary.op), scope);
+            if (next->tag == Node::NODE_ERROR){
+                s->tag = Node::NODE_ERROR;
+            }
         }
         
-        s->binary.right  = next;
-        s->subtag = Subexpr::SUBEXPR_BINARY_OP;
-        
-        if (next->tag == Node::NODE_ERROR){
-            s->tag = Node::NODE_ERROR;
-        }
         
         left = s;
     }     
 
-    
+
     return s;
 }
 
@@ -1558,23 +1595,6 @@ Subexpr* Parser::parsePrimary(StatementBlock *scope){
         else{
             s->subtag = Subexpr::SUBEXPR_LEAF;
             s->leaf = identifier;
-            
-            if (matchv(TYPE_PREFIX_OPERATORS, ARRAY_COUNT(TYPE_PREFIX_OPERATORS))){
-                Subexpr *leaf = (Subexpr*)arena->alloc(sizeof(Subexpr));
-                *leaf = *s;
-
-                s->subtag = Subexpr::SUBEXPR_UNARY;
-                if (match(TOKEN_PLUS_PLUS)){
-                    s->unary.op = consumeToken();
-                    s->unary.op.type = TOKEN_PLUS_PLUS_POSTFIX;
-                }
-                else if (match(TOKEN_MINUS_MINUS)){
-                    s->unary.op = consumeToken();
-                    s->unary.op.type = TOKEN_MINUS_MINUS_POSTFIX;
-                }
-                s->unary.expr = leaf;
-            }
-            
         }
 
     }

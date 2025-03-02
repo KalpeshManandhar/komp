@@ -8,7 +8,7 @@
 
 struct Arena{
 private:
-    const static int MAPPING_INFO_TABLE_SIZE = 64;
+    const static int MAPPING_INFO_TABLE_SIZE = 4096;
     const static int FRAME_TABLE_SIZE = 64;
     const static int ALIGNMENT = 8;
 

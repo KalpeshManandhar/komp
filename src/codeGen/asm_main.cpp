@@ -2,11 +2,30 @@
 #include <parser/parser.h>
 #include <debug/debug-print.h>
 
+struct {
+    bool print = true;
+    const char* outputTo = "./codegen_output.s";
+    const char* input;
+}config;
+
 
 int main(int argc, char **argv){
+    
+    
     if (argc < 2){
         fprintf(stderr, "Usage: %s <c file>", argv[0]);
         return EXIT_FAILURE;
+    }
+
+    for (int i = 0; i<argc; i++){
+        if (strcmp(argv[i], "-o") == 0){
+            config.outputTo = argv[i+1];
+            i++;
+        }
+        
+        else if (strcmp(argv[i], "-no-print") == 0){
+            config.print = false;
+        }
     }
 
     Tokenizer t;
@@ -32,18 +51,24 @@ int main(int argc, char **argv){
         gen.arena = &b;
         
         MIR* mir = transform(ir, &b);
-
-        printMIR(mir);
-        printMIRDot(mir);
-
+        
+        if (config.print){
+            printMIR(mir);    
+            printMIRDot(mir);
+        }
+        
         gen.generateAssemblyFromMIR(mir);
-        gen.printAssembly();
-        gen.writeAssemblyToFile("./codegen_output.s");
+
+        
+        gen.writeAssemblyToFile(config.outputTo);
+        if (config.print){
+            gen.printAssembly();
+        }
 
     }
 
     a.destroyFrame();
     a.destroy();
     
-
+    printf("Successfully generated! \n");
 }

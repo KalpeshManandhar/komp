@@ -584,8 +584,12 @@ void CodeGenerator :: generateAssemblyFromMIR(MIR *mir){
     }
     
 
-
     textSection << "    .section     .text\n";
+    for (auto &pair: mir->global->statements){
+
+    }
+
+
     
     // generate functions
     for (auto &pair : mir->functions.entries){
