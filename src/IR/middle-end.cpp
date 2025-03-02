@@ -1408,6 +1408,9 @@ MIR_Primitives MiddleEnd :: transformNode(const Node* current, StatementBlock *s
     return MIR_Primitives{.n = 0};
 }
 
+int rbeaks = 0;
+int ocntinues = 0;
+
 MIR_Primitive* MiddleEnd :: resolveJumpLabels(MIR_Primitive* p, MIR_Scope* mScope, Arena *arena){
     if (!p){
         return p;
@@ -1439,9 +1442,11 @@ MIR_Primitive* MiddleEnd :: resolveJumpLabels(MIR_Primitive* p, MIR_Scope* mScop
         jmp->ptag = MIR_Primitive::PRIM_JUMP;
 
         if (unresolvedJmp->tag == MIR_Intermediate::PRIM_INTERMEDIATE_JUMP_CONTINUE){
+            ocntinues++;
             jmp->jumpLabel = loop->updateLabel;
         }
         else if (unresolvedJmp->tag == MIR_Intermediate::PRIM_INTERMEDIATE_JUMP_BREAK){
+            rbeaks++;
             jmp->jumpLabel = loop->endLabel;
         }
         
@@ -1479,7 +1484,10 @@ void MiddleEnd :: resolveJumps (MIR_Primitive *p, MIR_Scope* mScope, Arena* aren
     }
     case MIR_Primitive::PRIM_IF :{
         MIR_If* inode = (MIR_If*) p;
-        resolveJumps(inode->scope, mScope, arena);
+        while (inode){
+            resolveJumps(inode->scope, mScope, arena);
+            inode = inode->next;
+        }
         break;
     }
     

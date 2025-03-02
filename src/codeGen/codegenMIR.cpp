@@ -261,6 +261,8 @@ void CodeGenerator :: generatePrimitiveMIR(MIR_Primitive* p, MIR_Scope* scope, S
             
             generateExprMIR(lnode->update, update, storageScope);
             
+            regAlloc.freeRegister(update);
+
             // jump to loop start
             buffer << "    j " << ".L"<< lnode->startLabel<<"\n";
 
@@ -796,6 +798,7 @@ void CodeGenerator::generateExprMIR(MIR_Expr *current, Register dest, ScopeInfo 
             }
             else if (location.tag == StorageInfo::STORAGE_LABEL){
                 buffer << "    la " << destName << ", .symbol" << location.label << "\n";
+                buffer << "    addi " << destName << ", "<< destName <<", " << current->loadAddress.offset << "\n";
             }
             
         }
@@ -875,6 +878,7 @@ void CodeGenerator::generateExprMIR(MIR_Expr *current, Register dest, ScopeInfo 
             if (location.tag  == StorageInfo::STORAGE_MEMORY){
                 // store the value at (address + offset)
                 buffer << "    " << prefix << "s" << iInsIntegerSuffix(current->store.size) << " " << destName << ", " << stackAlloc.offsetFromBase(location.memAddress) + current->store.offset << "(fp)\n";
+                regAlloc.freeRegister(temp);
                 return;
             }
             else if (location.tag == StorageInfo::STORAGE_LABEL){
@@ -901,15 +905,13 @@ void CodeGenerator::generateExprMIR(MIR_Expr *current, Register dest, ScopeInfo 
         // Adds a given index to a given address, to get the correct offset.
 
         
-        Register temp = regAlloc.allocVRegister(REG_SAVED);
-        
         // load the given base address into register
         generateExprMIR(current->index.base, dest, storageScope);
 
 
-        const char *destName = RV64_RegisterName[regAlloc.resolveRegister(dest)];
         
         if (current->index.base->tag == MIR_Expr::EXPR_ADDRESSOF){
+            const char *destName = RV64_RegisterName[regAlloc.resolveRegister(dest)];
             MIR_Expr *address = current->index.base;
             StorageInfo location = accessLocation(address->addressOf.symbol, storageScope);
             
@@ -921,6 +923,8 @@ void CodeGenerator::generateExprMIR(MIR_Expr *current, Register dest, ScopeInfo 
             }
         }
 
+        
+        Register temp = regAlloc.allocVRegister(REG_SAVED);
 
         // calculate index and load it into register
         generateExprMIR(current->index.index, temp, storageScope);
@@ -941,6 +945,7 @@ void CodeGenerator::generateExprMIR(MIR_Expr *current, Register dest, ScopeInfo 
             
         }
 
+        const char *destName = RV64_RegisterName[regAlloc.resolveRegister(dest)];
         
         // add the offset to get the correct address
         buffer << "    add " << destName << ", " << destName << ", " << tempName << "\n";
