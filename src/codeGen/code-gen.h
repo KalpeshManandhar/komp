@@ -45,8 +45,9 @@ struct CodeGenerator{
     size_t allocStackSpaceMIR(MIR_Scope* scope, ScopeInfo* storage);
     void saveRegisters(RegisterState &rstate, std::stringstream &buffer);
     void restoreRegisters(RegisterState &rstate, std::stringstream &buffer);
-
-
+    
+    StorageInfo accessLocation(Splice symbolName, ScopeInfo* storageScope);
+    
     // output
     void writeAssemblyToFile(const char *filename);
     void printAssembly();

@@ -99,7 +99,9 @@ static void printMIRPrimitive(MIR_Primitive* p, int depth){
 
         switch (enode->tag){
         case MIR_Expr::EXPR_ADDRESSOF:{
-            printMIRPrimitive(enode->addressOf.of, depth + 1);
+            printTabs(depth + 1);
+            std::cout << "symbol: " << enode->addressOf.symbol << "\n";
+            break;
             break;
         }
         case MIR_Expr::EXPR_LOAD:{

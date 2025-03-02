@@ -788,13 +788,8 @@ MIR_Primitives MiddleEnd :: transformSubexpr(const Subexpr* expr, StatementBlock
             d->_type = convertToLowerLevelType(loadType, scope);
             d->tag = MIR_Expr::EXPR_LOAD;
             
-            MIR_Expr *leaf = (MIR_Expr*) arena->alloc(sizeof(MIR_Expr));
-            leaf->leaf.val = copySplice(expr->leaf.string, arena);
-            leaf->tag = MIR_Expr::EXPR_LEAF;
-            leaf->ptag = MIR_Primitive::PRIM_EXPR;
-
             MIR_Expr *address = (MIR_Expr*) arena->alloc(sizeof(MIR_Expr));
-            address->addressOf.of = leaf;
+            address->addressOf.symbol = copySplice(expr->leaf.string, arena);
             address->tag = MIR_Expr::EXPR_ADDRESSOF;
             address->ptag = MIR_Primitive::PRIM_EXPR;
 

@@ -156,9 +156,9 @@ struct MIR_Expr : public MIR_Primitive{
             offset : the offset from the frame pointer filled in when the node is resolved during code generation
         */
         struct {
-            MIR_Expr *of;
+            Splice symbol;
             // filled in on generating node
-            int64_t offset;
+            // int64_t offset;
         }addressOf;
 
 

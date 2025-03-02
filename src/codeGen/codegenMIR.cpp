@@ -126,6 +126,8 @@ static int getDepth(const MIR_Expr *expr){
 
 
 
+
+
 /*
     Assign memory locations to each variable and return the space required.
 */
@@ -575,10 +577,10 @@ void CodeGenerator :: generateAssemblyFromMIR(MIR *mir){
         assert(assignment->store.left->tag == MIR_Expr::EXPR_ADDRESSOF);
         MIR_Expr* addressOf = assignment->store.left;
         
-        GlobalSymbolInfo symbol = data.getInfo(addressOf->addressOf.of->leaf.val).info;
+        GlobalSymbolInfo symbol = data.getInfo(addressOf->addressOf.symbol).info;
         symbol.value = assignment->store.right->immediate.val;
 
-        data.update(addressOf->addressOf.of->leaf.val, symbol);
+        data.update(addressOf->addressOf.symbol, symbol);
     }
     
 
@@ -688,6 +690,29 @@ void CodeGenerator :: generateAssemblyFromMIR(MIR *mir){
 }
 
 
+StorageInfo CodeGenerator :: accessLocation(Splice symbolName, ScopeInfo* storageScope){
+    // find the scope where the variable is found
+    auto getAddressScope = [&](Splice symbol) -> ScopeInfo*{
+        ScopeInfo *current = storageScope;
+
+        while (current){
+            if (current->symbols.existKey(symbol)){
+                return current;
+            }
+            current = current->parent;
+        }
+
+        return 0;
+    };
+        
+    // resolve the variable into an address
+    ScopeInfo *storage = getAddressScope(symbolName);
+    assert(storage != NULL);
+    
+    return storage->symbols.getInfo(symbolName).info;
+}
+
+
 
 
 /*
@@ -735,7 +760,7 @@ void CodeGenerator::generateExprMIR(MIR_Expr *current, Register dest, ScopeInfo 
 
             Register fpLiteralAddress = regAlloc.allocVRegister(RegisterType::REG_ANY);
             const char* fpLiteralAddressName = RV64_RegisterName[regAlloc.resolveRegister(fpLiteralAddress)];
-
+            
             buffer << "    lui " << fpLiteralAddressName << ", \%hi(.symbol" << fpLiteralInfo.label << ")" << "\n";
             buffer << "    fl" << iInsIntegerSuffix(current->_type.size) << " " << destName << ", \%lo(.symbol" << fpLiteralInfo.label << ")(" << fpLiteralAddressName << ")\n";
         
@@ -746,32 +771,6 @@ void CodeGenerator::generateExprMIR(MIR_Expr *current, Register dest, ScopeInfo 
     }
 
     case MIR_Expr::EXPR_ADDRESSOF:{
-        // Resolve the address of the given variable. Doesn't use the destination register.
-        MIR_Expr *of = current->addressOf.of;
-        
-        if (of->tag == MIR_Expr::EXPR_LEAF){
-            // find the scope where the variable is found
-            auto getAddressScope = [&](Splice symbol) -> ScopeInfo*{
-                ScopeInfo *current = storageScope;
-
-                while (current){
-                    if (current->symbols.existKey(symbol)){
-                        return current;
-                    }
-                    current = current->parent;
-                }
- 
-                return 0;
-            };
-            
-            // resolve the variable into an address
-            ScopeInfo *storage = getAddressScope(of->leaf.val);
-            assert(storage != NULL);
-            StorageInfo sInfo = storage->symbols.getInfo(of->leaf.val).info;
-            current->addressOf.offset = stackAlloc.offsetFromBase(sInfo.memAddress);
-            break;
-        }
-
         break;
     }
     
@@ -779,18 +778,31 @@ void CodeGenerator::generateExprMIR(MIR_Expr *current, Register dest, ScopeInfo 
         // Loads the destination register with the given address.
         MIR_Expr *base = current->loadAddress.base;
         
-        // resolve variable into address/load address into regsister
-        generateExprMIR(base, dest, storageScope);
         
-        const char *destName = RV64_RegisterName[regAlloc.resolveRegister(dest)];
         
         // address is just resolved
         if(base->tag == MIR_Expr::EXPR_ADDRESSOF){
-            // load address + offset into a register
-            buffer << "    addi " << destName << ", fp, " << base->addressOf.offset + current->loadAddress.offset << "\n";
+            StorageInfo location = accessLocation(base->addressOf.symbol, storageScope);
+            
+            const char *destName = RV64_RegisterName[regAlloc.resolveRegister(dest)];
+            
+            if (location.tag == StorageInfo::STORAGE_MEMORY){
+                // load address + offset into a register
+                buffer << "    addi " << destName << ", fp, " << stackAlloc.offsetFromBase(location.memAddress) + current->loadAddress.offset << "\n";
+            }
+            else if (location.tag == StorageInfo::STORAGE_LABEL){
+                buffer << "    la " << destName << ", .symbol" << location.label << "\n";
+            }
+            
         }
         // address is loaded into register
         else{
+            // resolve variable into address/load address into regsister
+            generateExprMIR(base, dest, storageScope);
+
+            const char *destName = RV64_RegisterName[regAlloc.resolveRegister(dest)];
+
+            
             // load address + offset into a register
             buffer << "    addi " << destName << ", " << destName << ", " << current->loadAddress.offset << "\n";
         }
@@ -801,23 +813,34 @@ void CodeGenerator::generateExprMIR(MIR_Expr *current, Register dest, ScopeInfo 
     case MIR_Expr::EXPR_LOAD:{
         // Load the value at given address + offset and put it into the destination register.
 
-        // load/resolve the address into the register first
-        generateExprMIR(current->load.base, dest, storageScope); 
         
-        const char *destName = RV64_RegisterName[regAlloc.resolveRegister(dest)];
         bool isFloatExpr = current->load.type == MIR_Expr::LoadType::EXPR_FLOAD;
         
         const char* prefix = isFloatExpr? "f" : "";
-
-
+        
+        
         // if the given address is a direct AddressOf node, then the address can be used instead of loading it into a register first.
         if (current->load.base->tag == MIR_Expr::EXPR_ADDRESSOF){
+            const char *destName = RV64_RegisterName[regAlloc.resolveRegister(dest)];
             MIR_Expr *base = current->load.base;
+            StorageInfo location = accessLocation(base->addressOf.symbol, storageScope);
             
-            // load the value and load into destination register
-            buffer << "    " << prefix << "l" << iInsIntegerSuffix(current->load.size) << " " << destName << ", " << base->addressOf.offset + current->load.offset << "(fp)\n";
-            return;
+            if (location.tag == StorageInfo::STORAGE_MEMORY){
+                // load the value and load into destination register
+                buffer << "    " << prefix << "l" << iInsIntegerSuffix(current->load.size) << " " << destName << ", " << stackAlloc.offsetFromBase(location.memAddress) + current->load.offset << "(fp)\n";
+                return;
+            }
+            
+            else if (location.tag == StorageInfo::STORAGE_LABEL){
+                buffer << "    la " << destName << ", .symbol" << location.label << "\n";
+            }
         }
+        else{
+            // load/resolve the address into the register first
+            generateExprMIR(current->load.base, dest, storageScope); 
+        }
+
+        const char *destName = RV64_RegisterName[regAlloc.resolveRegister(dest)];
 
         // load value and load   
         buffer << "    " << prefix << "l" << iInsIntegerSuffix(current->load.size) << " " << destName << ", " << current->load.offset << "(" << destName << ")\n";
@@ -837,23 +860,29 @@ void CodeGenerator::generateExprMIR(MIR_Expr *current, Register dest, ScopeInfo 
         
         const char* prefix = isFloatExpr? "f" : "";
         
-        // if the lvalue has a direct address, use that directly instead of loading it to a register first
-        if (current->store.left->tag == MIR_Expr::EXPR_ADDRESSOF){
-            // resolve the base adddress
-            generateExprMIR(current->store.left, dest, storageScope);
-            MIR_Expr *base = current->store.left;
-            
-            // store the value at (address + offset)
-            buffer << "    " << prefix << "s" << iInsIntegerSuffix(current->store.size) << " " << destName << ", " << base->addressOf.offset + current->store.offset << "(fp)\n";
-            return;
-        }
-        
         // else, load the address into a temporary register first 
         Register temp = regAlloc.allocVRegister(REG_SAVED);
-        
-        // get address of lvalue
-        generateExprMIR(current->store.left, temp, storageScope);    
-        
+
+        // if the lvalue has a direct address, use that directly instead of loading it to a register first
+        if (current->store.left->tag == MIR_Expr::EXPR_ADDRESSOF){
+            MIR_Expr* leftAddress = current->store.left;
+            StorageInfo location = accessLocation(leftAddress->addressOf.symbol, storageScope);
+
+            if (location.tag  == StorageInfo::STORAGE_MEMORY){
+                // store the value at (address + offset)
+                buffer << "    " << prefix << "s" << iInsIntegerSuffix(current->store.size) << " " << destName << ", " << stackAlloc.offsetFromBase(location.memAddress) + current->store.offset << "(fp)\n";
+                return;
+            }
+            else if (location.tag == StorageInfo::STORAGE_LABEL){
+                const char *tempName = RV64_RegisterName[regAlloc.resolveRegister(temp)];
+                
+                buffer << "    la " << tempName << ", .symbol" << location.label << "\n";
+            }
+        }
+        else {
+            // get address of lvalue
+            generateExprMIR(current->store.left, temp, storageScope);    
+        }
 
         const char *tempName = RV64_RegisterName[regAlloc.resolveRegister(temp)];
 
@@ -878,7 +907,14 @@ void CodeGenerator::generateExprMIR(MIR_Expr *current, Register dest, ScopeInfo 
         
         if (current->index.base->tag == MIR_Expr::EXPR_ADDRESSOF){
             MIR_Expr *address = current->index.base;
-            buffer << "    addi " << destName << ", fp, " << address->addressOf.offset << "\n";
+            StorageInfo location = accessLocation(address->addressOf.symbol, storageScope);
+            
+            if (location.tag == StorageInfo::STORAGE_MEMORY){
+                buffer << "    addi " << destName << ", fp, " << stackAlloc.offsetFromBase(location.memAddress) << "\n";
+            }
+            else if (location.tag == StorageInfo::STORAGE_LABEL){
+                buffer << "    la " << destName << ", .symbol" << location.label << "\n";
+            }
         }
 
 
