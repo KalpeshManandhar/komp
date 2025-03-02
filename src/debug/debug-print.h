@@ -1,5 +1,207 @@
 #include <IR/ir.h>
 
+static int mirNodeCounter = 0; 
+static std::string generateMIRDotNode(MIR_Primitive* mirNode, std::ostringstream& dotStream) {
+    // Modified form of Kelp's printMIRPrimitive()
+    if (!mirNode) return "";
+
+    int currentNode = mirNodeCounter++;
+    std::string nodeLabel;
+    std::string nodeProps;
+
+    // Lambda for recursive child operations
+    auto handleChildren = [&](const char* label, MIR_Primitive* child) {
+        std::string childNode = generateMIRDotNode(child, dotStream);
+        if (!childNode.empty()) {
+            dotStream << "    node" << currentNode << " -> " << childNode << " [label=\"" << label << "\"];\n";
+        }
+    };
+
+    switch (mirNode->ptag) {
+        case MIR_Primitive::PRIM_IF: {
+            MIR_If* ifNode = static_cast<MIR_If*>(mirNode);
+            nodeLabel = "IF";
+            MIR_If* currentIf = ifNode;
+            while (currentIf) {
+                handleChildren("condition", currentIf->condition);
+                handleChildren("scope", currentIf->scope);
+                currentIf = currentIf->next;
+            }
+            break;
+        }
+        case MIR_Primitive::PRIM_LOOP: {
+            MIR_Loop* loopNode = static_cast<MIR_Loop*>(mirNode);
+            nodeLabel = "LOOP";
+            handleChildren("condition", loopNode->condition);
+            handleChildren("scope", loopNode->scope);
+            break;
+        }
+        case MIR_Primitive::PRIM_RETURN: {
+            MIR_Return* returnNode = static_cast<MIR_Return*>(mirNode);
+            nodeLabel = "RETURN";
+            handleChildren("value", returnNode->returnValue);
+            break;
+        }
+        case MIR_Primitive::PRIM_JUMP: {
+            MIR_Jump* jumpNode = static_cast<MIR_Jump*>(mirNode);
+            nodeLabel = "JUMP";
+            nodeProps = "to: .L" + std::to_string(jumpNode->jumpLabel);
+            break;
+        }
+        case MIR_Primitive::PRIM_STACK_ALLOC: {
+            nodeLabel = "STACK_ALLOC";
+            break;
+        }
+        case MIR_Primitive::PRIM_STACK_FREE: {
+            nodeLabel = "STACK_FREE";
+            break;
+        }
+        
+        case MIR_Primitive::PRIM_EXPR: {
+            MIR_Expr* exprNode = static_cast<MIR_Expr*>(mirNode);
+            const char* EXPR_TYPE_STRINGS[] = {
+                "expr_addressof", "expr_load", "expr_index", "expr_leaf",
+                "expr_load_address", "expr_load_immediate", "expr_store",
+                "expr_call", "expr_cast", "expr_binary", "expr_unary", "expr_function_call"
+            };
+            nodeLabel = EXPR_TYPE_STRINGS[exprNode->tag];
+
+            switch (exprNode->tag) {
+                case MIR_Expr::EXPR_ADDRESSOF: {
+                    nodeLabel = "EXPR_LEAF: " + std::string(exprNode->addressOf.symbol.data, exprNode->addressOf.symbol.len);
+                    break;
+                }
+                case MIR_Expr::EXPR_LOAD: {
+                    nodeProps = "size: " + std::to_string(exprNode->load.size) +
+                               "\\noffset: " + std::to_string(exprNode->load.offset);
+                    handleChildren("base", exprNode->load.base);
+                    break;
+                }
+                case MIR_Expr::EXPR_INDEX: {
+                    nodeProps = "size: " + std::to_string(exprNode->index.size);
+                    handleChildren("base", exprNode->index.base);
+                    handleChildren("index", exprNode->index.index);
+                    break;
+                }
+                case MIR_Expr::EXPR_LEAF: {
+                    nodeLabel = "EXPR_LEAF: " + std::string(exprNode->leaf.val.data, exprNode->leaf.val.len);
+                    break;
+                }
+                case MIR_Expr::EXPR_LOAD_ADDRESS: {
+                    nodeProps = "offset: " + std::to_string(exprNode->loadAddress.offset);
+                    handleChildren("base", exprNode->loadAddress.base);
+                    break;
+                }
+                case MIR_Expr::EXPR_LOAD_IMMEDIATE: {
+                    nodeLabel = "EXPR_LOAD_IMMEDIATE: " + std::string(exprNode->immediate.val.data, exprNode->immediate.val.len);
+                    break;
+                }
+                case MIR_Expr::EXPR_STORE: {
+                    nodeProps = "size: " + std::to_string(exprNode->store.size) +
+                               "\\noffset: " + std::to_string(exprNode->store.offset);
+                    handleChildren("address", exprNode->store.left);
+                    handleChildren("value", exprNode->store.right);
+                    break;
+                }
+                case MIR_Expr::EXPR_CALL: {
+                    MIR_FunctionCall* callNode = exprNode->functionCall;
+                    nodeLabel = "EXPR_CALL: " + std::string(callNode->funcName.data, callNode->funcName.len);
+                    for (size_t i = 0; i < callNode->arguments.size(); ++i) {
+                        handleChildren(("arg" + std::to_string(i)).c_str(), callNode->arguments[i]);
+                    }
+                    break;
+                }
+                case MIR_Expr::EXPR_CAST: {
+                    nodeProps = "from: " + std::string(exprNode->cast._from.name) +
+                               "\\nto: " + std::string(exprNode->cast._to.name);
+                    handleChildren("expr", exprNode->cast.expr);
+                    break;
+                }
+                
+                case MIR_Expr::EXPR_BINARY: {
+                    static const char* BINARY_OPS[] = {
+                        "iadd", "isub", "imul", "idiv", "imod", "uadd", "usub", "umul", "udiv", "umod",
+                        "fadd", "fsub", "fmul", "fdiv", "ibitwise_and", "ibitwise_or", "ibitwise_xor",
+                        "logical_and", "logical_or", "ibitwise_lshift", "ibitwise_rshift",
+                        "icompare_lt", "icompare_gt", "icompare_le", "icompare_ge", "icompare_eq", "icompare_neq",
+                        "fcompare_lt", "fcompare_gt", "fcompare_le", "fcompare_ge", "fcompare_eq", "fcompare_neq"
+                    };
+                    nodeProps = "op: " + std::string(BINARY_OPS[static_cast<int>(exprNode->binary.op)]);
+                    handleChildren("left", exprNode->binary.left);
+                    handleChildren("right", exprNode->binary.right);
+                    break;
+                }
+                case MIR_Expr::EXPR_UNARY: {
+                    static const char* UNARY_OPS[] = {
+                        "inegate", "fnegate", "ibitwise_not", "logical_not"
+                    };
+                    nodeProps = "op: " + std::string(UNARY_OPS[static_cast<int>(exprNode->unary.op)]);
+                    handleChildren("expr", exprNode->unary.expr);
+                    break;
+                }
+                default:
+                    nodeLabel = "UNKNOWN_EXPR";
+                    break;
+            }
+            break;
+        }
+        case MIR_Primitive::PRIM_SCOPE: {
+            MIR_Scope* scopeNode = static_cast<MIR_Scope*>(mirNode);
+            nodeLabel = "SCOPE";
+            for (auto& stmt : scopeNode->statements) {
+                handleChildren("stmt", stmt);
+            }
+            
+            for (auto& symbolName : scopeNode->symbols.order) {
+                MIR_Datatype type = scopeNode->symbols.getInfo(symbolName).info;
+                dotStream << "    node" << currentNode << "_" << symbolName 
+                          << " [label=\"" << symbolName << ": " << type.name << "\"];\n";
+                dotStream << "    node" << currentNode << " -> node" << currentNode << "_" << symbolName << ";\n";
+            }
+            break;
+        }
+        default:
+            nodeLabel = "UNKNOWN";
+            break;
+    }
+
+    dotStream << "    node" << currentNode << " [label=\"" << nodeLabel;
+    if (!nodeProps.empty()) dotStream << "\\n" << nodeProps;
+    dotStream << "\"];\n";
+
+    return "node" + std::to_string(currentNode);
+}
+
+static void printMIRDot(MIR* mir) {
+    std::ostringstream dotStream;
+    const std::string & outputFile="MIR.dot";
+
+    dotStream << "digraph MIR {\n";
+    dotStream << "    rankdir=TB; // Top-to-bottom graph direction\n";
+
+    // Generate DOT nodes for the global scope
+    generateMIRDotNode(mir->global, dotStream);
+
+    // Generate DOT nodes for each function
+    for (auto& fooEntry : mir->functions.entries) {
+        MIR_Function& foo = fooEntry.second.info;
+        dotStream << "    subgraph cluster_" << foo.funcName << " {\n";
+        dotStream << "        label=\"Function: " << foo.funcName << "\";\n";
+        generateMIRDotNode((MIR_Scope*)&foo, dotStream);
+        dotStream << "    }\n";
+    }
+
+    dotStream << "}\n";
+
+    // Write the DOT content to a file
+    std::ofstream dotFile(outputFile);
+    dotFile << dotStream.str();
+    dotFile.close();
+
+    std::cout << "MIR DOT file generated: " << outputFile << "\n";
+}
+
+
 static void printMIRPrimitive(MIR_Primitive* p, int depth){
     if (!p){
         return;
@@ -304,9 +506,8 @@ static void printMIR(MIR *mir){
     }
 }
 
-
+// FOR Parser output in tree structure
 static int nodeCounter = 0;
-
 static std::string generateDotNode(Node *node, std::ostringstream &dotStream) {
     if (!node) return "";
 
@@ -335,6 +536,8 @@ static std::string generateDotNode(Node *node, std::ostringstream &dotStream) {
                 case Subexpr::SUBEXPR_INITIALIZER_LIST:
                     nodeLabel = "init_list";
                     break;
+                case Subexpr::SUBEXPR_RECURSE_PARENTHESIS:
+                    return generateDotNode(s->inside, dotStream);
                 default:
                     nodeLabel = "subexpr";
                     break;
@@ -371,6 +574,7 @@ static std::string generateDotNode(Node *node, std::ostringstream &dotStream) {
             nodeLabel = "return";
             break;
         }
+
         default:
             nodeLabel = "node";
             break;

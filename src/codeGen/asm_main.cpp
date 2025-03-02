@@ -34,6 +34,7 @@ int main(int argc, char **argv){
         MIR* mir = transform(ir, &b);
 
         printMIR(mir);
+        printMIRDot(mir);
 
         gen.generateAssemblyFromMIR(mir);
         gen.printAssembly();

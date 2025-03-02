@@ -18,4 +18,5 @@ $errors_expected = @{
     "test_postfix_prefix.c" = 0;
     "test_typedef.c" = 0;
     "test_variadic.c" = 1;
+    "test_storage_class.c" = 0;
 } 
