@@ -334,19 +334,43 @@ void CodeGenerator :: generatePrimitiveMIR(MIR_Primitive* p, MIR_Scope* scope, S
             ScopeInfo storage;
             storage.parent = storageScope;
 
-            size_t totalSize = allocStackSpaceMIR(snode, &storage);
+            int64_t totalSize = allocStackSpaceMIR(snode, &storage);
             
             // allocate stack space
-            if (totalSize > 0)
-                buffer << "    addi sp, sp, -" << totalSize << "\n"; 
+            if (totalSize > 0){
+                if (!inRange(totalSize, -MAX_IMMEDIATE, MAX_IMMEDIATE)){
+                    Register temp = regAlloc.allocVRegister(REG_ANY);
+                    const char* tempName = RV64_RegisterName[regAlloc.resolveRegister(temp)];
+        
+                    buffer << "    li " << tempName << ", " << -totalSize << "\n";
+                    buffer << "    add sp, sp, " << tempName << "\n";
+                    
+                    regAlloc.freeRegister(temp);
+                }
+                else {
+                    buffer << "    addi sp, sp, " << -totalSize << "\n";
+                }
+            }
 
             for (auto &prim : snode->statements){
                 generatePrimitiveMIR(prim, snode, &storage);
             }
 
             // deallocate stack space
-            if (totalSize > 0)
-                buffer << "    addi sp, sp, " << totalSize << "\n"; 
+            if (totalSize > 0){
+                if (!inRange(totalSize, -MAX_IMMEDIATE, MAX_IMMEDIATE)){
+                    Register temp = regAlloc.allocVRegister(REG_ANY);
+                    const char* tempName = RV64_RegisterName[regAlloc.resolveRegister(temp)];
+        
+                    buffer << "    li " << tempName << ", " << totalSize << "\n";
+                    buffer << "    add sp, sp, " << tempName << "\n";
+                    
+                    regAlloc.freeRegister(temp);
+                }
+                else {
+                    buffer << "    addi sp, sp, " << totalSize << "\n";
+                }
+            }
             
             stackAlloc.deallocate(totalSize);
 
@@ -379,7 +403,7 @@ void CodeGenerator :: generateFunctionMIR(MIR_Function *foo, MIR_Scope* global, 
     ScopeInfo storage;
     storage.parent = storageScope;
 
-    size_t totalSize = allocStackSpaceMIR((MIR_Scope*) foo, &storage);
+    int64_t totalSize = allocStackSpaceMIR((MIR_Scope*) foo, &storage);
     
     for (auto &prim : foo->statements){
         generatePrimitiveMIR(prim, (MIR_Scope*) foo, &storage);
@@ -415,8 +439,20 @@ void CodeGenerator :: generateFunctionMIR(MIR_Function *foo, MIR_Scope* global, 
     prologue << "    mv fp, sp\n";        // save current stack pointer 
     
     // allocate space for local variables
-    if (totalSize > 0)
-        prologue << "    addi sp, sp, -" << totalSize << "\n"; 
+    if (totalSize > 0){
+        if (!inRange(totalSize, -MAX_IMMEDIATE, MAX_IMMEDIATE)){
+            Register temp = regAlloc.allocVRegister(REG_ANY);
+            const char* tempName = RV64_RegisterName[regAlloc.resolveRegister(temp)];
+
+            prologue << "    li " << tempName << ", " << -totalSize << "\n";
+            prologue << "    add sp, sp, " << tempName << "\n";
+            
+            regAlloc.freeRegister(temp);
+        }
+        else {
+            prologue << "    addi sp, sp, " << -totalSize << "\n";
+        }
+    }
     
 
     
@@ -486,7 +522,20 @@ void CodeGenerator :: generateFunctionMIR(MIR_Function *foo, MIR_Scope* global, 
                 prologue << "    l" << iInsIntegerSuffix(sizeToUse) << " " << regName << ", " << srcOffset << "(fp)\n";
                 
                 // put into temp region 
-                prologue << "    s" << iInsIntegerSuffix(sizeToUse) << " " << regName << ", " << destOffset << "(fp)\n"; 
+                if (!inRange(destOffset, -MAX_IMMEDIATE, MAX_IMMEDIATE)){
+                    Register temp = regAlloc.allocVRegister(REG_ANY);
+                    const char* tempName = RV64_RegisterName[regAlloc.resolveRegister(temp)];
+
+                    prologue << "    li " << tempName << ", " << destOffset << "\n";
+                    prologue << "    add " << tempName << ", " << tempName << ", fp\n";
+                    prologue << "    s" << iInsIntegerSuffix(sizeToUse) << " " << regName << ", " << 0 << "(" << tempName <<  ")\n"; 
+                
+                    regAlloc.freeRegister(temp);
+                }
+                else {
+                    prologue << "    s" << iInsIntegerSuffix(sizeToUse) << " " << regName << ", " << destOffset << "(fp)\n"; 
+                }
+                
                 
                 regAlloc.freeRegister(value);
                 stackOffset += sizeToUse;
@@ -495,8 +544,20 @@ void CodeGenerator :: generateFunctionMIR(MIR_Function *foo, MIR_Scope* global, 
             else {
                 Register argRegister = regAlloc.allocRegister(RV64_Register(registerFileStart + (*registerFileInUse)));
                 const char* argRegName = RV64_RegisterName[regAlloc.resolveRegister(argRegister)];
-                    
-                prologue << "    " << prefix << "s" << iInsIntegerSuffix(sizeToUse) << " " << argRegName << ", " << destOffset << "(fp)\n"; 
+                
+                if (!inRange(destOffset, -MAX_IMMEDIATE, MAX_IMMEDIATE)){
+                    Register temp = regAlloc.allocVRegister(REG_ANY);
+                    const char* tempName = RV64_RegisterName[regAlloc.resolveRegister(temp)];
+
+                    prologue << "    li " << tempName << ", " << destOffset << "\n";
+                    prologue << "    add " << tempName << ", " << tempName << ", fp\n";
+                    prologue << "    " << prefix << "s" << iInsIntegerSuffix(sizeToUse) << " " << argRegName << ", " << 0 << "(" << tempName << ")\n"; 
+                
+                    regAlloc.freeRegister(temp);
+                }
+                else {
+                    prologue << "    " << prefix << "s" << iInsIntegerSuffix(sizeToUse) << " " << argRegName << ", " << destOffset << "(fp)\n"; 
+                }
                 regAlloc.freeRegister(argRegister);
                 
                 (*registerFileInUse)++;
@@ -518,8 +579,20 @@ void CodeGenerator :: generateFunctionMIR(MIR_Function *foo, MIR_Scope* global, 
     
     // deallocate stack space
     stackAlloc.deallocate(totalSize);
-    if (totalSize > 0)
-        epilogue << "    addi sp, sp, " << totalSize << "\n"; 
+    if (totalSize > 0){
+        if (!inRange(totalSize, -MAX_IMMEDIATE, MAX_IMMEDIATE)){
+            Register temp = regAlloc.allocVRegister(REG_ANY);
+            const char* tempName = RV64_RegisterName[regAlloc.resolveRegister(temp)];
+
+            epilogue << "    li " << tempName << ", " << totalSize << "\n";
+            epilogue << "    add sp, sp, " << tempName << "\n";
+            
+            regAlloc.freeRegister(temp);
+        }
+        else {
+            epilogue << "    addi sp, sp, " << totalSize << "\n";
+        }
+    }
     
     
     epilogue << "    mv sp, fp\n";       // restore stack pointer
@@ -793,12 +866,32 @@ void CodeGenerator::generateExprMIR(MIR_Expr *current, Register dest, ScopeInfo 
             const char *destName = RV64_RegisterName[regAlloc.resolveRegister(dest)];
             
             if (location.tag == StorageInfo::STORAGE_MEMORY){
-                // load address + offset into a register
-                buffer << "    addi " << destName << ", fp, " << stackAlloc.offsetFromBase(location.memAddress) + current->loadAddress.offset << "\n";
+                int64_t offset = stackAlloc.offsetFromBase(location.memAddress) + current->loadAddress.offset;
+                if (!inRange(offset, -MAX_IMMEDIATE, MAX_IMMEDIATE)){
+                    buffer << "    li " << destName << ", " << offset << "\n";
+                    buffer << "    add " << destName << ", fp, " << destName << "\n";
+                }
+                else {
+                    // load address + offset into a register
+                    buffer << "    addi " << destName << ", fp, " << offset << "\n";
+                }
             }
             else if (location.tag == StorageInfo::STORAGE_LABEL){
                 buffer << "    la " << destName << ", .symbol" << location.label << "\n";
-                buffer << "    addi " << destName << ", "<< destName <<", " << current->loadAddress.offset << "\n";
+
+                if (!inRange(current->loadAddress.offset, -MAX_IMMEDIATE, MAX_IMMEDIATE)){
+                    Register temp = regAlloc.allocVRegister(REG_ANY);
+                    const char* tempName = RV64_RegisterName[regAlloc.resolveRegister(temp)];
+
+                    buffer << "    li " << tempName << ", " << current->loadAddress.offset << "\n";
+                    buffer << "    add " << destName << ", "<< destName <<", " << tempName << "\n";
+                    
+                    regAlloc.freeRegister(temp);
+                } 
+                else{
+                    buffer << "    addi " << destName << ", "<< destName <<", " << current->loadAddress.offset << "\n";
+                }
+
             }
             
         }
@@ -809,9 +902,21 @@ void CodeGenerator::generateExprMIR(MIR_Expr *current, Register dest, ScopeInfo 
 
             const char *destName = RV64_RegisterName[regAlloc.resolveRegister(dest)];
 
-            
-            // load address + offset into a register
-            buffer << "    addi " << destName << ", " << destName << ", " << current->loadAddress.offset << "\n";
+            if (!inRange(current->loadAddress.offset, -MAX_IMMEDIATE, MAX_IMMEDIATE)){
+                Register temp = regAlloc.allocVRegister(REG_ANY);
+                const char* tempName = RV64_RegisterName[regAlloc.resolveRegister(temp)];
+
+                buffer << "    li " << tempName << ", " << current->loadAddress.offset << "\n";
+                buffer << "    add " << destName << ", "<< destName <<", " << tempName << "\n";
+                
+                regAlloc.freeRegister(temp);
+            }
+            else {
+                // load address + offset into a register
+                buffer << "    addi " << destName << ", " << destName << ", " << current->loadAddress.offset << "\n";
+
+            }
+
         }
 
         break;
@@ -832,9 +937,19 @@ void CodeGenerator::generateExprMIR(MIR_Expr *current, Register dest, ScopeInfo 
             MIR_Expr *base = current->load.base;
             StorageInfo location = accessLocation(base->addressOf.symbol, storageScope);
             
+            
             if (location.tag == StorageInfo::STORAGE_MEMORY){
-                // load the value and load into destination register
-                buffer << "    " << prefix << "l" << iInsIntegerSuffix(current->load.size) << " " << destName << ", " << stackAlloc.offsetFromBase(location.memAddress) + current->load.offset << "(fp)\n";
+                int64_t offset = stackAlloc.offsetFromBase(location.memAddress) + current->load.offset;
+                
+                if (!inRange(offset, -MAX_IMMEDIATE, MAX_IMMEDIATE)){
+                    buffer << "    li " << destName << ", " << offset << "\n";
+                    buffer << "    add " << destName << ", " << destName << ", fp\n";
+                    buffer << "    " << prefix << "l" << iInsIntegerSuffix(current->load.size) << " " << destName << ", " << "0(" << destName << ")\n";
+                }
+                else {
+                    // load the value and load into destination register
+                    buffer << "    " << prefix << "l" << iInsIntegerSuffix(current->load.size) << " " << destName << ", " << offset  << "(fp)\n";
+                }
                 return;
             }
             
@@ -848,9 +963,20 @@ void CodeGenerator::generateExprMIR(MIR_Expr *current, Register dest, ScopeInfo 
         }
 
         const char *destName = RV64_RegisterName[regAlloc.resolveRegister(dest)];
+        
+        if (!inRange(current->load.offset, -MAX_IMMEDIATE, MAX_IMMEDIATE)){
+            Register temp = regAlloc.allocVRegister(REG_ANY);
+            const char* tempName = RV64_RegisterName[regAlloc.resolveRegister(temp)];
 
-        // load value and load   
-        buffer << "    " << prefix << "l" << iInsIntegerSuffix(current->load.size) << " " << destName << ", " << current->load.offset << "(" << destName << ")\n";
+            buffer << "    li " << tempName << ", " << current->load.offset << "\n";
+            buffer << "    add " << destName << ", " << destName << ", " << tempName << "\n";
+            buffer << "    " << prefix << "l" << iInsIntegerSuffix(current->load.size) << " " << destName << ", " << 0 << "(" << destName << ")\n";
+            regAlloc.freeRegister(temp);
+        }
+        else {
+            // load value and load   
+            buffer << "    " << prefix << "l" << iInsIntegerSuffix(current->load.size) << " " << destName << ", " << current->load.offset << "(" << destName << ")\n";
+        }
         
         break;
     }
@@ -874,15 +1000,26 @@ void CodeGenerator::generateExprMIR(MIR_Expr *current, Register dest, ScopeInfo 
         if (current->store.left->tag == MIR_Expr::EXPR_ADDRESSOF){
             MIR_Expr* leftAddress = current->store.left;
             StorageInfo location = accessLocation(leftAddress->addressOf.symbol, storageScope);
-
+            
+            const char *tempName = RV64_RegisterName[regAlloc.resolveRegister(temp)];
+            
             if (location.tag  == StorageInfo::STORAGE_MEMORY){
-                // store the value at (address + offset)
-                buffer << "    " << prefix << "s" << iInsIntegerSuffix(current->store.size) << " " << destName << ", " << stackAlloc.offsetFromBase(location.memAddress) + current->store.offset << "(fp)\n";
+                int64_t offset = stackAlloc.offsetFromBase(location.memAddress) + current->store.offset;
+
+                if (!inRange(offset, -MAX_IMMEDIATE, MAX_IMMEDIATE)){
+                    buffer << "    li " << tempName << ", " << offset << "\n";
+                    buffer << "    add " << tempName << ", " << tempName << ", fp\n"; 
+                    buffer << "    " << prefix << "s" << iInsIntegerSuffix(current->store.size) << " " << destName << ", " << 0 << "(" << tempName << ")\n";    
+                }
+                else {
+                    // store the value at (address + offset)
+                    buffer << "    " << prefix << "s" << iInsIntegerSuffix(current->store.size) << " " << destName << ", " << offset << "(fp)\n";    
+                }
+
                 regAlloc.freeRegister(temp);
                 return;
             }
             else if (location.tag == StorageInfo::STORAGE_LABEL){
-                const char *tempName = RV64_RegisterName[regAlloc.resolveRegister(temp)];
                 
                 buffer << "    la " << tempName << ", .symbol" << location.label << "\n";
             }
@@ -894,8 +1031,20 @@ void CodeGenerator::generateExprMIR(MIR_Expr *current, Register dest, ScopeInfo 
 
         const char *tempName = RV64_RegisterName[regAlloc.resolveRegister(temp)];
 
-        // store the value at (address + offset)
-        buffer << "    " << prefix << "s" << iInsIntegerSuffix(current->store.size) << " " << destName << ", " << current->store.offset << "(" << tempName << ")\n";
+        if (!inRange(current->store.offset, -MAX_IMMEDIATE, MAX_IMMEDIATE)){
+            Register temp2 = regAlloc.allocVRegister(REG_ANY);
+            const char* temp2Name = RV64_RegisterName[regAlloc.resolveRegister(temp2)]; 
+            
+            buffer << "    li " << temp2Name << ", " << current->store.offset << "\n";
+            buffer << "    add " << tempName << ", " << tempName << ", " << temp2Name << "\n";
+            buffer << "    " << prefix << "s" << iInsIntegerSuffix(current->store.size) << " " << destName << ", " << 0 << "(" << tempName << ")\n";
+            
+            regAlloc.freeRegister(temp2);
+        }
+        else {
+            // store the value at (address + offset)
+            buffer << "    " << prefix << "s" << iInsIntegerSuffix(current->store.size) << " " << destName << ", " << current->store.offset << "(" << tempName << ")\n";
+        }
         
         regAlloc.freeRegister(temp);
         break;
@@ -916,7 +1065,15 @@ void CodeGenerator::generateExprMIR(MIR_Expr *current, Register dest, ScopeInfo 
             StorageInfo location = accessLocation(address->addressOf.symbol, storageScope);
             
             if (location.tag == StorageInfo::STORAGE_MEMORY){
-                buffer << "    addi " << destName << ", fp, " << stackAlloc.offsetFromBase(location.memAddress) << "\n";
+                int64_t offset = stackAlloc.offsetFromBase(location.memAddress);
+                
+                if (!inRange(offset, -MAX_IMMEDIATE, MAX_IMMEDIATE)){
+                    buffer << "    li " << destName << ", " << offset << "\n";
+                    buffer << "    add " << destName << ", fp, " << destName << "\n";
+                }
+                else {
+                    buffer << "    addi " << destName << ", fp, " << offset << "\n";
+                }
             }
             else if (location.tag == StorageInfo::STORAGE_LABEL){
                 buffer << "    la " << destName << ", .symbol" << location.label << "\n";
@@ -1404,7 +1561,18 @@ void CodeGenerator::generateExprMIR(MIR_Expr *current, Register dest, ScopeInfo 
         // allocate stack space if needed
         MemBlock stackSpace = stackAlloc.allocate(stackSpaceRequired);
         if (stackSpaceRequired > 0){
-            buffer << "    addi sp, sp, " << -stackSpaceRequired << "\n";
+            if (!inRange(stackSpaceRequired, -MAX_IMMEDIATE, MAX_IMMEDIATE)){
+                Register temp = regAlloc.allocVRegister(REG_ANY);
+                const char* tempName = RV64_RegisterName[regAlloc.resolveRegister(temp)];
+
+                buffer << "    li " << tempName << ", " << -stackSpaceRequired << "\n";
+                buffer << "    add sp, sp, " << tempName << "\n";
+                
+                regAlloc.freeRegister(temp);
+            }
+            else {
+                buffer << "    addi sp, sp, " << -stackSpaceRequired << "\n";
+            }
         }
 
         
@@ -1476,8 +1644,16 @@ void CodeGenerator::generateExprMIR(MIR_Expr *current, Register dest, ScopeInfo 
                     stackOffset = alignUpPowerOf2(stackOffset, arg->_type.alignment);
                     int64_t offset = stackAlloc.offsetFromBase(stackSpace) + stackOffset;
 
-                    // store value in stack
-                    buffer << "    " << prefix << "s" << iInsIntegerSuffix(sizeToUse) << " " << regName << ", " << offset << "(fp)\n";
+                    if (!inRange(offset, -MAX_IMMEDIATE, MAX_IMMEDIATE)){
+                        buffer << "    li " << regName << ", " << offset << "\n";
+                        buffer << "    add " << regName << ", " << regName << ", fp\n";
+                        buffer << "    " << prefix << "s" << iInsIntegerSuffix(sizeToUse) << " " << regName << ", " << 0 << "(" << regName << ")\n";
+                    }
+                    else {
+                        // store value in stack
+                        buffer << "    " << prefix << "s" << iInsIntegerSuffix(sizeToUse) << " " << regName << ", " << offset << "(fp)\n";
+                    }
+
 
                     regAlloc.freeRegister(value);
                     stackOffset += sizeToUse;
@@ -1514,7 +1690,18 @@ void CodeGenerator::generateExprMIR(MIR_Expr *current, Register dest, ScopeInfo 
         // deallocate stack space if any allocated
         stackAlloc.deallocate(stackSpaceRequired);
         if (stackSpaceRequired > 0){
-            buffer << "    addi sp, sp, " << stackSpaceRequired << "\n";
+            if (!inRange(stackSpaceRequired, -MAX_IMMEDIATE, MAX_IMMEDIATE)){
+                Register temp = regAlloc.allocVRegister(REG_ANY);
+                const char* tempName = RV64_RegisterName[regAlloc.resolveRegister(temp)];
+
+                buffer << "    li " << tempName << ", " << stackSpaceRequired << "\n";
+                buffer << "    add sp, sp, " << tempName << "\n";
+                
+                regAlloc.freeRegister(temp);
+            }
+            else {
+                buffer << "    addi sp, sp, " << stackSpaceRequired << "\n";
+            }
         }
 
         // free the argument registers

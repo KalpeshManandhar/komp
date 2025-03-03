@@ -38,6 +38,7 @@ struct CodeGenerator{
     // RV64D specific info
     const size_t XLEN = 8;
     const size_t FLEN = 8;
+    const int64_t MAX_IMMEDIATE = ((0x1 << 11)- 1);
     
     void generateFunctionMIR(MIR_Function *foo, MIR_Scope* global, ScopeInfo *storageScope);
     void generatePrimitiveMIR(MIR_Primitive* p, MIR_Scope* scope , ScopeInfo *storageScope);
