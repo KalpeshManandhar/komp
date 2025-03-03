@@ -1502,7 +1502,8 @@ void CodeGenerator::generateExprMIR(MIR_Expr *current, Register dest, ScopeInfo 
                 
                 // load address of the arg in stack in register
                 buffer << "    addi " << regName << ", fp, " << stackAlloc.offsetFromBase(stackSpace) + stackOffsetStart << "\n";
-                
+
+                argRegisters[occupiedXA + occupiedFA] = argRegister;
                 (*registerFileInUse)++;
             }
 
