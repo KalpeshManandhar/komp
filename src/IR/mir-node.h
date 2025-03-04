@@ -81,8 +81,9 @@ struct MIR_Expr : public MIR_Primitive{
         EXPR_LOGICAL_AND,
         EXPR_LOGICAL_OR,
         
-        EXPR_IBITWISE_LSHIFT,
-        EXPR_IBITWISE_RSHIFT,
+        EXPR_LOGICAL_LSHIFT,
+        EXPR_LOGICAL_RSHIFT,
+        EXPR_ARITHMETIC_RSHIFT,
 
         EXPR_ICOMPARE_LT,
         EXPR_ICOMPARE_GT,
@@ -90,6 +91,13 @@ struct MIR_Expr : public MIR_Primitive{
         EXPR_ICOMPARE_GE,
         EXPR_ICOMPARE_EQ,
         EXPR_ICOMPARE_NEQ,
+        
+        EXPR_UCOMPARE_LT,
+        EXPR_UCOMPARE_GT,
+        EXPR_UCOMPARE_LE,
+        EXPR_UCOMPARE_GE,
+        EXPR_UCOMPARE_EQ,
+        EXPR_UCOMPARE_NEQ,
 
         EXPR_FCOMPARE_LT,
         EXPR_FCOMPARE_GT,

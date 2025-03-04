@@ -559,75 +559,52 @@ MIR_Primitives MiddleEnd :: transformSubexpr(const Subexpr* expr, StatementBlock
 
             
 
+            
 
 
+            MIR_Primitives exprRight;
+            
+            if (_match(expr->binary.op, TOKEN_ASSIGNMENT)){
+                exprRight = transformSubexpr(expr->binary.right, scope, arena);
+            }
+            else {
+                Subexpr op = {0};
+                op.tag = Node::NODE_SUBEXPR;
+                op.subtag = Subexpr::SUBEXPR_BINARY_OP;
+                op.binary.left = expr->binary.left;
+                op.binary.right = expr->binary.right;
+                op.type = getResultantType(op.binary.left->type, op.binary.right->type, expr->binary.op);
+                
+                switch (expr->binary.op.type){
+                    case TOKEN_PLUS_ASSIGN: 
+                        op.binary.op = Token{.type = TOKEN_PLUS}; break;
+                    case TOKEN_MINUS_ASSIGN: 
+                        op.binary.op = Token{.type = TOKEN_MINUS}; break;
+                    case TOKEN_MUL_ASSIGN: 
+                        op.binary.op = Token{.type = TOKEN_STAR}; break;
+                    case TOKEN_DIV_ASSIGN: 
+                        op.binary.op = Token{.type = TOKEN_SLASH}; break;
+                    case TOKEN_LSHIFT_ASSIGN: 
+                        op.binary.op = Token{.type = TOKEN_SHIFT_LEFT}; break;
+                    case TOKEN_RSHIFT_ASSIGN: 
+                        op.binary.op = Token{.type = TOKEN_SHIFT_RIGHT}; break;
+                    case TOKEN_BITWISE_AND_ASSIGN: 
+                        op.binary.op = Token{.type = TOKEN_AMPERSAND}; break;
+                    case TOKEN_BITWISE_OR_ASSIGN: 
+                        op.binary.op = Token{.type = TOKEN_BITWISE_OR}; break;
+                    case TOKEN_BITWISE_XOR_ASSIGN: 
+                        op.binary.op = Token{.type = TOKEN_BITWISE_XOR}; break;
+                    case TOKEN_MODULO_ASSIGN: 
+                        op.binary.op = Token{.type = TOKEN_MODULO}; break;
 
-            MIR_Primitives exprRight = transformSubexpr(expr->binary.right, scope, arena);
+                }
+                
+                exprRight = transformSubexpr(&op, scope, arena);
+            }
+            
+            
             assert(exprRight.n == 1);
             MIR_Expr* right = (MIR_Expr*) exprRight.primitives[0];
-
-            
-            switch (expr->binary.op.type){
-            case TOKEN_ASSIGNMENT:{
-                break;
-            }
-
-            // something-assign are expanded to a store with that node as rvalue   
-            case TOKEN_PLUS_ASSIGN:{
-                MIR_Expr *add = (MIR_Expr*)arena->alloc(sizeof(MIR_Expr));
-                MIR_Expr *addLeft = (MIR_Expr*)arena->alloc(sizeof(MIR_Expr));
-                
-                
-                DataType addType = getResultantType(expr->binary.left->type, expr->binary.right->type, expr->binary.op);
-                
-                add->type = addType;
-                add->_type = convertToLowerLevelType(add->type, scope);
-                
-                // the left operand is same as the left node of the store
-                *addLeft = *left;
-                
-                // the new add node
-                add->ptag = MIR_Primitive::PRIM_EXPR;
-                add->tag = MIR_Expr::EXPR_BINARY;
-                add->binary.left = typeCastTo(addLeft, add->_type, arena);
-                add->binary.right = typeCastTo(right, add->_type, arena);
-                add->binary.op = MIR_Expr::BinaryOp::EXPR_IADD;
-                
-                
-                right = add;
-                break;
-            }
-            case TOKEN_MINUS_ASSIGN:{
-                break;
-            }
-            case TOKEN_MUL_ASSIGN:{
-                break;
-            }
-            case TOKEN_DIV_ASSIGN:{
-                break;
-            }
-            case TOKEN_SQUARE_OPEN:{
-                break;
-            }
-            case TOKEN_LSHIFT_ASSIGN:{
-                break;
-            }
-            case TOKEN_RSHIFT_ASSIGN:{
-                break;
-            }
-            case TOKEN_BITWISE_AND_ASSIGN:{
-                break;
-            }
-            case TOKEN_BITWISE_OR_ASSIGN:{
-                break;
-            }
-            case TOKEN_BITWISE_XOR_ASSIGN:{
-                break;
-            }
-            default:
-                break;
-            }
-
 
             returnExprs.primitives[returnExprs.n] = getStoreNode(left, right, left->_type, 0, arena);
             returnExprs.n++;
@@ -656,10 +633,15 @@ MIR_Primitives MiddleEnd :: transformSubexpr(const Subexpr* expr, StatementBlock
         assert(exprRight.n == 1);
         MIR_Expr *right = (MIR_Expr*) exprRight.primitives[0];
         
-        // get resultant type
-        DataType dt = getResultantType(expr->binary.left->type, expr->binary.right->type, expr->binary.op);
-        d->type = dt;
-        d->_type = convertToLowerLevelType(dt, scope);
+        if ((expr->binary.op.type == TOKEN_LOGICAL_AND) || (expr->binary.op.type == TOKEN_LOGICAL_OR)){
+            d->_type = MIR_Datatypes::_bool;
+        }
+        else {
+            // get resultant type
+            DataType dt = getResultantType(expr->binary.left->type, expr->binary.right->type, expr->binary.op);
+            d->type = dt;
+            d->_type = convertToLowerLevelType(dt, scope);
+        }
                 
         d->binary.left = typeCastTo(left, d->_type, arena);
         d->binary.right = typeCastTo(right, d->_type, arena);
@@ -703,11 +685,16 @@ MIR_Primitives MiddleEnd :: transformSubexpr(const Subexpr* expr, StatementBlock
             break;
         } 
         case TOKEN_SHIFT_LEFT:{
-            d->binary.op = MIR_Expr::BinaryOp::EXPR_IBITWISE_LSHIFT;
+            d->binary.op = MIR_Expr::BinaryOp::EXPR_LOGICAL_LSHIFT;
             break;
         } 
         case TOKEN_SHIFT_RIGHT:{
-            d->binary.op = MIR_Expr::BinaryOp::EXPR_IBITWISE_RSHIFT;
+            if (isUnsigned(left->_type)){
+                d->binary.op = MIR_Expr::BinaryOp::EXPR_ARITHMETIC_RSHIFT;
+            }
+            else {
+                d->binary.op = MIR_Expr::BinaryOp::EXPR_LOGICAL_RSHIFT;
+            }
             break;
         }
         case TOKEN_LOGICAL_AND:{
@@ -719,32 +706,57 @@ MIR_Primitives MiddleEnd :: transformSubexpr(const Subexpr* expr, StatementBlock
             break;
         }
         case TOKEN_EQUALITY_CHECK:{
-            d->binary.op = (isIntegerOperation)? MIR_Expr::BinaryOp::EXPR_ICOMPARE_EQ : MIR_Expr::BinaryOp::EXPR_FCOMPARE_EQ;
+            d->binary.op = (isIntegerOperation)? (
+                isUnsigned(d->_type)?
+                MIR_Expr::BinaryOp::EXPR_UCOMPARE_EQ 
+                :  MIR_Expr::BinaryOp::EXPR_ICOMPARE_EQ
+            ) : MIR_Expr::BinaryOp::EXPR_FCOMPARE_EQ;
+        
             d->_type = MIR_Datatypes::_bool;
             break;
         }
         case TOKEN_NOT_EQUALS:{
-            d->binary.op = (isIntegerOperation)? MIR_Expr::BinaryOp::EXPR_ICOMPARE_NEQ : MIR_Expr::BinaryOp::EXPR_FCOMPARE_NEQ;
+            d->binary.op = (isIntegerOperation)? (
+                isUnsigned(d->_type)?
+                MIR_Expr::BinaryOp::EXPR_UCOMPARE_NEQ
+              : MIR_Expr::BinaryOp::EXPR_ICOMPARE_NEQ
+            ) : MIR_Expr::BinaryOp::EXPR_FCOMPARE_NEQ;
             d->_type = MIR_Datatypes::_bool;
             break;
         }
         case TOKEN_GREATER_EQUALS:{
-            d->binary.op = (isIntegerOperation)? MIR_Expr::BinaryOp::EXPR_ICOMPARE_GE : MIR_Expr::BinaryOp::EXPR_FCOMPARE_GE;
+            d->binary.op = (isIntegerOperation)? (
+                isUnsigned(d->_type)?
+                MIR_Expr::BinaryOp::EXPR_UCOMPARE_GE
+              : MIR_Expr::BinaryOp::EXPR_ICOMPARE_GE
+            ) : MIR_Expr::BinaryOp::EXPR_FCOMPARE_GE;
             d->_type = MIR_Datatypes::_bool;
             break;
         }
         case TOKEN_GREATER_THAN:{
-            d->binary.op = (isIntegerOperation)? MIR_Expr::BinaryOp::EXPR_ICOMPARE_GT : MIR_Expr::BinaryOp::EXPR_FCOMPARE_GT;
+            d->binary.op = (isIntegerOperation)? (
+                isUnsigned(d->_type)?
+                MIR_Expr::BinaryOp::EXPR_UCOMPARE_GT
+              : MIR_Expr::BinaryOp::EXPR_ICOMPARE_GT
+            ) : MIR_Expr::BinaryOp::EXPR_FCOMPARE_GT;
             d->_type = MIR_Datatypes::_bool;
             break;
         }
         case TOKEN_LESS_EQUALS:{
-            d->binary.op = (isIntegerOperation)? MIR_Expr::BinaryOp::EXPR_ICOMPARE_LE : MIR_Expr::BinaryOp::EXPR_FCOMPARE_LE;
+            d->binary.op = (isIntegerOperation)? (
+                isUnsigned(d->_type)?
+                MIR_Expr::BinaryOp::EXPR_UCOMPARE_LE
+              : MIR_Expr::BinaryOp::EXPR_ICOMPARE_LE
+            ) : MIR_Expr::BinaryOp::EXPR_FCOMPARE_LE;
             d->_type = MIR_Datatypes::_bool;
             break;
         }
         case TOKEN_LESS_THAN:{
-            d->binary.op = (isIntegerOperation)? MIR_Expr::BinaryOp::EXPR_ICOMPARE_LT : MIR_Expr::BinaryOp::EXPR_FCOMPARE_LT;
+            d->binary.op = (isIntegerOperation)? (
+                isUnsigned(d->_type)?
+                MIR_Expr::BinaryOp::EXPR_UCOMPARE_LT
+              : MIR_Expr::BinaryOp::EXPR_ICOMPARE_LT
+            ) : MIR_Expr::BinaryOp::EXPR_FCOMPARE_LT;
             d->_type = MIR_Datatypes::_bool;
             break;
         }
@@ -1038,6 +1050,7 @@ MIR_Primitives MiddleEnd :: transformSubexpr(const Subexpr* expr, StatementBlock
         case TOKEN_LOGICAL_NOT:{
             d->unary.op = MIR_Expr::UnaryOp::EXPR_LOGICAL_NOT;
             d->_type = MIR_Datatypes::_bool;
+            d->unary.expr = typeCastTo(d->unary.expr, d->_type, arena);
             break;
         }
         case TOKEN_BITWISE_NOT:

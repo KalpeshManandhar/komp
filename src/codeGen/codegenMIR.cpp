@@ -927,8 +927,13 @@ void CodeGenerator::generateExprMIR(MIR_Expr *current, Register dest, ScopeInfo 
 
         
         bool isFloatExpr = current->load.type == MIR_Expr::LoadType::EXPR_FLOAD;
+        bool isUnsignedLoad = isUnsigned(current->_type);
         
         const char* prefix = isFloatExpr? "f" : "";
+        const char* suffix = isUnsignedLoad? "u" : "";
+        if (current->_type.size == XLEN){
+            suffix = "";
+        }
         
         
         // if the given address is a direct AddressOf node, then the address can be used instead of loading it into a register first.
@@ -944,11 +949,11 @@ void CodeGenerator::generateExprMIR(MIR_Expr *current, Register dest, ScopeInfo 
                 if (!inRange(offset, -MAX_IMMEDIATE, MAX_IMMEDIATE)){
                     buffer << "    li " << destName << ", " << offset << "\n";
                     buffer << "    add " << destName << ", " << destName << ", fp\n";
-                    buffer << "    " << prefix << "l" << iInsIntegerSuffix(current->load.size) << " " << destName << ", " << "0(" << destName << ")\n";
+                    buffer << "    " << prefix << "l" << iInsIntegerSuffix(current->load.size) << suffix << " " << destName << ", " << "0(" << destName << ")\n";
                 }
                 else {
                     // load the value and load into destination register
-                    buffer << "    " << prefix << "l" << iInsIntegerSuffix(current->load.size) << " " << destName << ", " << offset  << "(fp)\n";
+                    buffer << "    " << prefix << "l" << iInsIntegerSuffix(current->load.size) << suffix << " " << destName << ", " << offset  << "(fp)\n";
                 }
                 return;
             }
@@ -970,12 +975,12 @@ void CodeGenerator::generateExprMIR(MIR_Expr *current, Register dest, ScopeInfo 
 
             buffer << "    li " << tempName << ", " << current->load.offset << "\n";
             buffer << "    add " << destName << ", " << destName << ", " << tempName << "\n";
-            buffer << "    " << prefix << "l" << iInsIntegerSuffix(current->load.size) << " " << destName << ", " << 0 << "(" << destName << ")\n";
+            buffer << "    " << prefix << "l" << iInsIntegerSuffix(current->load.size) << suffix << " " << destName << ", " << 0 << "(" << destName << ")\n";
             regAlloc.freeRegister(temp);
         }
         else {
             // load value and load   
-            buffer << "    " << prefix << "l" << iInsIntegerSuffix(current->load.size) << " " << destName << ", " << current->load.offset << "(" << destName << ")\n";
+            buffer << "    " << prefix << "l" << iInsIntegerSuffix(current->load.size) << suffix << " " << destName << ", " << current->load.offset << "(" << destName << ")\n";
         }
         
         break;
@@ -1155,12 +1160,18 @@ void CodeGenerator::generateExprMIR(MIR_Expr *current, Register dest, ScopeInfo 
                 buffer << "    sub " << destName << ", " << leftName << ", " << rightName << "\n";
                 break;
             }
-            case MIR_Expr::BinaryOp::EXPR_UMUL:
+            case MIR_Expr::BinaryOp::EXPR_UMUL:{
+                buffer << "    mulu " << destName << ", " << leftName << ", " << rightName << "\n";
+                break;
+            }
             case MIR_Expr::BinaryOp::EXPR_IMUL:{
                 buffer << "    mul " << destName << ", " << leftName << ", " << rightName << "\n";
                 break;
             }
-            case MIR_Expr::BinaryOp::EXPR_UDIV:
+            case MIR_Expr::BinaryOp::EXPR_UDIV:{
+                buffer << "    divu " << destName << ", " << leftName << ", " << rightName << "\n";
+                break;
+            }
             case MIR_Expr::BinaryOp::EXPR_IDIV:{
                 buffer << "    div " << destName << ", " << leftName << ", " << rightName << "\n";
                 break;
@@ -1199,37 +1210,76 @@ void CodeGenerator::generateExprMIR(MIR_Expr *current, Register dest, ScopeInfo 
                 break;
             }
             
-            case MIR_Expr::BinaryOp::EXPR_IBITWISE_LSHIFT:{
+            case MIR_Expr::BinaryOp::EXPR_LOGICAL_LSHIFT:{
                 buffer << "    sll " << destName << ", " << leftName << ", " << rightName << "\n";
                 break;
             }
-            case MIR_Expr::BinaryOp::EXPR_IBITWISE_RSHIFT:{
+            case MIR_Expr::BinaryOp::EXPR_LOGICAL_RSHIFT:{
                 buffer << "    srl " << destName << ", " << leftName << ", " << rightName << "\n";
+                break;
+            }
+            case MIR_Expr::BinaryOp::EXPR_ARITHMETIC_RSHIFT:{
+                buffer << "    sra " << destName << ", " << leftName << ", " << rightName << "\n";
                 break;
             }
             
             
+            case MIR_Expr::BinaryOp::EXPR_UCOMPARE_LT:{
+                // set if less than
+                buffer << "    sltu " << destName << ", " << leftName << ", " << rightName << "\n";
+                break;
+            }
+            case MIR_Expr::BinaryOp::EXPR_UCOMPARE_GT:{
+                // set if less than with operands swapped
+                buffer << "    sltu " << destName << ", " << rightName << ", " << leftName << "\n";
+                break;
+            } 
+            case MIR_Expr::BinaryOp::EXPR_UCOMPARE_LE:{
+                // check if greater than then invert
+                buffer << "    sltu " << destName << ", " << rightName << ", " << leftName << "\n";
+                buffer << "    xori " << destName << ", " << destName << ", " << "1" << "\n";
+                break;
+            }
+            case MIR_Expr::BinaryOp::EXPR_UCOMPARE_GE:{
+                // check if less than then invert
+                buffer << "    sltu " << destName << ", " << leftName << ", " << rightName << "\n";
+                buffer << "    xori " << destName << ", " << destName << ", " << "1" << "\n";
+                break;
+            }
+            case MIR_Expr::BinaryOp::EXPR_UCOMPARE_EQ:{
+                // subtract and set if eq to 0
+                buffer << "    sub " << destName << ", " << leftName << ", " << rightName << "\n";
+                buffer << "    seqz " << destName << ", " << destName << "\n";
+                break;
+            }
+            case MIR_Expr::BinaryOp::EXPR_UCOMPARE_NEQ:{
+                // subtract and set if neq to 0
+                buffer << "    sub " << destName << ", " << leftName << ", " << rightName << "\n";
+                buffer << "    snez " << destName << ", " << destName << "\n";
+                break;
+            }
+
             case MIR_Expr::BinaryOp::EXPR_ICOMPARE_LT:{
                 // set if less than
                 buffer << "    slt " << destName << ", " << leftName << ", " << rightName << "\n";
                 break;
             }
             case MIR_Expr::BinaryOp::EXPR_ICOMPARE_GT:{
-                // subtract and set if greater than 0
-                buffer << "    sub " << destName << ", " << leftName << ", " << rightName << "\n";
-                buffer << "    sgtz " << destName << ", " << destName << "\n";
+                // set if less than but operands swapped
+                buffer << "    slt " << destName << ", " << rightName << ", " << leftName << "\n";
                 break;
             } 
             case MIR_Expr::BinaryOp::EXPR_ICOMPARE_LE:{
-                // subtract and set if greater than 0 (aka gt) then xor with 0x1 
-                buffer << "    sub " << destName << ", " << leftName << ", " << rightName << "\n";
-                buffer << "    sgtz " << destName << ", " << destName << "\n";
+                // check if greater than then invert
+                buffer << "    slt " << destName << ", " << rightName << ", " << leftName << "\n";
                 buffer << "    xori " << destName << ", " << destName << ", " << "1" << "\n";
+                
                 break;
             }
             case MIR_Expr::BinaryOp::EXPR_ICOMPARE_GE:{
-                // set if less than with operands swapped
-                buffer << "    slt " << destName << ", " << rightName << ", " << leftName << "\n";
+                // check if less than then invert
+                buffer << "    slt " << destName << ", " << leftName << ", " << rightName << "\n";
+                buffer << "    xori " << destName << ", " << destName << ", " << "1" << "\n";
                 break;
             }
             case MIR_Expr::BinaryOp::EXPR_ICOMPARE_EQ:{

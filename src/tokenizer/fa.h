@@ -249,6 +249,7 @@ struct PunctuatorDFA: public DFA{
         STATE_BITWISE_AND_ASSIGN,
         STATE_BITWISE_OR_ASSIGN,
         STATE_BITWISE_XOR_ASSIGN,
+        STATE_MODULO_ASSIGN,
 
 
         // punctuators?
@@ -295,6 +296,7 @@ struct PunctuatorDFA: public DFA{
         this->addTransition(STATE_START, "*", STATE_STAR);
         this->addTransition(STATE_START, "/", STATE_SLASH);
         this->addTransition(STATE_START, "%", STATE_MODULO);
+        
 
         this->addTransition(STATE_START, ">", STATE_GREATER_THAN);
         this->addTransition(STATE_START, "<", STATE_LESS_THAN);
@@ -312,7 +314,9 @@ struct PunctuatorDFA: public DFA{
 
         this->addTransition(STATE_PLUS, "+", STATE_INC);
         this->addTransition(STATE_PLUS, "=", STATE_PLUS_ASSIGN);
+
         
+        this->addTransition(STATE_MODULO, "=", STATE_MODULO_ASSIGN);
         this->addTransition(STATE_STAR, "=", STATE_MUL_ASSIGN);
         this->addTransition(STATE_SLASH, "=", STATE_DIV_ASSIGN);
         this->addTransition(STATE_SHIFT_LEFT, "=", STATE_LSHIFT_ASSIGN);
