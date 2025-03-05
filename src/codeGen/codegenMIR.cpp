@@ -126,6 +126,67 @@ static int getDepth(const MIR_Expr *expr){
 
 
 
+/*
+    Get depth of an MIR_Expr node
+*/ 
+static bool containsLoadOrFunctionCall(const MIR_Expr *expr){
+    if (!expr){
+        return false;
+    }
+    
+    switch (expr->tag){
+    case MIR_Expr::EXPR_ADDRESSOF: {
+        return false;
+    }
+    case MIR_Expr::EXPR_LOAD: {
+        bool flag = containsLoadOrFunctionCall(expr->load.base);
+        return flag;
+    }
+    case MIR_Expr::EXPR_INDEX: {
+        bool base = containsLoadOrFunctionCall(expr->index.base);
+        bool index = containsLoadOrFunctionCall(expr->index.index);
+        return base || index;
+    }
+    case MIR_Expr::EXPR_LEAF: {
+        return false;
+    }
+    case MIR_Expr::EXPR_LOAD_ADDRESS: {
+        bool address = containsLoadOrFunctionCall(expr->loadAddress.base);
+        return address;
+    }
+    case MIR_Expr::EXPR_LOAD_IMMEDIATE: {
+        return false;
+    }
+    case MIR_Expr::EXPR_STORE: {
+        return true;
+    }
+    case MIR_Expr::EXPR_CAST: {
+        bool operand = containsLoadOrFunctionCall(expr->cast.expr);
+        return operand;
+    }
+    case MIR_Expr::EXPR_BINARY: {
+        bool left = containsLoadOrFunctionCall(expr->binary.left);
+        bool right = containsLoadOrFunctionCall(expr->binary.right);
+
+        return left || right;
+    }
+    case MIR_Expr::EXPR_UNARY: {
+        bool operand = containsLoadOrFunctionCall(expr->unary.expr);
+        return operand;
+    }
+    case MIR_Expr::EXPR_CALL: {
+        return true;
+    }
+    default:
+        assert(false && "Some stuff is not accounted for.");
+        return false;
+    }
+
+}
+
+
+
+
 
 
 /*
@@ -197,7 +258,7 @@ void CodeGenerator :: generatePrimitiveMIR(MIR_Primitive* p, MIR_Scope* scope, S
 
             while (inode){
                 if (inode->condition){
-                    Register condition = regAlloc.allocVRegister(REG_SAVED);
+                    Register condition = regAlloc.allocVRegister(REG_ANY);
                     // compute the condition
                     generateExprMIR(inode->condition, condition, storageScope);
                     
@@ -236,7 +297,7 @@ void CodeGenerator :: generatePrimitiveMIR(MIR_Primitive* p, MIR_Scope* scope, S
         case MIR_Primitive::PRIM_LOOP:{
             MIR_Loop* lnode = (MIR_Loop*) p;
         
-            Register condition = regAlloc.allocVRegister(REG_SAVED);
+            Register condition = regAlloc.allocVRegister(REG_ANY);
 
             
             // start of while loop 
@@ -256,7 +317,7 @@ void CodeGenerator :: generatePrimitiveMIR(MIR_Primitive* p, MIR_Scope* scope, S
             generatePrimitiveMIR(lnode->scope, scope, storageScope);
             
             
-            Register update = regAlloc.allocVRegister(REG_SAVED);
+            Register update = regAlloc.allocVRegister(REG_ANY);
             buffer << ".L" << lnode->updateLabel << ":\n";
             
             generateExprMIR(lnode->update, update, storageScope);
@@ -320,7 +381,7 @@ void CodeGenerator :: generatePrimitiveMIR(MIR_Primitive* p, MIR_Scope* scope, S
             bool isFloatExpr = isFloatType(enode->_type);
             int mask = isFloatExpr? REG_FLOATING_POINT : 0; 
 
-            Register rtmp = regAlloc.allocVRegister(RegisterType(REG_SAVED | mask));
+            Register rtmp = regAlloc.allocVRegister(RegisterType(REG_ANY | mask));
 
             generateExprMIR(enode, rtmp, storageScope);
             
@@ -999,7 +1060,7 @@ void CodeGenerator::generateExprMIR(MIR_Expr *current, Register dest, ScopeInfo 
         const char* prefix = isFloatExpr? "f" : "";
         
         // else, load the address into a temporary register first 
-        Register temp = regAlloc.allocVRegister(REG_SAVED);
+        Register temp = regAlloc.allocVRegister(REG_ANY);
 
         // if the lvalue has a direct address, use that directly instead of loading it to a register first
         if (current->store.left->tag == MIR_Expr::EXPR_ADDRESSOF){
@@ -1086,7 +1147,7 @@ void CodeGenerator::generateExprMIR(MIR_Expr *current, Register dest, ScopeInfo 
         }
 
         
-        Register temp = regAlloc.allocVRegister(REG_SAVED);
+        Register temp = regAlloc.allocVRegister(REG_ANY);
 
         // calculate index and load it into register
         generateExprMIR(current->index.index, temp, storageScope);
@@ -1097,7 +1158,7 @@ void CodeGenerator::generateExprMIR(MIR_Expr *current, Register dest, ScopeInfo 
         // multiply the index with the size to get correct offset 
         if (current->index.size > 1){
             // index x size
-            Register indexSize = regAlloc.allocVRegister(REG_SAVED);
+            Register indexSize = regAlloc.allocVRegister(REG_ANY);
             const char *indexName = RV64_RegisterName[regAlloc.resolveRegister(indexSize)];
             
             buffer << "    li " <<  indexName << ", " << current->index.size << "\n";
@@ -1127,22 +1188,28 @@ void CodeGenerator::generateExprMIR(MIR_Expr *current, Register dest, ScopeInfo 
         // check if the destination register can be used for one of the operands
         // if can be, then left uses the dest register
         // else, left allocates a temporary register of the opposite register file
-        left = canDestBeUsed? dest : regAlloc.allocVRegister(RegisterType(((dest.type & REG_FLOATING_POINT) ^ REG_FLOATING_POINT) | REG_SAVED));
+        left = canDestBeUsed? dest : regAlloc.allocVRegister(RegisterType(((dest.type & REG_FLOATING_POINT) ^ REG_FLOATING_POINT) | REG_ANY));
         // right allocates of the same type as left 
-        right = regAlloc.allocVRegister(RegisterType((left.type & REG_FLOATING_POINT) | REG_SAVED));
+        right = regAlloc.allocVRegister(RegisterType((left.type & REG_FLOATING_POINT) | REG_ANY));
 
+        bool canNotBeGeneratedOutOfOrder = true;
+
+        // if either left or right contains a store/function call that can have some side effects, then out of order generation cant be done
+        canNotBeGeneratedOutOfOrder = canNotBeGeneratedOutOfOrder || containsLoadOrFunctionCall(current->binary.left); 
+        canNotBeGeneratedOutOfOrder = canNotBeGeneratedOutOfOrder || containsLoadOrFunctionCall(current->binary.right);
 
         int leftDepth = getDepth(current->binary.left);
         int rightDepth = getDepth(current->binary.right);
-
+        
+        
         // Generate the one with the greatest depth first so that intermediate values need not be stored.
-        if (leftDepth < rightDepth){
-            generateExprMIR(current->binary.right, right, storageScope);
+        if (canNotBeGeneratedOutOfOrder || (leftDepth >= rightDepth)){
             generateExprMIR(current->binary.left, left, storageScope);
+            generateExprMIR(current->binary.right, right, storageScope);
         }
         else{
-            generateExprMIR(current->binary.left, left, storageScope);
             generateExprMIR(current->binary.right, right, storageScope);
+            generateExprMIR(current->binary.left, left, storageScope);
         }
 
         const char *destName = RV64_RegisterName[regAlloc.resolveRegister(dest)];
@@ -1367,7 +1434,7 @@ void CodeGenerator::generateExprMIR(MIR_Expr *current, Register dest, ScopeInfo 
         Register exprIn = dest;
         // same register cannot be used, then allocate another register of the other type 
         if (!canSameRegBeUsed){
-            exprIn = regAlloc.allocVRegister(RegisterType(((dest.type ^ REG_FLOATING_POINT) & REG_FLOATING_POINT) | REG_SAVED));
+            exprIn = regAlloc.allocVRegister(RegisterType(((dest.type ^ REG_FLOATING_POINT) & REG_FLOATING_POINT) | REG_ANY));
         }
 
         // generate the expr to be cast
@@ -1496,7 +1563,7 @@ void CodeGenerator::generateExprMIR(MIR_Expr *current, Register dest, ScopeInfo 
                 break;
             }
             case MIR_Expr::UnaryOp::EXPR_FNEGATE:{
-                Register fpZero = regAlloc.allocVRegister(RegisterType(REG_FLOATING_POINT | REG_SAVED));
+                Register fpZero = regAlloc.allocVRegister(RegisterType(REG_FLOATING_POINT | REG_ANY));
                 const char* fpZeroName = RV64_RegisterName[regAlloc.resolveRegister(fpZero)];
                 
 
@@ -1523,21 +1590,23 @@ void CodeGenerator::generateExprMIR(MIR_Expr *current, Register dest, ScopeInfo 
     }
     case MIR_Expr::EXPR_CALL:{
         
-        
-        RegisterState Xstate = regAlloc.getRegisterState(REG_CALLER_SAVED);
-        RegisterState Fstate = regAlloc.getRegisterState(RegisterType(REG_CALLER_SAVED | REG_FLOATING_POINT));
         RegisterState state = {0};
-        
-        // the number of caller saved registers in use
-        int count = 0;
-        for (int i = 0; i<RV64_Register::REG_COUNT; i++){
-            // dont get state of destination register as it will be overwritten anyway, and should not be restored as well
-            // if (i == destReg){
-                //     continue;
-                // }
-            count += (Xstate.reg[i].occupied)? 1 : 0;
-            count += (Fstate.reg[i].occupied)? 1 : 0;
-            state.reg[i] = (Xstate.reg[i].occupied)? Xstate.reg[i] : Fstate.reg[i];
+        {
+            RegisterState Xstate = regAlloc.getRegisterState(REG_CALLER_SAVED);
+            RegisterState Fstate = regAlloc.getRegisterState(RegisterType(REG_CALLER_SAVED | REG_FLOATING_POINT));
+
+            
+            // the number of caller saved registers in use
+            int count = 0;
+            for (int i = 0; i<RV64_Register::REG_COUNT; i++){
+                // dont get state of destination register as it will be overwritten anyway, and should not be restored as well
+                // if (i == destReg){
+                    //     continue;
+                    // }
+                    count += (Xstate.reg[i].occupied)? 1 : 0;
+                    count += (Fstate.reg[i].occupied)? 1 : 0;
+                    state.reg[i] = (Xstate.reg[i].occupied)? Xstate.reg[i] : Fstate.reg[i];
+                }
         }
 
         // save the caller saved registers
@@ -1758,7 +1827,19 @@ void CodeGenerator::generateExprMIR(MIR_Expr *current, Register dest, ScopeInfo 
         for (int i=0; i<occupiedXA + occupiedFA; i++){
             regAlloc.freeRegister(argRegisters[i]);
         }
-        
+
+        {
+            RegisterState notReturnRegisters = {0};
+            
+            for (int i = 0; i<REG_COUNT; i++){
+                if ((RV64Registers[i].type & REG_RETURN_VALUES) == 0){
+                    notReturnRegisters.reg[i] = state.reg[i];
+                }
+            }
+            
+            regAlloc.setRegisterState(RegisterType(REG_CALLER_SAVED), notReturnRegisters);
+            regAlloc.setRegisterState(RegisterType(REG_CALLER_SAVED | REG_FLOATING_POINT), notReturnRegisters);
+        }
         
         MIR_Function &foo = this->mir->functions.getInfo(current->functionCall->funcName).info;
         if (foo.returnType.tag != MIR_Datatype::TYPE_VOID){
@@ -1791,9 +1872,10 @@ void CodeGenerator::generateExprMIR(MIR_Expr *current, Register dest, ScopeInfo 
             regAlloc.freeRegister(returnValIn);
         }
         
+        regAlloc.setRegisterState(RegisterType(REG_RETURN_VALUES), state);
+        regAlloc.setRegisterState(RegisterType(REG_RETURN_VALUES | REG_FLOATING_POINT), state);
         // restore the saved registers
         restoreRegisters(state, buffer);
-        regAlloc.setRegisterState(RegisterType::REG_CALLER_SAVED, state);
 
         break;
     }

@@ -42,33 +42,39 @@ int main(int argc, char **argv){
 
     AST *ir = p.parseProgram();
     
-    if (ir){
-        Arena b;
-        b.init(PAGE_SIZE * 2);
-        b.createFrame();
-
-        CodeGenerator gen;
-        gen.arena = &b;
-        
-        MIR* mir = transform(ir, &b);
-        
-        if (config.print){
-            printMIR(mir);    
-            printMIRDot(mir);
-        }
-        
-        gen.generateAssemblyFromMIR(mir);
-
-        
-        gen.writeAssemblyToFile(config.outputTo);
-        if (config.print){
-            gen.printAssembly();
-        }
-
+    if (!ir){
+        printf("Failed! \n");
+        return 1;
     }
 
+    
+
+    Arena b;
+    b.init(PAGE_SIZE * 2);
+    b.createFrame();
+
+    CodeGenerator gen;
+    gen.arena = &b;
+    
+    MIR* mir = transform(ir, &b);
+    
     a.destroyFrame();
     a.destroy();
     
+
+    if (config.print){
+        printMIR(mir);    
+        printMIRDot(mir);
+    }
+    
+    gen.generateAssemblyFromMIR(mir);
+
+    
+    gen.writeAssemblyToFile(config.outputTo);
+    if (config.print){
+        gen.printAssembly();
+    }
+
+
     printf("Successfully generated! \n");
 }
