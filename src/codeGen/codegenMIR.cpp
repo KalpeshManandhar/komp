@@ -363,11 +363,13 @@ void CodeGenerator :: generatePrimitiveMIR(MIR_Primitive* p, MIR_Scope* scope, S
                 regAlloc.freeRegister(fa0);
             }
             else {
-                assert(rnode->returnValue->tag == MIR_Expr::EXPR_LOAD && "Composite returns can only have a variable as return value.");
                 
                 size_t size = foo.returnType.size;
                 if (size > 2 * XLEN){
                     // in memory
+                    
+
+
                 }
                 else {
                     // in registers
@@ -1015,63 +1017,6 @@ void CodeGenerator::generateExprMIR(MIR_Expr *current, RegisterPair dest, ScopeI
     
     case MIR_Expr::EXPR_LOAD:{
         // Load the value at given address + offset and put it into the destination register.
-        if (current->load.type == MIR_Expr::LoadType::EXPR_MEMLOAD){
-            size_t remaining = current->load.size;
-            for (int i=0; i<dest.n; i++){
-                
-                [&](){
-                    // if the given address is a direct AddressOf node, then the address can be used instead of loading it into a register first.
-                    if (current->load.base->tag == MIR_Expr::EXPR_ADDRESSOF){
-                        const char *destName = RV64_RegisterName[regAlloc.resolveRegister(dest.registers[i])];
-                        MIR_Expr *base = current->load.base;
-                        StorageInfo location = accessLocation(base->addressOf.symbol, storageScope);
-                        
-                        
-                        if (location.tag == StorageInfo::STORAGE_MEMORY){
-                            int64_t offset = stackAlloc.offsetFromBase(location.memAddress) + current->load.offset + i*XLEN;
-                            
-                            if (!inRange(offset, -MAX_IMMEDIATE, MAX_IMMEDIATE)){
-                                buffer << "    li " << destName << ", " << offset << "\n";
-                                buffer << "    add " << destName << ", " << destName << ", fp\n";
-                                buffer << "    " << "l" << iInsIntegerSuffix(min(XLEN, remaining)) << " " << destName << ", " << "0(" << destName << ")\n";
-                            }
-                            else {
-                                // load the value and load into destination register
-                                buffer << "    " << "l" << iInsIntegerSuffix(min(XLEN, remaining)) << " " << destName << ", " << offset  << "(fp)\n";
-                            }
-                            return;
-                        }
-                        
-                        else if (location.tag == StorageInfo::STORAGE_LABEL){
-                            buffer << "    la " << destName << ", .symbol" << location.label << "\n";
-                        }
-                    }
-                    else{
-                        // load/resolve the address into the register first
-                        generateExprMIR(current->load.base, dest, storageScope); 
-                    }
-
-                    const char *destName = RV64_RegisterName[regAlloc.resolveRegister(dest.registers[i])];
-                    
-                    if (!inRange(current->load.offset + i*XLEN, -MAX_IMMEDIATE, MAX_IMMEDIATE)){
-                        Register temp = regAlloc.allocVRegister(REG_SAVED);
-                        const char* tempName = RV64_RegisterName[regAlloc.resolveRegister(temp)];
-
-                        buffer << "    li " << tempName << ", " << current->load.offset + i*XLEN << "\n";
-                        buffer << "    add " << destName << ", " << destName << ", " << tempName << "\n";
-                        buffer << "    " << "l" << iInsIntegerSuffix(min(XLEN, remaining)) << " " << destName << ", " << 0 << "(" << destName << ")\n";
-                        regAlloc.freeRegister(temp);
-                    }
-                    else {
-                        // load value and load   
-                        buffer << "    " << "l" << iInsIntegerSuffix(min(XLEN, remaining)) << " " << destName << ", " << current->load.offset + i*XLEN << "(" << destName << ")\n";
-                    }
-                }();
-                remaining -= min(XLEN, remaining);
-            }
-            break;
-        }
-
         
         bool isFloatExpr = current->load.type == MIR_Expr::LoadType::EXPR_FLOAD;
         bool isUnsignedLoad = isUnsigned(current->_type);
@@ -1082,53 +1027,119 @@ void CodeGenerator::generateExprMIR(MIR_Expr *current, RegisterPair dest, ScopeI
             suffix = "";
         }
         
-        
-        // if the given address is a direct AddressOf node, then the address can be used instead of loading it into a register first.
-        if (current->load.base->tag == MIR_Expr::EXPR_ADDRESSOF){
-            const char *destName = RV64_RegisterName[regAlloc.resolveRegister(dest.registers[0])];
-            MIR_Expr *base = current->load.base;
-            StorageInfo location = accessLocation(base->addressOf.symbol, storageScope);
+        size_t remaining = current->load.size;
+        for (int i=0; i<dest.n; i++){
             
-            
-            if (location.tag == StorageInfo::STORAGE_MEMORY){
-                int64_t offset = stackAlloc.offsetFromBase(location.memAddress) + current->load.offset;
+            [&](){
+                // if the given address is a direct AddressOf node, then the address can be used instead of loading it into a register first.
+                if (current->load.base->tag == MIR_Expr::EXPR_ADDRESSOF){
+                    const char *destName = RV64_RegisterName[regAlloc.resolveRegister(dest.registers[i])];
+                    MIR_Expr *base = current->load.base;
+                    StorageInfo location = accessLocation(base->addressOf.symbol, storageScope);
+                    
+                    
+                    if (location.tag == StorageInfo::STORAGE_MEMORY){
+                        int64_t offset = stackAlloc.offsetFromBase(location.memAddress) + current->load.offset + i*XLEN;
+                        
+                        if (!inRange(offset, -MAX_IMMEDIATE, MAX_IMMEDIATE)){
+                            buffer << "    li " << destName << ", " << offset << "\n";
+                            buffer << "    add " << destName << ", " << destName << ", fp\n";
+                            buffer << "    " << prefix << "l" << iInsIntegerSuffix(min(XLEN, remaining)) << suffix << " " << destName << ", " << "0(" << destName << ")\n";
+                        }
+                        else {
+                            // load the value and load into destination register
+                            buffer << "    " << prefix << "l" << iInsIntegerSuffix(min(XLEN, remaining)) << suffix << " " << destName << ", " << offset  << "(fp)\n";
+                        }
+                        return;
+                    }
+                    
+                    else if (location.tag == StorageInfo::STORAGE_LABEL){
+                        buffer << "    la " << destName << ", .symbol" << location.label << "\n";
+                    }
+                }
+                else{
+                    // load/resolve the address into the register first
+                    generateExprMIR(current->load.base, RegisterPair{{dest.registers[i]}, 1}, storageScope); 
+                }
+
+                const char *destName = RV64_RegisterName[regAlloc.resolveRegister(dest.registers[i])];
                 
-                if (!inRange(offset, -MAX_IMMEDIATE, MAX_IMMEDIATE)){
-                    buffer << "    li " << destName << ", " << offset << "\n";
-                    buffer << "    add " << destName << ", " << destName << ", fp\n";
-                    buffer << "    " << prefix << "l" << iInsIntegerSuffix(current->load.size) << suffix << " " << destName << ", " << "0(" << destName << ")\n";
+                if (!inRange(current->load.offset + i*XLEN, -MAX_IMMEDIATE, MAX_IMMEDIATE)){
+                    Register temp = regAlloc.allocVRegister(REG_SAVED);
+                    const char* tempName = RV64_RegisterName[regAlloc.resolveRegister(temp)];
+
+                    buffer << "    li " << tempName << ", " << current->load.offset + i*XLEN << "\n";
+                    buffer << "    add " << destName << ", " << destName << ", " << tempName << "\n";
+                    buffer << "    " << prefix << "l" << iInsIntegerSuffix(min(XLEN, remaining)) << suffix << " " << destName << ", " << 0 << "(" << destName << ")\n";
+                    regAlloc.freeRegister(temp);
                 }
                 else {
-                    // load the value and load into destination register
-                    buffer << "    " << prefix << "l" << iInsIntegerSuffix(current->load.size) << suffix << " " << destName << ", " << offset  << "(fp)\n";
+                    // load value and load   
+                    buffer << "    " << prefix << "l" << iInsIntegerSuffix(min(XLEN, remaining)) << suffix << " " << destName << ", " << current->load.offset + i*XLEN << "(" << destName << ")\n";
                 }
-                return;
-            }
-            
-            else if (location.tag == StorageInfo::STORAGE_LABEL){
-                buffer << "    la " << destName << ", .symbol" << location.label << "\n";
-            }
+            }();
+            remaining -= min(XLEN, remaining);
         }
-        else{
-            // load/resolve the address into the register first
-            generateExprMIR(current->load.base, dest, storageScope); 
-        }
-
-        const char *destName = RV64_RegisterName[regAlloc.resolveRegister(dest.registers[0])];
+        break;
         
-        if (!inRange(current->load.offset, -MAX_IMMEDIATE, MAX_IMMEDIATE)){
-            Register temp = regAlloc.allocVRegister(REG_SAVED);
-            const char* tempName = RV64_RegisterName[regAlloc.resolveRegister(temp)];
 
-            buffer << "    li " << tempName << ", " << current->load.offset << "\n";
-            buffer << "    add " << destName << ", " << destName << ", " << tempName << "\n";
-            buffer << "    " << prefix << "l" << iInsIntegerSuffix(current->load.size) << suffix << " " << destName << ", " << 0 << "(" << destName << ")\n";
-            regAlloc.freeRegister(temp);
-        }
-        else {
-            // load value and load   
-            buffer << "    " << prefix << "l" << iInsIntegerSuffix(current->load.size) << suffix << " " << destName << ", " << current->load.offset << "(" << destName << ")\n";
-        }
+        // bool isFloatExpr = current->load.type == MIR_Expr::LoadType::EXPR_FLOAD;
+        // bool isUnsignedLoad = isUnsigned(current->_type);
+        
+        // const char* prefix = isFloatExpr? "f" : "";
+        // const char* suffix = isUnsignedLoad? "u" : "";
+        // if (current->_type.size == XLEN){
+        //     suffix = "";
+        // }
+        
+        
+        
+        // // if the given address is a direct AddressOf node, then the address can be used instead of loading it into a register first.
+        // if (current->load.base->tag == MIR_Expr::EXPR_ADDRESSOF){
+        //     const char *destName = RV64_RegisterName[regAlloc.resolveRegister(dest.registers[0])];
+        //     MIR_Expr *base = current->load.base;
+        //     StorageInfo location = accessLocation(base->addressOf.symbol, storageScope);
+            
+            
+        //     if (location.tag == StorageInfo::STORAGE_MEMORY){
+        //         int64_t offset = stackAlloc.offsetFromBase(location.memAddress) + current->load.offset;
+                
+        //         if (!inRange(offset, -MAX_IMMEDIATE, MAX_IMMEDIATE)){
+        //             buffer << "    li " << destName << ", " << offset << "\n";
+        //             buffer << "    add " << destName << ", " << destName << ", fp\n";
+        //             buffer << "    " << prefix << "l" << iInsIntegerSuffix(current->load.size) << suffix << " " << destName << ", " << "0(" << destName << ")\n";
+        //         }
+        //         else {
+        //             // load the value and load into destination register
+        //             buffer << "    " << prefix << "l" << iInsIntegerSuffix(current->load.size) << suffix << " " << destName << ", " << offset  << "(fp)\n";
+        //         }
+        //         return;
+        //     }
+            
+        //     else if (location.tag == StorageInfo::STORAGE_LABEL){
+        //         buffer << "    la " << destName << ", .symbol" << location.label << "\n";
+        //     }
+        // }
+        // else{
+        //     // load/resolve the address into the register first
+        //     generateExprMIR(current->load.base, dest, storageScope); 
+        // }
+
+        // const char *destName = RV64_RegisterName[regAlloc.resolveRegister(dest.registers[0])];
+        
+        // if (!inRange(current->load.offset, -MAX_IMMEDIATE, MAX_IMMEDIATE)){
+        //     Register temp = regAlloc.allocVRegister(REG_SAVED);
+        //     const char* tempName = RV64_RegisterName[regAlloc.resolveRegister(temp)];
+
+        //     buffer << "    li " << tempName << ", " << current->load.offset << "\n";
+        //     buffer << "    add " << destName << ", " << destName << ", " << tempName << "\n";
+        //     buffer << "    " << prefix << "l" << iInsIntegerSuffix(current->load.size) << suffix << " " << destName << ", " << 0 << "(" << destName << ")\n";
+        //     regAlloc.freeRegister(temp);
+        // }
+        // else {
+        //     // load value and load   
+        //     buffer << "    " << prefix << "l" << iInsIntegerSuffix(current->load.size) << suffix << " " << destName << ", " << current->load.offset << "(" << destName << ")\n";
+        // }
         
         break;
     }
@@ -1688,7 +1699,8 @@ void CodeGenerator::generateExprMIR(MIR_Expr *current, RegisterPair dest, ScopeI
         break;
     }
     case MIR_Expr::EXPR_CALL:{
-        
+        MIR_Function &foo = this->mir->functions.getInfo(current->functionCall->funcName).info;
+
         RegisterState state = {0};
         {
             RegisterState Xstate = regAlloc.getRegisterState(REG_CALLER_SAVED);
@@ -1774,6 +1786,10 @@ void CodeGenerator::generateExprMIR(MIR_Expr *current, RegisterPair dest, ScopeI
 
             }
         }
+        stackSpaceRequired = alignUpPowerOf2(stackSpaceRequired, 16);
+        
+        // add space for return value
+        stackSpaceRequired += (foo.returnType.size > 2 * XLEN)? foo.returnType.size : 0; 
         stackSpaceRequired = alignUpPowerOf2(stackSpaceRequired, 16);
         
         // allocate stack space if needed
@@ -1940,7 +1956,7 @@ void CodeGenerator::generateExprMIR(MIR_Expr *current, RegisterPair dest, ScopeI
             regAlloc.setRegisterState(RegisterType(REG_CALLER_SAVED | REG_FLOATING_POINT), notReturnRegisters);
         }
         
-        MIR_Function &foo = this->mir->functions.getInfo(current->functionCall->funcName).info;
+        
         if (foo.returnType.tag != MIR_Datatype::TYPE_VOID){
             RegisterPair returnValIn;
             const char* prefix = "";
