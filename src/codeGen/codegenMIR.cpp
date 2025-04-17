@@ -260,7 +260,7 @@ void CodeGenerator :: generatePrimitiveMIR(MIR_Primitive* p, MIR_Scope* scope, S
                 if (inode->condition){
                     Register condition = regAlloc.allocVRegister(REG_SAVED);
                     // compute the condition
-                    generateExprMIR(inode->condition, condition, storageScope);
+                    generateExprMIR(inode->condition, RegisterPair{{condition}, 1}, storageScope);
                     
                 
                     const char *regName = RV64_RegisterName[regAlloc.resolveRegister(condition)];
@@ -304,7 +304,7 @@ void CodeGenerator :: generatePrimitiveMIR(MIR_Primitive* p, MIR_Scope* scope, S
             buffer << ".L" << lnode->startLabel << ":\n";
             
             // check condition
-            generateExprMIR(lnode->condition, condition, storageScope);
+            generateExprMIR(lnode->condition, RegisterPair{{condition}, 1}, storageScope);
             
             const char *regName = RV64_RegisterName[regAlloc.resolveRegister(condition)];
             
@@ -320,7 +320,7 @@ void CodeGenerator :: generatePrimitiveMIR(MIR_Primitive* p, MIR_Scope* scope, S
             Register update = regAlloc.allocVRegister(REG_SAVED);
             buffer << ".L" << lnode->updateLabel << ":\n";
             
-            generateExprMIR(lnode->update, update, storageScope);
+            generateExprMIR(lnode->update, RegisterPair{{update}, 1}, storageScope);
             
             regAlloc.freeRegister(update);
 
@@ -351,24 +351,43 @@ void CodeGenerator :: generatePrimitiveMIR(MIR_Primitive* p, MIR_Scope* scope, S
                 assert(foo.returnType.size <= XLEN && "Return values are only supported in one register.");
 
                 Register a0 = regAlloc.allocRegister(REG_A0);
-                generateExprMIR(rnode->returnValue, a0, storageScope);
+                generateExprMIR(rnode->returnValue, RegisterPair{{a0}, 1}, storageScope);
                 regAlloc.freeRegister(a0);
             }
             else if (isFloatType(foo.returnType)){
                 assert(foo.returnType.size <= FLEN && "Return values are only supported in one register.");
 
                 Register fa0 = regAlloc.allocRegister(REG_FA0);
-                generateExprMIR(rnode->returnValue, fa0, storageScope);
+                generateExprMIR(rnode->returnValue, RegisterPair{{fa0}, 1}, storageScope);
                 
                 regAlloc.freeRegister(fa0);
             }
             else {
-                if (foo.returnType.size > 2 * XLEN){
+                assert(rnode->returnValue->tag == MIR_Expr::EXPR_LOAD && "Composite returns can only have a variable as return value.");
+                
+                size_t size = foo.returnType.size;
+                if (size > 2 * XLEN){
+                    // in memory
+                }
+                else {
+                    // in registers
+                    int nRegisters = alignUpPowerOf2(size, XLEN)/XLEN;
+                    size_t remaining = size;
+                    
+                    RegisterPair pair;
+                    for (int i=0; i<nRegisters; i++){
+                        pair.registers[i] = regAlloc.allocRegister(RV64_Register(REG_A0 + i));
+                    }
+                    pair.n = nRegisters;
+                    
+                    generateExprMIR(rnode->returnValue, pair, storageScope);
+
+                    for (int i=0; i<pair.n; i++){
+                        regAlloc.freeRegister(pair.registers[i]);
+                    }                    
                     
                 }
-                else if (foo.returnType.size)
 
-                assert(false && "Struct returns not implemented yet.");
             }
             buffer << "    j ." << rnode->funcName << "_ep\n";
 
@@ -382,15 +401,21 @@ void CodeGenerator :: generatePrimitiveMIR(MIR_Primitive* p, MIR_Scope* scope, S
         }
         case MIR_Primitive::PRIM_EXPR:{
             MIR_Expr* enode = (MIR_Expr*) p;
-
+            
             bool isFloatExpr = isFloatType(enode->_type);
             int mask = isFloatExpr? REG_FLOATING_POINT : 0; 
-
-            Register rtmp = regAlloc.allocVRegister(RegisterType(REG_SAVED | mask));
-
-            generateExprMIR(enode, rtmp, storageScope);
             
-            regAlloc.freeRegister(rtmp);
+            RegisterPair pair;
+            pair.n = alignUpPowerOf2(enode->_type.size, XLEN)/XLEN;
+            for (int i=0; i<pair.n; i++){
+                pair.registers[i] = regAlloc.allocVRegister(RegisterType(REG_SAVED | mask));
+            }
+
+            generateExprMIR(enode, pair, storageScope);
+            
+            for (int i=0; i<pair.n; i++){
+                regAlloc.freeRegister(pair.registers[i]);
+            }
 
             break;
         }
@@ -866,7 +891,7 @@ StorageInfo CodeGenerator :: accessLocation(Splice symbolName, ScopeInfo* storag
     dest    : The register to put the result in.    
 
 */
-void CodeGenerator::generateExprMIR(MIR_Expr *current, Register dest, ScopeInfo *storageScope){
+void CodeGenerator::generateExprMIR(MIR_Expr *current, RegisterPair dest, ScopeInfo *storageScope){
     if (!current){
         return;
     }
@@ -875,7 +900,7 @@ void CodeGenerator::generateExprMIR(MIR_Expr *current, Register dest, ScopeInfo 
     {
     case MIR_Expr::EXPR_LOAD_IMMEDIATE:{
         // Puts the immediate value in the destination register.
-        RV64_Register destReg = regAlloc.resolveRegister(dest);
+        RV64_Register destReg = regAlloc.resolveRegister(dest.registers[0]);
         const char *destName = RV64_RegisterName[destReg];
         
         // load immediate value into a register
@@ -929,7 +954,7 @@ void CodeGenerator::generateExprMIR(MIR_Expr *current, Register dest, ScopeInfo 
         if(base->tag == MIR_Expr::EXPR_ADDRESSOF){
             StorageInfo location = accessLocation(base->addressOf.symbol, storageScope);
             
-            const char *destName = RV64_RegisterName[regAlloc.resolveRegister(dest)];
+            const char *destName = RV64_RegisterName[regAlloc.resolveRegister(dest.registers[0])];
             
             if (location.tag == StorageInfo::STORAGE_MEMORY){
                 int64_t offset = stackAlloc.offsetFromBase(location.memAddress) + current->loadAddress.offset;
@@ -966,7 +991,7 @@ void CodeGenerator::generateExprMIR(MIR_Expr *current, Register dest, ScopeInfo 
             // resolve variable into address/load address into regsister
             generateExprMIR(base, dest, storageScope);
 
-            const char *destName = RV64_RegisterName[regAlloc.resolveRegister(dest)];
+            const char *destName = RV64_RegisterName[regAlloc.resolveRegister(dest.registers[0])];
 
             if (!inRange(current->loadAddress.offset, -MAX_IMMEDIATE, MAX_IMMEDIATE)){
                 Register temp = regAlloc.allocVRegister(REG_SAVED);
@@ -990,6 +1015,62 @@ void CodeGenerator::generateExprMIR(MIR_Expr *current, Register dest, ScopeInfo 
     
     case MIR_Expr::EXPR_LOAD:{
         // Load the value at given address + offset and put it into the destination register.
+        if (current->load.type == MIR_Expr::LoadType::EXPR_MEMLOAD){
+            size_t remaining = current->load.size;
+            for (int i=0; i<dest.n; i++){
+                
+                [&](){
+                    // if the given address is a direct AddressOf node, then the address can be used instead of loading it into a register first.
+                    if (current->load.base->tag == MIR_Expr::EXPR_ADDRESSOF){
+                        const char *destName = RV64_RegisterName[regAlloc.resolveRegister(dest.registers[i])];
+                        MIR_Expr *base = current->load.base;
+                        StorageInfo location = accessLocation(base->addressOf.symbol, storageScope);
+                        
+                        
+                        if (location.tag == StorageInfo::STORAGE_MEMORY){
+                            int64_t offset = stackAlloc.offsetFromBase(location.memAddress) + current->load.offset + i*XLEN;
+                            
+                            if (!inRange(offset, -MAX_IMMEDIATE, MAX_IMMEDIATE)){
+                                buffer << "    li " << destName << ", " << offset << "\n";
+                                buffer << "    add " << destName << ", " << destName << ", fp\n";
+                                buffer << "    " << "l" << iInsIntegerSuffix(min(XLEN, remaining)) << " " << destName << ", " << "0(" << destName << ")\n";
+                            }
+                            else {
+                                // load the value and load into destination register
+                                buffer << "    " << "l" << iInsIntegerSuffix(min(XLEN, remaining)) << " " << destName << ", " << offset  << "(fp)\n";
+                            }
+                            return;
+                        }
+                        
+                        else if (location.tag == StorageInfo::STORAGE_LABEL){
+                            buffer << "    la " << destName << ", .symbol" << location.label << "\n";
+                        }
+                    }
+                    else{
+                        // load/resolve the address into the register first
+                        generateExprMIR(current->load.base, dest, storageScope); 
+                    }
+
+                    const char *destName = RV64_RegisterName[regAlloc.resolveRegister(dest.registers[i])];
+                    
+                    if (!inRange(current->load.offset + i*XLEN, -MAX_IMMEDIATE, MAX_IMMEDIATE)){
+                        Register temp = regAlloc.allocVRegister(REG_SAVED);
+                        const char* tempName = RV64_RegisterName[regAlloc.resolveRegister(temp)];
+
+                        buffer << "    li " << tempName << ", " << current->load.offset + i*XLEN << "\n";
+                        buffer << "    add " << destName << ", " << destName << ", " << tempName << "\n";
+                        buffer << "    " << "l" << iInsIntegerSuffix(min(XLEN, remaining)) << " " << destName << ", " << 0 << "(" << destName << ")\n";
+                        regAlloc.freeRegister(temp);
+                    }
+                    else {
+                        // load value and load   
+                        buffer << "    " << "l" << iInsIntegerSuffix(min(XLEN, remaining)) << " " << destName << ", " << current->load.offset + i*XLEN << "(" << destName << ")\n";
+                    }
+                }();
+                remaining -= min(XLEN, remaining);
+            }
+            break;
+        }
 
         
         bool isFloatExpr = current->load.type == MIR_Expr::LoadType::EXPR_FLOAD;
@@ -1004,7 +1085,7 @@ void CodeGenerator::generateExprMIR(MIR_Expr *current, Register dest, ScopeInfo 
         
         // if the given address is a direct AddressOf node, then the address can be used instead of loading it into a register first.
         if (current->load.base->tag == MIR_Expr::EXPR_ADDRESSOF){
-            const char *destName = RV64_RegisterName[regAlloc.resolveRegister(dest)];
+            const char *destName = RV64_RegisterName[regAlloc.resolveRegister(dest.registers[0])];
             MIR_Expr *base = current->load.base;
             StorageInfo location = accessLocation(base->addressOf.symbol, storageScope);
             
@@ -1033,7 +1114,7 @@ void CodeGenerator::generateExprMIR(MIR_Expr *current, Register dest, ScopeInfo 
             generateExprMIR(current->load.base, dest, storageScope); 
         }
 
-        const char *destName = RV64_RegisterName[regAlloc.resolveRegister(dest)];
+        const char *destName = RV64_RegisterName[regAlloc.resolveRegister(dest.registers[0])];
         
         if (!inRange(current->load.offset, -MAX_IMMEDIATE, MAX_IMMEDIATE)){
             Register temp = regAlloc.allocVRegister(REG_SAVED);
@@ -1058,66 +1139,77 @@ void CodeGenerator::generateExprMIR(MIR_Expr *current, Register dest, ScopeInfo 
         // Load the rvalue into the destination register
         generateExprMIR(current->store.right, dest, storageScope);
         
+        size_t remaining = current->store.size;
 
-        const char *destName = RV64_RegisterName[regAlloc.resolveRegister(dest)];
-        bool isFloatExpr = isFloatType(current->_type);
-        
-        const char* prefix = isFloatExpr? "f" : "";
-        
-        // else, load the address into a temporary register first 
-        Register temp = regAlloc.allocVRegister(REG_SAVED);
-
-        // if the lvalue has a direct address, use that directly instead of loading it to a register first
-        if (current->store.left->tag == MIR_Expr::EXPR_ADDRESSOF){
-            MIR_Expr* leftAddress = current->store.left;
-            StorageInfo location = accessLocation(leftAddress->addressOf.symbol, storageScope);
+        for (int i=0; i<dest.n; i++){
             
-            const char *tempName = RV64_RegisterName[regAlloc.resolveRegister(temp)];
-            
-            if (location.tag  == StorageInfo::STORAGE_MEMORY){
-                int64_t offset = stackAlloc.offsetFromBase(location.memAddress) + current->store.offset;
+            [&]() {
+                const char *destName = RV64_RegisterName[regAlloc.resolveRegister(dest.registers[i])];
+                bool isFloatExpr = isFloatType(current->_type);
+                
+                const char* prefix = isFloatExpr? "f" : "";
+                
+                // else, load the address into a temporary register first 
+                Register temp = regAlloc.allocVRegister(REG_SAVED);
+        
+                // if the lvalue has a direct address, use that directly instead of loading it to a register first
+                if (current->store.left->tag == MIR_Expr::EXPR_ADDRESSOF){
+                    MIR_Expr* leftAddress = current->store.left;
+                    StorageInfo location = accessLocation(leftAddress->addressOf.symbol, storageScope);
+                    
+                    const char *tempName = RV64_RegisterName[regAlloc.resolveRegister(temp)];
+                    
+                    if (location.tag  == StorageInfo::STORAGE_MEMORY){
+                        int64_t offset = stackAlloc.offsetFromBase(location.memAddress) + current->store.offset + i*XLEN;
+        
+                        if (!inRange(offset, -MAX_IMMEDIATE, MAX_IMMEDIATE)){
+                            buffer << "    li " << tempName << ", " << offset << "\n";
+                            buffer << "    add " << tempName << ", " << tempName << ", fp\n"; 
+                            buffer << "    " << prefix << "s" << iInsIntegerSuffix(min(remaining, XLEN)) << " " << destName << ", " << 0 << "(" << tempName << ")\n";    
+                        }
+                        else {
+                            // store the value at (address + offset)
+                            buffer << "    " << prefix << "s" << iInsIntegerSuffix(min(remaining, XLEN)) << " " << destName << ", " << offset << "(fp)\n";    
+                        }
+        
+                        regAlloc.freeRegister(temp);
+                        return;
+                    }
+                    else if (location.tag == StorageInfo::STORAGE_LABEL){
+                        
+                        buffer << "    la " << tempName << ", .symbol" << location.label << "\n";
+                    }
+                }
+                else {
+                    // get address of lvalue
+                    generateExprMIR(current->store.left, RegisterPair{.registers = {temp}, .n = 1}, storageScope);    
+                }
+        
+                const char *tempName = RV64_RegisterName[regAlloc.resolveRegister(temp)];
 
+                int64_t offset = current->store.offset + i*XLEN;
+        
                 if (!inRange(offset, -MAX_IMMEDIATE, MAX_IMMEDIATE)){
-                    buffer << "    li " << tempName << ", " << offset << "\n";
-                    buffer << "    add " << tempName << ", " << tempName << ", fp\n"; 
-                    buffer << "    " << prefix << "s" << iInsIntegerSuffix(current->store.size) << " " << destName << ", " << 0 << "(" << tempName << ")\n";    
+                    Register temp2 = regAlloc.allocVRegister(REG_SAVED);
+                    const char* temp2Name = RV64_RegisterName[regAlloc.resolveRegister(temp2)]; 
+                    
+                    buffer << "    li " << temp2Name << ", " << offset << "\n";
+                    buffer << "    add " << tempName << ", " << tempName << ", " << temp2Name << "\n";
+                    buffer << "    " << prefix << "s" << iInsIntegerSuffix(min(remaining, XLEN)) << " " << destName << ", " << 0 << "(" << tempName << ")\n";
+                    
+                    regAlloc.freeRegister(temp2);
                 }
                 else {
                     // store the value at (address + offset)
-                    buffer << "    " << prefix << "s" << iInsIntegerSuffix(current->store.size) << " " << destName << ", " << offset << "(fp)\n";    
+                    buffer << "    " << prefix << "s" << iInsIntegerSuffix(min(remaining, XLEN)) << " " << destName << ", " << offset << "(" << tempName << ")\n";
                 }
-
-                regAlloc.freeRegister(temp);
-                return;
-            }
-            else if (location.tag == StorageInfo::STORAGE_LABEL){
                 
-                buffer << "    la " << tempName << ", .symbol" << location.label << "\n";
-            }
-        }
-        else {
-            // get address of lvalue
-            generateExprMIR(current->store.left, temp, storageScope);    
-        }
+                regAlloc.freeRegister(temp);
 
-        const char *tempName = RV64_RegisterName[regAlloc.resolveRegister(temp)];
+            }();
 
-        if (!inRange(current->store.offset, -MAX_IMMEDIATE, MAX_IMMEDIATE)){
-            Register temp2 = regAlloc.allocVRegister(REG_SAVED);
-            const char* temp2Name = RV64_RegisterName[regAlloc.resolveRegister(temp2)]; 
-            
-            buffer << "    li " << temp2Name << ", " << current->store.offset << "\n";
-            buffer << "    add " << tempName << ", " << tempName << ", " << temp2Name << "\n";
-            buffer << "    " << prefix << "s" << iInsIntegerSuffix(current->store.size) << " " << destName << ", " << 0 << "(" << tempName << ")\n";
-            
-            regAlloc.freeRegister(temp2);
+            remaining -= min(remaining, XLEN);
         }
-        else {
-            // store the value at (address + offset)
-            buffer << "    " << prefix << "s" << iInsIntegerSuffix(current->store.size) << " " << destName << ", " << current->store.offset << "(" << tempName << ")\n";
-        }
-        
-        regAlloc.freeRegister(temp);
         break;
     }
     
@@ -1131,7 +1223,7 @@ void CodeGenerator::generateExprMIR(MIR_Expr *current, Register dest, ScopeInfo 
 
         
         if (current->index.base->tag == MIR_Expr::EXPR_ADDRESSOF){
-            const char *destName = RV64_RegisterName[regAlloc.resolveRegister(dest)];
+            const char *destName = RV64_RegisterName[regAlloc.resolveRegister(dest.registers[0])];
             MIR_Expr *address = current->index.base;
             StorageInfo location = accessLocation(address->addressOf.symbol, storageScope);
             
@@ -1155,7 +1247,7 @@ void CodeGenerator::generateExprMIR(MIR_Expr *current, Register dest, ScopeInfo 
         Register temp = regAlloc.allocVRegister(REG_SAVED);
 
         // calculate index and load it into register
-        generateExprMIR(current->index.index, temp, storageScope);
+        generateExprMIR(current->index.index, RegisterPair{.registers = {temp}, .n = 1}, storageScope);
         
 
         const char *tempName = RV64_RegisterName[regAlloc.resolveRegister(temp)];
@@ -1173,7 +1265,7 @@ void CodeGenerator::generateExprMIR(MIR_Expr *current, Register dest, ScopeInfo 
             
         }
 
-        const char *destName = RV64_RegisterName[regAlloc.resolveRegister(dest)];
+        const char *destName = RV64_RegisterName[regAlloc.resolveRegister(dest.registers[0])];
         
         // add the offset to get the correct address
         buffer << "    add " << destName << ", " << destName << ", " << tempName << "\n";
@@ -1184,16 +1276,17 @@ void CodeGenerator::generateExprMIR(MIR_Expr *current, Register dest, ScopeInfo 
     
     case MIR_Expr::EXPR_BINARY:{
         // Computes a binary operation and stores the result in the destination register.
-        
+        Register destReg = dest.registers[0];
+
         Register left = {0}, right = {0};
         
-        bool canDestBeUsed = (isIntegerType(current->binary.left->_type) && (dest.type & REG_FLOATING_POINT) == 0)
-                              || (isFloatType(current->binary.left->_type) && (dest.type & REG_FLOATING_POINT));
+        bool canDestBeUsed = (isIntegerType(current->binary.left->_type) && (destReg.type & REG_FLOATING_POINT) == 0)
+                              || (isFloatType(current->binary.left->_type) && (destReg.type & REG_FLOATING_POINT));
 
         // check if the destination register can be used for one of the operands
         // if can be, then left uses the dest register
         // else, left allocates a temporary register of the opposite register file
-        left = canDestBeUsed? dest : regAlloc.allocVRegister(RegisterType(((dest.type & REG_FLOATING_POINT) ^ REG_FLOATING_POINT) | REG_SAVED));
+        left = canDestBeUsed? destReg : regAlloc.allocVRegister(RegisterType(((destReg.type & REG_FLOATING_POINT) ^ REG_FLOATING_POINT) | REG_SAVED));
         // right allocates of the same type as left 
         right = regAlloc.allocVRegister(RegisterType((left.type & REG_FLOATING_POINT) | REG_SAVED));
 
@@ -1209,15 +1302,15 @@ void CodeGenerator::generateExprMIR(MIR_Expr *current, Register dest, ScopeInfo 
         
         // Generate the one with the greatest depth first so that intermediate values need not be stored.
         if (canNotBeGeneratedOutOfOrder || (leftDepth >= rightDepth)){
-            generateExprMIR(current->binary.left, left, storageScope);
-            generateExprMIR(current->binary.right, right, storageScope);
+            generateExprMIR(current->binary.left, RegisterPair{{left}, 1}, storageScope);
+            generateExprMIR(current->binary.right, RegisterPair{{right}, 1}, storageScope);
         }
         else{
-            generateExprMIR(current->binary.right, right, storageScope);
-            generateExprMIR(current->binary.left, left, storageScope);
+            generateExprMIR(current->binary.right, RegisterPair{{right}, 1}, storageScope);
+            generateExprMIR(current->binary.left, RegisterPair{{left}, 1}, storageScope);
         }
 
-        const char *destName = RV64_RegisterName[regAlloc.resolveRegister(dest)];
+        const char *destName = RV64_RegisterName[regAlloc.resolveRegister(destReg)];
         const char *leftName = RV64_RegisterName[regAlloc.resolveRegister(left)];
         const char *rightName = RV64_RegisterName[regAlloc.resolveRegister(right)];
         
@@ -1436,17 +1529,18 @@ void CodeGenerator::generateExprMIR(MIR_Expr *current, Register dest, ScopeInfo 
         bool canSameRegBeUsed = isIntegerType(current->cast._from) && isIntegerType(current->cast._to);
         canSameRegBeUsed = canSameRegBeUsed || (isFloatType(current->cast._from) && isFloatType(current->cast._to));
         
-        Register exprIn = dest;
+        Register destReg = dest.registers[0];
+        Register exprIn = destReg;
         // same register cannot be used, then allocate another register of the other type 
         if (!canSameRegBeUsed){
-            exprIn = regAlloc.allocVRegister(RegisterType(((dest.type ^ REG_FLOATING_POINT) & REG_FLOATING_POINT) | REG_SAVED));
+            exprIn = regAlloc.allocVRegister(RegisterType(((destReg.type ^ REG_FLOATING_POINT) & REG_FLOATING_POINT) | REG_SAVED));
         }
 
         // generate the expr to be cast
-        generateExprMIR(current->cast.expr, exprIn, storageScope);
+        generateExprMIR(current->cast.expr, RegisterPair{{exprIn}, 1}, storageScope);
 
         const char* exprInName = RV64_RegisterName[regAlloc.resolveRegister(exprIn)];
-        const char* exprDestName = RV64_RegisterName[regAlloc.resolveRegister(dest)];
+        const char* exprDestName = RV64_RegisterName[regAlloc.resolveRegister(destReg)];
 
         
         switch (current->cast._from.tag){
@@ -1560,7 +1654,7 @@ void CodeGenerator::generateExprMIR(MIR_Expr *current, Register dest, ScopeInfo 
         // load the expr into register
         generateExprMIR(current->unary.expr, dest, storageScope);
 
-        const char *destName = RV64_RegisterName[regAlloc.resolveRegister(dest)];
+        const char *destName = RV64_RegisterName[regAlloc.resolveRegister(dest.registers[0])];
         
         switch (current->unary.op){
             case MIR_Expr::UnaryOp::EXPR_INEGATE:{
@@ -1760,7 +1854,7 @@ void CodeGenerator::generateExprMIR(MIR_Expr *current, Register dest, ScopeInfo 
                 if (nRegistersRequired > 2 || (*registerFileInUse) == totalAvailable){
                     // load value into temporary register
                     Register value = regAlloc.allocVRegister(REG_SAVED);
-                    generateExprMIR(arg, value, storageScope);
+                    generateExprMIR(arg, RegisterPair{{value}, 1}, storageScope);
                     
                     const char* regName = RV64_RegisterName[regAlloc.resolveRegister(value)];
                     
@@ -1787,7 +1881,7 @@ void CodeGenerator::generateExprMIR(MIR_Expr *current, Register dest, ScopeInfo 
                 else {
                     Register argRegister = regAlloc.allocRegister(RV64_Register(registerFileStart + (*registerFileInUse)));
                     
-                    generateExprMIR(arg, argRegister, storageScope);
+                    generateExprMIR(arg, RegisterPair{{argRegister}, 1}, storageScope);
                     
                     argRegisters[occupiedXA + occupiedFA] = argRegister;
                     (*registerFileInUse)++;
@@ -1848,33 +1942,47 @@ void CodeGenerator::generateExprMIR(MIR_Expr *current, Register dest, ScopeInfo 
         
         MIR_Function &foo = this->mir->functions.getInfo(current->functionCall->funcName).info;
         if (foo.returnType.tag != MIR_Datatype::TYPE_VOID){
-            Register returnValIn;
+            RegisterPair returnValIn;
             const char* prefix = "";
             const char* suffix1 = "";
             const char* suffix2 = "";
 
             if (isIntegerType(foo.returnType)){
-                returnValIn = regAlloc.allocRegister(REG_A0);
+                returnValIn.registers[0] = regAlloc.allocRegister(REG_A0);
+                returnValIn.n = 1;
             }
             else if (isFloatType(foo.returnType)){
-                returnValIn = regAlloc.allocRegister(REG_FA0);
+                returnValIn.registers[0] = regAlloc.allocRegister(REG_FA0);
+                returnValIn.n = 1;
                 prefix = "f";
                 suffix1 = ".";
                 suffix2 = fInsFloatSuffix(foo.returnType.size);
             }
             else {
-                assert(false && "Return types other than integers and floats aren't submitted currently.");
+                size_t size = foo.returnType.size;
+                if (size > 2*XLEN){
+                    assert(false && "Return types other than integers and floats aren't submitted currently.");
+                }
+                else {
+                    returnValIn.n = alignUpPowerOf2(foo.returnType.size, XLEN)/XLEN;
+                    for (int i=0; i<returnValIn.n; i++){
+                        returnValIn.registers[i] = regAlloc.allocRegister(RV64_Register(REG_A0 + i));
+                    }
+                    
+                }
+
             }
+            
+            for (int i=0; i<returnValIn.n; i++){
+                const char *returnValInName = RV64_RegisterName[regAlloc.resolveRegister(returnValIn.registers[i])];
+                // move return value into destination register
+                RV64_Register destReg = regAlloc.resolveRegister(dest.registers[i]);
+                const char *destName = RV64_RegisterName[destReg];
+                buffer << "    " << prefix << "mv" << suffix1 << suffix2 << " " << destName << ", " << returnValInName << "\n";
 
-            const char *returnValInName = RV64_RegisterName[regAlloc.resolveRegister(returnValIn)];
-
-            // move return value into destination register
-            RV64_Register destReg = regAlloc.resolveRegister(dest);
-            const char *destName = RV64_RegisterName[destReg];
-
-            buffer << "    " << prefix << "mv" << suffix1 << suffix2 << " " << destName << ", " << returnValInName << "\n";
+                regAlloc.freeRegister(returnValIn.registers[i]);
+            }
         
-            regAlloc.freeRegister(returnValIn);
         }
         
         regAlloc.setRegisterState(RegisterType(REG_RETURN_VALUES), state);

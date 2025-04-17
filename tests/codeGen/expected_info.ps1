@@ -15,4 +15,5 @@ $expected_values = @{
     "test_postfix_prefix.c" = 1;
     "test_global.c" = 0;
     "test_union.c" = 1;
+    "test_struct_returns.c" = 33;
 } 

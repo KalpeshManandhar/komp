@@ -366,6 +366,16 @@ MIR_Primitives MiddleEnd :: transformSubexpr(const Subexpr* expr, StatementBlock
 
             d->load.size = d->_type.size;
             d->load.offset += member.offset;
+            if (isIntegerType(d->_type)){
+                d->load.type = MIR_Expr::LoadType::EXPR_ILOAD;
+            }
+            else if (isFloatType(d->_type)){
+                d->load.type = MIR_Expr::LoadType::EXPR_FLOAD;
+            }
+            else {
+                d->load.type = MIR_Expr::LoadType::EXPR_MEMLOAD;
+            }
+            d->tag = MIR_Expr::EXPR_LOAD;
             d->ptag = MIR_Primitive::PRIM_EXPR;
             
             returnExprs.primitives[returnExprs.n] = d;
@@ -410,11 +420,22 @@ MIR_Primitives MiddleEnd :: transformSubexpr(const Subexpr* expr, StatementBlock
             assert(structInfo.members.existKey(expr->binary.right->leaf.string));
             Composite::MemberInfo member = structInfo.members.getInfo(expr->binary.right->leaf.string).info;
             
-            d->type = member.type;
+            // d->type = member.type;
             d->_type = convertToLowerLevelType(member.type, scope);
 
             d->load.size = d->_type.size;
             d->load.offset = member.offset;
+            
+            if (isIntegerType(d->_type)){
+                d->load.type = MIR_Expr::LoadType::EXPR_ILOAD;
+            }
+            else if (isFloatType(d->_type)){
+                d->load.type = MIR_Expr::LoadType::EXPR_FLOAD;
+            }
+            else {
+                d->load.type = MIR_Expr::LoadType::EXPR_MEMLOAD;
+            }
+            
             d->tag = MIR_Expr::EXPR_LOAD;
             d->ptag = MIR_Primitive::PRIM_EXPR;
             

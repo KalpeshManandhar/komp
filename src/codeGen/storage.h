@@ -228,6 +228,10 @@ struct RV64RegisterInfo {
     RegisterType type;
 };
 
+struct RegisterPair{
+    Register registers[2];
+    int n;
+};
 
 static RV64RegisterInfo RV64Registers[REG_COUNT] = {
     {.id = REG_ZERO, .name = "zero", .type = RegisterType(REG_DONOT_ALLOCATE)}, // hardwired 0
