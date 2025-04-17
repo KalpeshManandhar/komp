@@ -273,12 +273,13 @@ bool Parser::isTypeDefined(DataType d,  StatementBlock* scope){
         return true;
     case DataType::TAG_PTR :
         return true;
+    case DataType::TAG_UNION :
     case DataType::TAG_STRUCT :{
-        StatementBlock* structDefScope = scope->findStructDeclaration(d.structName);
+        StatementBlock* structDefScope = scope->findCompositeDeclaration(d.compositeName);
         if (!structDefScope)
             return false;
         
-        if (!structDefScope->structs.getInfo(d.structName.string).info.defined)
+        if (!structDefScope->composites.getInfo(d.compositeName.string).info.defined)
             return false;
         
         return true;
@@ -305,21 +306,24 @@ bool Parser::isTypeDefined(DataType d,  StatementBlock* scope){
     Supports struct declaration and definition.
 */
 Token Parser::parseStructDefinition(StatementBlock *scope){
-    assert(expect(TOKEN_STRUCT));
+    assert(match(TOKEN_STRUCT) || match(TOKEN_UNION));
+     
+    Token unionOrStruct = consumeToken();
 
-    Struct s;
+    Composite s;
     s.defined = false;
+    s.isUnion = match(unionOrStruct, TOKEN_UNION);
     
-    // unnamed structs arent supported.
+    // unnamed composites arent supported.
     if (match(TOKEN_IDENTIFIER)){
-        s.structName = consumeToken();
+        s.compositeName = consumeToken();
     }
     else {
         logErrorMessage(peekToken(), "Missing struct identifier.");
         errors++;
-        s.structName = peekToken();
-        s.structName.string.data = "unnamed-struct";
-        s.structName.string.len = strlen("unnamed-struct");
+        s.compositeName = peekToken();
+        s.compositeName.string.data = "unnamed-struct";
+        s.compositeName.string.len = strlen("unnamed-struct");
     }
     
 
@@ -329,14 +333,12 @@ Token Parser::parseStructDefinition(StatementBlock *scope){
 
         // TODO: maybe change this to a declaration?
         // porse the struct members
-        while (matchv(DATA_TYPE_TOKENS, ARRAY_COUNT(DATA_TYPE_TOKENS)) 
-            || matchv(TYPE_MODIFIER_TOKENS, ARRAY_COUNT(TYPE_MODIFIER_TOKENS))
-            || matchv(TYPE_QUALIFIER_TOKENS, ARRAY_COUNT(TYPE_QUALIFIER_TOKENS))){
-            Struct::MemberInfo member;
+        while (isStartOfType(scope)){
+            Composite::MemberInfo member;
             DataType base = parseBaseDataType(scope);
             
 
-            if (base.tag == DataType::TAG_STRUCT){
+            if (isCompositeType(base)){
                 // struct declarations can also occur without identifiers/ variable declarations
                 if (match(TOKEN_SEMI_COLON)){
                     consumeToken();
@@ -357,7 +359,7 @@ Token Parser::parseStructDefinition(StatementBlock *scope){
                     
                     // if the struct type is incomplete
                     if (!isTypeDefined(member.type, scope)){
-                        logErrorMessage(member.type.structName, "Struct \"%.*s\" incomplete.", splicePrintf(member.type.structName.string));
+                        logErrorMessage(member.type.compositeName, "Composite \"%.*s\" incomplete.", splicePrintf(member.type.compositeName.string));
                         errors++;
                     }
                 }
@@ -386,23 +388,23 @@ Token Parser::parseStructDefinition(StatementBlock *scope){
     
     // if struct exists and is already defined
     if (s.defined){
-        if (scope->structs.existKey(s.structName.string)){
-            if (scope->structs.getInfo(s.structName.string).info.defined){
-                logErrorMessage(s.structName, "Redefinition of struct \"%.*s\".", splicePrintf(s.structName.string));
+        if (scope->composites.existKey(s.compositeName.string)){
+            if (scope->composites.getInfo(s.compositeName.string).info.defined){
+                logErrorMessage(s.compositeName, "Redefinition of struct \"%.*s\".", splicePrintf(s.compositeName.string));
                 errors++; 
             }
             else{
-                scope->structs.update(s.structName.string, s);
+                scope->composites.update(s.compositeName.string, s);
             }
         }
         else{
-            // unnamed structs aren't supported
-            if (!compare(s.structName.string, "unnamed-struct"))
-                scope->structs.add(s.structName.string, s);
+            // unnamed composites aren't supported
+            if (!compare(s.compositeName.string, "unnamed-struct"))
+                scope->composites.add(s.compositeName.string, s);
         }
     }
 
-    return s.structName;
+    return s.compositeName;
 }
 
 
@@ -500,8 +502,12 @@ DataType Parser::parseBaseDataType(StatementBlock *scope){
     
     // if struct then parse the struct type or struct definition as well
     if (match(TOKEN_STRUCT)){
-        d.structName = parseStructDefinition(scope);
+        d.compositeName = parseStructDefinition(scope);
         d.tag = DataType::TAG_STRUCT;
+    }
+    else if (match(TOKEN_UNION)){
+        d.compositeName = parseStructDefinition(scope);
+        d.tag = DataType::TAG_UNION;
     }
     // if is a typedef alias
     else if (scope->findTypedef(peekToken().string)){
@@ -660,10 +666,10 @@ bool Parser::canBeConverted(Subexpr *from, DataType fromType, DataType toType, S
         }
         
         if (toType.tag == DataType::TAG_STRUCT){
-            StatementBlock* structDeclnScope = scope->findStructDeclaration(toType.structName);
+            StatementBlock* structDeclnScope = scope->findCompositeDeclaration(toType.compositeName);
             assert(structDeclnScope != NULL);
 
-            Struct &structInfo = structDeclnScope->structs.getInfo(toType.structName.string).info;
+            Composite &structInfo = structDeclnScope->composites.getInfo(toType.compositeName.string).info;
             
             if (from->initList->values.size() != structInfo.members.entries.size()){
                 Token subexprToken = getSubexprToken(from);
@@ -676,7 +682,7 @@ bool Parser::canBeConverted(Subexpr *from, DataType fromType, DataType toType, S
             bool canConvert = true;
             for (int i=0; i < from->initList->values.size(); i++){
                 Subexpr* value = from->initList->values[i];
-                Struct::MemberInfo member = structInfo.members.getInfo(structInfo.members.order[i]).info;
+                Composite::MemberInfo member = structInfo.members.getInfo(structInfo.members.order[i]).info;
                 
 
                 if (!canBeConverted(value, value->type, member.type, scope)){
@@ -753,9 +759,16 @@ bool Parser::canBeConverted(Subexpr *from, DataType fromType, DataType toType, S
         return false;
     }
 
-    // structs can only be converted to the same struct
+    // composites can only be converted to the same struct
     if (fromType.tag == DataType::TAG_STRUCT){
-        if (toType.tag == DataType::TAG_STRUCT && compare(fromType.structName.string, toType.structName.string)){
+        if (toType.tag == DataType::TAG_STRUCT && compare(fromType.compositeName.string, toType.compositeName.string)){
+            return true;
+        }
+        return false;
+    }
+    // union can only be converted to the same struct
+    if (fromType.tag == DataType::TAG_UNION){
+        if (toType.tag == DataType::TAG_UNION && compare(fromType.compositeName.string, toType.compositeName.string)){
             return true;
         }
         return false;
@@ -784,7 +797,7 @@ bool Parser::canBeConverted(Subexpr *from, DataType fromType, DataType toType, S
             return true;
         }
         
-        // primary cannot be converted to structs
+        // primary cannot be converted to composites
         return false;
     }
 
@@ -908,9 +921,9 @@ DataType Parser::checkSubexprType(Subexpr *expr, StatementBlock *scope){
                     return DataTypes::Error;
                 }
                 
-                // left must be of type struct
-                if (left.getBaseType().tag != DataType::TAG_STRUCT){
-                    logErrorMessage(expr->binary.op, "Not a valid struct.");
+                // left must be of type struct or union
+                if ((left.getBaseType().tag != DataType::TAG_STRUCT) && (left.getBaseType().tag != DataType::TAG_UNION)){
+                    logErrorMessage(expr->binary.op, "Not a valid composite type.");
                     errors++;
                     return DataTypes::Error;
                 }
@@ -918,7 +931,7 @@ DataType Parser::checkSubexprType(Subexpr *expr, StatementBlock *scope){
                 // left must be struct if .
                 if (match(expr->binary.op, TOKEN_DOT)){
                     if (left.indirectionLevel() != 0){
-                        logErrorMessage(expr->binary.op, "Not a valid struct.");
+                        logErrorMessage(expr->binary.op, "Not a valid composite type.");
                         errors++;
                         return DataTypes::Error;
                     }
@@ -926,17 +939,17 @@ DataType Parser::checkSubexprType(Subexpr *expr, StatementBlock *scope){
                 // left must be struct * if ->
                 if (match(expr->binary.op, TOKEN_ARROW)){
                     if (left.indirectionLevel() != 1){
-                        logErrorMessage(expr->binary.op, "Not a valid struct pointer.");
+                        logErrorMessage(expr->binary.op, "Not a valid composite type pointer.");
                         errors++;
                         return DataTypes::Error;
                     }
                 }
                 
                 DataType baseStructType = left.getBaseType();
-                StatementBlock *structDeclScope = scope->findStructDeclaration(baseStructType.structName);
+                StatementBlock *structDeclScope = scope->findCompositeDeclaration(baseStructType.compositeName);
 
                 if (!structDeclScope){
-                    logErrorMessage(expr->binary.op, "Not a valid struct.");
+                    logErrorMessage(expr->binary.op, "Not a valid composite type.");
                     errors++;
                     return DataTypes::Error;
                 }
@@ -949,12 +962,12 @@ DataType Parser::checkSubexprType(Subexpr *expr, StatementBlock *scope){
                 }
                 
                 Splice memberName = expr->binary.right->leaf.string;
-                Struct st = structDeclScope->structs.getInfo(baseStructType.structName.string).info;
+                Composite st = structDeclScope->composites.getInfo(baseStructType.compositeName.string).info;
                 
                 // the right identifier must be a valid member name in the struct
                 if (!st.members.existKey(memberName)){
                     logErrorMessage(expr->binary.right->leaf, "No \"%.*s\" member exists in struct \"%.*s\".",
-                                    splicePrintf(memberName), splicePrintf(st.structName.string));
+                                    splicePrintf(memberName), splicePrintf(st.compositeName.string));
                     errors++;
                     return DataTypes::Error;
                 }
@@ -1115,9 +1128,9 @@ DataType Parser::checkSubexprType(Subexpr *expr, StatementBlock *scope){
                             return left;
                         }
 
-                        // if struct, only assignment between same structs is allowed 
+                        // if struct, only assignment between same composites is allowed 
                         if (match(left.type, TOKEN_STRUCT)){
-                            if (match(TOKEN_ASSIGNMENT) && compare(left.structName.string, right.structName.string)){
+                            if (match(TOKEN_ASSIGNMENT) && compare(left.compositeName.string, right.compositeName.string)){
                                 return left;
                             }
                         }
@@ -1303,6 +1316,10 @@ DataType Parser::checkSubexprType(Subexpr *expr, StatementBlock *scope){
             }
             // if struct then, no other unary operator other than & are defined
             else if (operand.tag == DataType::TAG_STRUCT){
+                return DataTypes::Error;
+            }
+            // if union then, no other unary operator other than & are defined
+            else if (operand.tag == DataType::TAG_UNION){
                 return DataTypes::Error;
             }
 
@@ -1714,10 +1731,16 @@ Node* Parser::parseDeclaration(StatementBlock *scope){
         consumeToken();
         return NULL;
     }
+    // only struct declaration w/o variable declaration
+    if (type.tag == DataType::TAG_UNION 
+        && match(TOKEN_SEMI_COLON)){
+        consumeToken();
+        return NULL;
+    }
 
-    // check if struct has been defined: only defined structs can be used for declaration
+    // check if struct has been defined: only defined composites can be used for declaration
     if (!isTypeDefined(type, scope)){
-        logErrorMessage(type.structName, "Struct \"%.*s\" incomplete.", splicePrintf(type.structName.string));
+        logErrorMessage(type.compositeName, "Composite \"%.*s\" incomplete.", splicePrintf(type.compositeName.string));
         errors++;
     }
 

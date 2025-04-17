@@ -258,7 +258,7 @@ void CodeGenerator :: generatePrimitiveMIR(MIR_Primitive* p, MIR_Scope* scope, S
 
             while (inode){
                 if (inode->condition){
-                    Register condition = regAlloc.allocVRegister(REG_ANY);
+                    Register condition = regAlloc.allocVRegister(REG_SAVED);
                     // compute the condition
                     generateExprMIR(inode->condition, condition, storageScope);
                     
@@ -297,7 +297,7 @@ void CodeGenerator :: generatePrimitiveMIR(MIR_Primitive* p, MIR_Scope* scope, S
         case MIR_Primitive::PRIM_LOOP:{
             MIR_Loop* lnode = (MIR_Loop*) p;
         
-            Register condition = regAlloc.allocVRegister(REG_ANY);
+            Register condition = regAlloc.allocVRegister(REG_SAVED);
 
             
             // start of while loop 
@@ -317,7 +317,7 @@ void CodeGenerator :: generatePrimitiveMIR(MIR_Primitive* p, MIR_Scope* scope, S
             generatePrimitiveMIR(lnode->scope, scope, storageScope);
             
             
-            Register update = regAlloc.allocVRegister(REG_ANY);
+            Register update = regAlloc.allocVRegister(REG_SAVED);
             buffer << ".L" << lnode->updateLabel << ":\n";
             
             generateExprMIR(lnode->update, update, storageScope);
@@ -381,7 +381,7 @@ void CodeGenerator :: generatePrimitiveMIR(MIR_Primitive* p, MIR_Scope* scope, S
             bool isFloatExpr = isFloatType(enode->_type);
             int mask = isFloatExpr? REG_FLOATING_POINT : 0; 
 
-            Register rtmp = regAlloc.allocVRegister(RegisterType(REG_ANY | mask));
+            Register rtmp = regAlloc.allocVRegister(RegisterType(REG_SAVED | mask));
 
             generateExprMIR(enode, rtmp, storageScope);
             
@@ -400,7 +400,7 @@ void CodeGenerator :: generatePrimitiveMIR(MIR_Primitive* p, MIR_Scope* scope, S
             // allocate stack space
             if (totalSize > 0){
                 if (!inRange(totalSize, -MAX_IMMEDIATE, MAX_IMMEDIATE)){
-                    Register temp = regAlloc.allocVRegister(REG_ANY);
+                    Register temp = regAlloc.allocVRegister(REG_SAVED);
                     const char* tempName = RV64_RegisterName[regAlloc.resolveRegister(temp)];
         
                     buffer << "    li " << tempName << ", " << -totalSize << "\n";
@@ -420,7 +420,7 @@ void CodeGenerator :: generatePrimitiveMIR(MIR_Primitive* p, MIR_Scope* scope, S
             // deallocate stack space
             if (totalSize > 0){
                 if (!inRange(totalSize, -MAX_IMMEDIATE, MAX_IMMEDIATE)){
-                    Register temp = regAlloc.allocVRegister(REG_ANY);
+                    Register temp = regAlloc.allocVRegister(REG_SAVED);
                     const char* tempName = RV64_RegisterName[regAlloc.resolveRegister(temp)];
         
                     buffer << "    li " << tempName << ", " << totalSize << "\n";
@@ -502,7 +502,7 @@ void CodeGenerator :: generateFunctionMIR(MIR_Function *foo, MIR_Scope* global, 
     // allocate space for local variables
     if (totalSize > 0){
         if (!inRange(totalSize, -MAX_IMMEDIATE, MAX_IMMEDIATE)){
-            Register temp = regAlloc.allocVRegister(REG_ANY);
+            Register temp = regAlloc.allocVRegister(REG_SAVED);
             const char* tempName = RV64_RegisterName[regAlloc.resolveRegister(temp)];
 
             prologue << "    li " << tempName << ", " << -totalSize << "\n";
@@ -574,7 +574,7 @@ void CodeGenerator :: generateFunctionMIR(MIR_Function *foo, MIR_Scope* global, 
             // if doesnt fit in 2*RLEN, it is in memory
             // OR if fits in 2*RLEN but out of arg registers, it is in memory
             if (nRegistersRequired > 2 || *registerFileInUse == totalAvailable){
-                Register value = regAlloc.allocVRegister(REG_ANY);
+                Register value = regAlloc.allocVRegister(REG_SAVED);
                 const char* regName = RV64_RegisterName[regAlloc.resolveRegister(value)];
                 
                 // load from memory to register
@@ -584,7 +584,7 @@ void CodeGenerator :: generateFunctionMIR(MIR_Function *foo, MIR_Scope* global, 
                 
                 // put into temp region 
                 if (!inRange(destOffset, -MAX_IMMEDIATE, MAX_IMMEDIATE)){
-                    Register temp = regAlloc.allocVRegister(REG_ANY);
+                    Register temp = regAlloc.allocVRegister(REG_SAVED);
                     const char* tempName = RV64_RegisterName[regAlloc.resolveRegister(temp)];
 
                     prologue << "    li " << tempName << ", " << destOffset << "\n";
@@ -607,7 +607,7 @@ void CodeGenerator :: generateFunctionMIR(MIR_Function *foo, MIR_Scope* global, 
                 const char* argRegName = RV64_RegisterName[regAlloc.resolveRegister(argRegister)];
                 
                 if (!inRange(destOffset, -MAX_IMMEDIATE, MAX_IMMEDIATE)){
-                    Register temp = regAlloc.allocVRegister(REG_ANY);
+                    Register temp = regAlloc.allocVRegister(REG_SAVED);
                     const char* tempName = RV64_RegisterName[regAlloc.resolveRegister(temp)];
 
                     prologue << "    li " << tempName << ", " << destOffset << "\n";
@@ -642,7 +642,7 @@ void CodeGenerator :: generateFunctionMIR(MIR_Function *foo, MIR_Scope* global, 
     stackAlloc.deallocate(totalSize);
     if (totalSize > 0){
         if (!inRange(totalSize, -MAX_IMMEDIATE, MAX_IMMEDIATE)){
-            Register temp = regAlloc.allocVRegister(REG_ANY);
+            Register temp = regAlloc.allocVRegister(REG_SAVED);
             const char* tempName = RV64_RegisterName[regAlloc.resolveRegister(temp)];
 
             epilogue << "    li " << tempName << ", " << totalSize << "\n";
@@ -898,7 +898,7 @@ void CodeGenerator::generateExprMIR(MIR_Expr *current, Register dest, ScopeInfo 
             
             GlobalSymbolInfo fpLiteralInfo = rodata.getInfo(current->immediate.val).info;
 
-            Register fpLiteralAddress = regAlloc.allocVRegister(RegisterType::REG_ANY);
+            Register fpLiteralAddress = regAlloc.allocVRegister(RegisterType::REG_SAVED);
             const char* fpLiteralAddressName = RV64_RegisterName[regAlloc.resolveRegister(fpLiteralAddress)];
             
             buffer << "    lui " << fpLiteralAddressName << ", \%hi(.symbol" << fpLiteralInfo.label << ")" << "\n";
@@ -941,7 +941,7 @@ void CodeGenerator::generateExprMIR(MIR_Expr *current, Register dest, ScopeInfo 
                 buffer << "    la " << destName << ", .symbol" << location.label << "\n";
 
                 if (!inRange(current->loadAddress.offset, -MAX_IMMEDIATE, MAX_IMMEDIATE)){
-                    Register temp = regAlloc.allocVRegister(REG_ANY);
+                    Register temp = regAlloc.allocVRegister(REG_SAVED);
                     const char* tempName = RV64_RegisterName[regAlloc.resolveRegister(temp)];
 
                     buffer << "    li " << tempName << ", " << current->loadAddress.offset << "\n";
@@ -964,7 +964,7 @@ void CodeGenerator::generateExprMIR(MIR_Expr *current, Register dest, ScopeInfo 
             const char *destName = RV64_RegisterName[regAlloc.resolveRegister(dest)];
 
             if (!inRange(current->loadAddress.offset, -MAX_IMMEDIATE, MAX_IMMEDIATE)){
-                Register temp = regAlloc.allocVRegister(REG_ANY);
+                Register temp = regAlloc.allocVRegister(REG_SAVED);
                 const char* tempName = RV64_RegisterName[regAlloc.resolveRegister(temp)];
 
                 buffer << "    li " << tempName << ", " << current->loadAddress.offset << "\n";
@@ -1031,7 +1031,7 @@ void CodeGenerator::generateExprMIR(MIR_Expr *current, Register dest, ScopeInfo 
         const char *destName = RV64_RegisterName[regAlloc.resolveRegister(dest)];
         
         if (!inRange(current->load.offset, -MAX_IMMEDIATE, MAX_IMMEDIATE)){
-            Register temp = regAlloc.allocVRegister(REG_ANY);
+            Register temp = regAlloc.allocVRegister(REG_SAVED);
             const char* tempName = RV64_RegisterName[regAlloc.resolveRegister(temp)];
 
             buffer << "    li " << tempName << ", " << current->load.offset << "\n";
@@ -1060,7 +1060,7 @@ void CodeGenerator::generateExprMIR(MIR_Expr *current, Register dest, ScopeInfo 
         const char* prefix = isFloatExpr? "f" : "";
         
         // else, load the address into a temporary register first 
-        Register temp = regAlloc.allocVRegister(REG_ANY);
+        Register temp = regAlloc.allocVRegister(REG_SAVED);
 
         // if the lvalue has a direct address, use that directly instead of loading it to a register first
         if (current->store.left->tag == MIR_Expr::EXPR_ADDRESSOF){
@@ -1098,7 +1098,7 @@ void CodeGenerator::generateExprMIR(MIR_Expr *current, Register dest, ScopeInfo 
         const char *tempName = RV64_RegisterName[regAlloc.resolveRegister(temp)];
 
         if (!inRange(current->store.offset, -MAX_IMMEDIATE, MAX_IMMEDIATE)){
-            Register temp2 = regAlloc.allocVRegister(REG_ANY);
+            Register temp2 = regAlloc.allocVRegister(REG_SAVED);
             const char* temp2Name = RV64_RegisterName[regAlloc.resolveRegister(temp2)]; 
             
             buffer << "    li " << temp2Name << ", " << current->store.offset << "\n";
@@ -1147,7 +1147,7 @@ void CodeGenerator::generateExprMIR(MIR_Expr *current, Register dest, ScopeInfo 
         }
 
         
-        Register temp = regAlloc.allocVRegister(REG_ANY);
+        Register temp = regAlloc.allocVRegister(REG_SAVED);
 
         // calculate index and load it into register
         generateExprMIR(current->index.index, temp, storageScope);
@@ -1158,7 +1158,7 @@ void CodeGenerator::generateExprMIR(MIR_Expr *current, Register dest, ScopeInfo 
         // multiply the index with the size to get correct offset 
         if (current->index.size > 1){
             // index x size
-            Register indexSize = regAlloc.allocVRegister(REG_ANY);
+            Register indexSize = regAlloc.allocVRegister(REG_SAVED);
             const char *indexName = RV64_RegisterName[regAlloc.resolveRegister(indexSize)];
             
             buffer << "    li " <<  indexName << ", " << current->index.size << "\n";
@@ -1188,9 +1188,9 @@ void CodeGenerator::generateExprMIR(MIR_Expr *current, Register dest, ScopeInfo 
         // check if the destination register can be used for one of the operands
         // if can be, then left uses the dest register
         // else, left allocates a temporary register of the opposite register file
-        left = canDestBeUsed? dest : regAlloc.allocVRegister(RegisterType(((dest.type & REG_FLOATING_POINT) ^ REG_FLOATING_POINT) | REG_ANY));
+        left = canDestBeUsed? dest : regAlloc.allocVRegister(RegisterType(((dest.type & REG_FLOATING_POINT) ^ REG_FLOATING_POINT) | REG_SAVED));
         // right allocates of the same type as left 
-        right = regAlloc.allocVRegister(RegisterType((left.type & REG_FLOATING_POINT) | REG_ANY));
+        right = regAlloc.allocVRegister(RegisterType((left.type & REG_FLOATING_POINT) | REG_SAVED));
 
         bool canNotBeGeneratedOutOfOrder = true;
 
@@ -1434,7 +1434,7 @@ void CodeGenerator::generateExprMIR(MIR_Expr *current, Register dest, ScopeInfo 
         Register exprIn = dest;
         // same register cannot be used, then allocate another register of the other type 
         if (!canSameRegBeUsed){
-            exprIn = regAlloc.allocVRegister(RegisterType(((dest.type ^ REG_FLOATING_POINT) & REG_FLOATING_POINT) | REG_ANY));
+            exprIn = regAlloc.allocVRegister(RegisterType(((dest.type ^ REG_FLOATING_POINT) & REG_FLOATING_POINT) | REG_SAVED));
         }
 
         // generate the expr to be cast
@@ -1563,7 +1563,7 @@ void CodeGenerator::generateExprMIR(MIR_Expr *current, Register dest, ScopeInfo 
                 break;
             }
             case MIR_Expr::UnaryOp::EXPR_FNEGATE:{
-                Register fpZero = regAlloc.allocVRegister(RegisterType(REG_FLOATING_POINT | REG_ANY));
+                Register fpZero = regAlloc.allocVRegister(RegisterType(REG_FLOATING_POINT | REG_SAVED));
                 const char* fpZeroName = RV64_RegisterName[regAlloc.resolveRegister(fpZero)];
                 
 
@@ -1681,7 +1681,7 @@ void CodeGenerator::generateExprMIR(MIR_Expr *current, Register dest, ScopeInfo 
         MemBlock stackSpace = stackAlloc.allocate(stackSpaceRequired);
         if (stackSpaceRequired > 0){
             if (!inRange(stackSpaceRequired, -MAX_IMMEDIATE, MAX_IMMEDIATE)){
-                Register temp = regAlloc.allocVRegister(REG_ANY);
+                Register temp = regAlloc.allocVRegister(REG_SAVED);
                 const char* tempName = RV64_RegisterName[regAlloc.resolveRegister(temp)];
 
                 buffer << "    li " << tempName << ", " << -stackSpaceRequired << "\n";
@@ -1754,7 +1754,7 @@ void CodeGenerator::generateExprMIR(MIR_Expr *current, Register dest, ScopeInfo 
                 // OR if fits in 2*RLEN but out of arg registers, put it into memory
                 if (nRegistersRequired > 2 || (*registerFileInUse) == totalAvailable){
                     // load value into temporary register
-                    Register value = regAlloc.allocVRegister(REG_ANY);
+                    Register value = regAlloc.allocVRegister(REG_SAVED);
                     generateExprMIR(arg, value, storageScope);
                     
                     const char* regName = RV64_RegisterName[regAlloc.resolveRegister(value)];
@@ -1810,7 +1810,7 @@ void CodeGenerator::generateExprMIR(MIR_Expr *current, Register dest, ScopeInfo 
         stackAlloc.deallocate(stackSpaceRequired);
         if (stackSpaceRequired > 0){
             if (!inRange(stackSpaceRequired, -MAX_IMMEDIATE, MAX_IMMEDIATE)){
-                Register temp = regAlloc.allocVRegister(REG_ANY);
+                Register temp = regAlloc.allocVRegister(REG_SAVED);
                 const char* tempName = RV64_RegisterName[regAlloc.resolveRegister(temp)];
 
                 buffer << "    li " << tempName << ", " << stackSpaceRequired << "\n";

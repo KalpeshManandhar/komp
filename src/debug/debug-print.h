@@ -818,13 +818,13 @@ static void printParseTree(Node *const current, int depth = 0,std::ostringstream
             }
         }
         
-        if (b->structs.count() > 0){
+        if (b->composites.count() > 0){
             printTabs(depth+1);
             std::cout<<"Struct table:\n";
-            for (auto &pair : b->structs.entries){
-                Struct strct = pair.second.info;
+            for (auto &pair : b->composites.entries){
+                Composite strct = pair.second.info;
                 printTabs(depth + 2);
-                std::cout<<"\tStruct " << strct.structName.string<< "{\n";
+                std::cout<<"\tStruct " << strct.compositeName.string<< "{\n";
 
                 for (auto &m: strct.members.entries){
                     printTabs(depth + 3);

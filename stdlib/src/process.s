@@ -1,5 +1,5 @@
     .text
-    .globl exit, getpid, kill, fork, execve, wait4
+    .globl exit, getpid, kill, fork, execve, wait4, waitpid
 
 # void exit(int status);
 exit:
@@ -22,6 +22,11 @@ kill:
 # pid_t fork(void);
 fork:
     li a7, 220
+    li a0, 17 
+    mv a1, zero
+    mv a2, zero
+    mv a3, zero
+    mv a4, zero
     ecall
     ret
 
@@ -31,6 +36,12 @@ execve:
     ecall
     ret
 
+# pid_t wait4(pid_t pid, int *wstatus, int options, struct rusage *rusage);
+waitpid:
+    li a7, 260
+    mv a3, zero
+    ecall
+    ret
 # pid_t wait4(pid_t pid, int *wstatus, int options, struct rusage *rusage);
 wait4:
     li a7, 260

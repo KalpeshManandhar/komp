@@ -3,12 +3,12 @@
 #include <stdint.h>
 #include <stddef.h>
 
-#define PAGE_SIZE 4096
+#define PAGE_SIZE (4096*2)
 
 
 struct Arena{
 private:
-    const static int MAPPING_INFO_TABLE_SIZE = 4096;
+    const static int MAPPING_INFO_TABLE_SIZE = 2048;
     const static int FRAME_TABLE_SIZE = 64;
     const static int ALIGNMENT = 8;
 

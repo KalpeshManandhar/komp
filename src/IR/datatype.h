@@ -13,6 +13,7 @@ struct DataType{
     enum {
         TAG_PRIMARY,
         TAG_STRUCT,
+        TAG_UNION,
         TAG_PTR,
         TAG_VOID,
         TAG_ERROR,
@@ -30,7 +31,7 @@ struct DataType{
         Token type;
 
         // for structs
-        Token structName;
+        Token compositeName;
 
 
         struct{
@@ -114,6 +115,7 @@ namespace DataTypes{
     inline DataType Void = {.tag = DataType::TAG_VOID, .type = {TOKEN_VOID, {"void", sizeof("void") - 1}, 0, 0}};
     inline DataType Error = {.tag = DataType::TAG_ERROR, .type = {TOKEN_ERROR, {"error", sizeof("error") - 1}, 0, 0}};
     inline DataType Struct = {.tag = DataType::TAG_STRUCT};
+    inline DataType Union = {.tag = DataType::TAG_UNION};
     inline DataType MemBlock = {.tag = DataType::TAG_COMPOSITE_UNSPECIFIED};
 };
 
@@ -330,7 +332,7 @@ static DataType getResultantType(DataType left, DataType right, Token op){
 
             // if struct, only assignment between same structs is allowed 
             if (_match(left.type, TOKEN_STRUCT)){
-                if (_match(op, TOKEN_ASSIGNMENT) && compare(left.structName.string, right.structName.string)){
+                if (_match(op, TOKEN_ASSIGNMENT) && compare(left.compositeName.string, right.compositeName.string)){
                     return left;
                 }
             }
@@ -418,6 +420,10 @@ static DataType getResultantType(DataType left, DataType right, Token op){
     return DataTypes::Int;
 };
 
+
+static bool isCompositeType(DataType d){
+    return d.tag == DataType::TAG_STRUCT || d.tag == DataType::TAG_UNION;
+}
 
 
 

@@ -105,9 +105,10 @@ struct Declaration: public Node{
     std::vector<DeclInfo> decln;
 };
 
-struct Struct: public Node{
-    Token structName;
+struct Composite: public Node{
+    Token compositeName;
     bool defined;
+    bool isUnion;
     size_t size;
     size_t alignment;
 
@@ -139,7 +140,7 @@ struct StatementBlock: public Node{
 
     std::vector<Node *> statements;
     SymbolTableOrdered<DataType> symbols;
-    SymbolTableOrdered<Struct> structs;
+    SymbolTableOrdered<Composite> composites;
     SymbolTable<TypedefInfo> typedefs;
     StatementBlock *parent;
 
@@ -155,11 +156,11 @@ struct StatementBlock: public Node{
         return NULL;
     };
 
-    StatementBlock* findStructDeclaration(Token structName){
+    StatementBlock* findCompositeDeclaration(Token compositeName){
         StatementBlock *currentScope = this;
         while (currentScope){
-            if (currentScope->structs.existKey(structName.string)){
-                if (currentScope->structs.getInfo(structName.string).info.defined){
+            if (currentScope->composites.existKey(compositeName.string)){
+                if (currentScope->composites.getInfo(compositeName.string).info.defined){
                     return currentScope;
                 }
             }

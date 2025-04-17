@@ -377,6 +377,7 @@ static TokenType DATA_TYPE_TOKENS[] = {
     TOKEN_CHAR,
     TOKEN_DOUBLE,
     TOKEN_STRUCT,
+    TOKEN_UNION,
     TOKEN_VOID,
 };
 

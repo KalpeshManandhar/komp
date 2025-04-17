@@ -153,14 +153,15 @@ MIR_Datatype MiddleEnd :: convertToLowerLevelType(DataType d, StatementBlock *sc
         if (_match(d.type, TOKEN_DOUBLE))
             return MIR_Datatypes::_f64;
 
+    case DataType::TAG_UNION:
     case DataType::TAG_STRUCT:{
 
-        StatementBlock *structDeclScope = scope->findStructDeclaration(d.structName);
+        StatementBlock *structDeclScope = scope->findCompositeDeclaration(d.compositeName);
         assert(structDeclScope != NULL);
         
         MIR_Datatype structType = MIR_Datatypes::_struct;
-        structType.size = structDeclScope->structs.getInfo(d.structName.string).info.size;
-        structType.alignment = structDeclScope->structs.getInfo(d.structName.string).info.alignment;
+        structType.size = structDeclScope->composites.getInfo(d.compositeName.string).info.size;
+        structType.alignment = structDeclScope->composites.getInfo(d.compositeName.string).info.alignment;
         return structType;
     }
     case DataType::TAG_VOID:{
@@ -237,14 +238,14 @@ MIR_Primitives MiddleEnd :: resolveInitializerLists(const Subexpr* expr, DataTyp
     InitializerList* initlist = expr->initList;
     std::vector <MIR_Primitive*> exprsCopy;
     if (isStructType){
-        StatementBlock* declnScope = scope->findStructDeclaration(d.structName);
-        Struct &structInfo = declnScope->structs.getInfo(d.structName.string).info;
+        StatementBlock* declnScope = scope->findCompositeDeclaration(d.compositeName);
+        Composite &structInfo = declnScope->composites.getInfo(d.compositeName.string).info;
         
         
         for (int i=0; i < initlist->values.size(); i++){
 
             Splice structMemberName = structInfo.members.order[i];
-            Struct::MemberInfo &member = structInfo.members.getInfo(structMemberName).info;
+            Composite::MemberInfo &member = structInfo.members.getInfo(structMemberName).info;
 
             MIR_Primitives exprs = resolveInitializerLists(initlist->values[i], member.type, left, offset + member.offset, scope, arena);
             
@@ -330,7 +331,7 @@ MIR_Primitives MiddleEnd :: transformSubexpr(const Subexpr* expr, StatementBlock
     case Subexpr::SUBEXPR_BINARY_OP :{
         if (_match(expr->binary.op, TOKEN_DOT)){
             /*
-                Struct member load is expanded into 
+                Composite member load is expanded into 
                 a.x
 
                             LOAD
@@ -348,17 +349,17 @@ MIR_Primitives MiddleEnd :: transformSubexpr(const Subexpr* expr, StatementBlock
             assert(exprs.n == 1);
             d = (MIR_Expr*)exprs.primitives[0];
 
-            DataType structType = expr->binary.left->type;
-            assert(structType.tag == DataType::TAG_STRUCT);
+            DataType compositeType = expr->binary.left->type;
+            assert(isCompositeType(compositeType));
             assert(expr->binary.right->subtag == Subexpr::SUBEXPR_LEAF);
 
-            StatementBlock *structDeclScope = scope->findStructDeclaration(structType.structName);
+            StatementBlock *structDeclScope = scope->findCompositeDeclaration(compositeType.compositeName);
             
             assert(structDeclScope != NULL);
-            Struct &structInfo = structDeclScope->structs.getInfo(structType.structName.string).info;
+            Composite &structInfo = structDeclScope->composites.getInfo(compositeType.compositeName.string).info;
             
             assert(structInfo.members.existKey(expr->binary.right->leaf.string));
-            Struct::MemberInfo member = structInfo.members.getInfo(expr->binary.right->leaf.string).info;
+            Composite::MemberInfo member = structInfo.members.getInfo(expr->binary.right->leaf.string).info;
             
             // d->type = member.type;
             d->_type = convertToLowerLevelType(member.type, scope);
@@ -374,7 +375,7 @@ MIR_Primitives MiddleEnd :: transformSubexpr(const Subexpr* expr, StatementBlock
         
         if (_match(expr->binary.op, TOKEN_ARROW)){
             /*
-                Struct member load through pointer is expanded into 
+                Composite member load through pointer is expanded into 
                 a->x
 
                             LOAD
@@ -395,19 +396,19 @@ MIR_Primitives MiddleEnd :: transformSubexpr(const Subexpr* expr, StatementBlock
             assert(exprs.n == 1);
             d->load.base = (MIR_Expr*)exprs.primitives[0];
             
-            DataType structType = expr->binary.left->type.getBaseType();
+            DataType compositeType = expr->binary.left->type.getBaseType();
 
-            // DataType structType = d->load.base->type.getBaseType();
-            assert(structType.tag == DataType::TAG_STRUCT);
+            // DataType compositeType = d->load.base->type.getBaseType();
+            assert(isCompositeType(compositeType));
             assert(expr->binary.right->subtag == Subexpr::SUBEXPR_LEAF);
 
-            StatementBlock *structDeclScope = scope->findStructDeclaration(structType.structName);
+            StatementBlock *structDeclScope = scope->findCompositeDeclaration(compositeType.compositeName);
             
             assert(structDeclScope != NULL);
-            Struct &structInfo = structDeclScope->structs.getInfo(structType.structName.string).info;
+            Composite &structInfo = structDeclScope->composites.getInfo(compositeType.compositeName.string).info;
             
             assert(structInfo.members.existKey(expr->binary.right->leaf.string));
-            Struct::MemberInfo member = structInfo.members.getInfo(expr->binary.right->leaf.string).info;
+            Composite::MemberInfo member = structInfo.members.getInfo(expr->binary.right->leaf.string).info;
             
             d->type = member.type;
             d->_type = convertToLowerLevelType(member.type, scope);
@@ -1146,34 +1147,59 @@ MIR_Primitives MiddleEnd :: transformSubexpr(const Subexpr* expr, StatementBlock
     Fill in the offsets of each member of each struct within a scope.
 */
 void MiddleEnd :: calcStructMemberOffsets(StatementBlock *scope){
-    for (auto &structName: scope->structs.order){
+    for (auto &compositeName: scope->composites.order){
 
-        Struct &structInfo = scope->structs.getInfo(structName).info;
+        Composite &compositeType = scope->composites.getInfo(compositeName).info;
         size_t offset = 0;
-        size_t structAlignment = 0;
+        size_t overallAlignment = 0;
         
-        for(auto &memberName: structInfo.members.order){
-            Struct::MemberInfo &member = structInfo.members.getInfo(memberName).info;
+        // for union, size is max of all member sizes
+        if (compositeType.isUnion){
+            size_t totalSize = 0;
+            for(auto &memberName: compositeType.members.order){
+                Composite::MemberInfo &member = compositeType.members.getInfo(memberName).info;
+                
+                MIR_Datatype dt = convertToLowerLevelType(member.type, scope);
+                
+                size_t size = dt.size;
+                size_t alignment = dt.alignment;
+                
+                member.offset = 0;   
+                overallAlignment = max(overallAlignment, alignment);
+                totalSize = max(totalSize, size);
+            }
             
-            MIR_Datatype dt = convertToLowerLevelType(member.type, scope);
-
-            size_t size = dt.size;
-            size_t alignment = dt.alignment;
-
-            offset = alignUpPowerOf2(offset, alignment);
-            member.offset = offset;
+            totalSize = alignUpPowerOf2(totalSize, overallAlignment);
             
-            structAlignment = max(structAlignment, alignment);
-            offset += size;
+            compositeType.size = totalSize;
+            compositeType.alignment = overallAlignment;
         }
-        
-        offset = alignUpPowerOf2(offset, structAlignment);
+        // for struct, size is sum of all member sizes
+        else {
 
-        structInfo.size = offset;
-        structInfo.alignment = structAlignment;
+            for(auto &memberName: compositeType.members.order){
+                Composite::MemberInfo &member = compositeType.members.getInfo(memberName).info;
+                
+                MIR_Datatype dt = convertToLowerLevelType(member.type, scope);
+                
+                size_t size = dt.size;
+                size_t alignment = dt.alignment;
+                
+                offset = alignUpPowerOf2(offset, alignment);
+                member.offset = offset;
+                
+                overallAlignment = max(overallAlignment, alignment);
+                offset += size;
+            }
+            
+            offset = alignUpPowerOf2(offset, overallAlignment);
+            
+            compositeType.size = offset;
+            compositeType.alignment = overallAlignment;
+        }
     }
 }
-
+    
 
 
 

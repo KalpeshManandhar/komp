@@ -19,4 +19,5 @@ $errors_expected = @{
     "test_typedef.c" = 0;
     "test_variadic.c" = 1;
     "test_storage_class.c" = 0;
+    "test_union.c" = 0;
 } 

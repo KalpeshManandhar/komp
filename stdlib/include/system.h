@@ -1,3 +1,2 @@
-int uname(struct utsname *buf);
-int chdir(const char *path);
-char *getcwd(char *buf, unsigned long long size);
+extern int chdir(const char *path);
+extern char *getcwd(char *buf, unsigned long long size);
