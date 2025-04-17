@@ -149,7 +149,7 @@ MIR_Datatype MiddleEnd :: convertToLowerLevelType(DataType d, StatementBlock *sc
         if (_match(d.type, TOKEN_FLOAT))
             return MIR_Datatypes::_f32;
 
-        // Note: long double isnt supported currently
+        // Note: double isnt supported currently
         if (_match(d.type, TOKEN_DOUBLE))
             return MIR_Datatypes::_f64;
 

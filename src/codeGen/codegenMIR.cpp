@@ -363,6 +363,11 @@ void CodeGenerator :: generatePrimitiveMIR(MIR_Primitive* p, MIR_Scope* scope, S
                 regAlloc.freeRegister(fa0);
             }
             else {
+                if (foo.returnType.size > 2 * XLEN){
+                    
+                }
+                else if (foo.returnType.size)
+
                 assert(false && "Struct returns not implemented yet.");
             }
             buffer << "    j ." << rnode->funcName << "_ep\n";

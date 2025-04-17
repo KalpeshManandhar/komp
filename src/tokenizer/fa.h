@@ -68,6 +68,11 @@ struct NumConstDFA: public DFA{
         STATE_X,
         STATE_B,
         STATE_POINT,
+
+        STATE_HEXDOUBLE_DEC,
+        STATE_HEXDOUBLE_AFTER_DEC,
+        STATE_HEXDOUBLE_P,
+        STATE_HEXDOUBLE_SIGN,
         
         ACCEPTING_STATES_START,
 
@@ -85,6 +90,10 @@ struct NumConstDFA: public DFA{
         STATE_U,
         STATE_UL,
         STATE_ULL,
+
+
+        STATE_HEXDOUBLE,
+        STATE_HEXFLOAT,
 
         STATE_COUNT,
     };
@@ -112,6 +121,20 @@ struct NumConstDFA: public DFA{
         this->addTransition(STATE_HEX, "0123456789abcdefABCDEF", STATE_HEX);
         this->addTransition(STATE_HEX, "U", STATE_U);
         this->addTransition(STATE_HEX, "L", STATE_L);
+        this->addTransition(STATE_HEX, ".", STATE_HEXDOUBLE_DEC);
+        
+        this->addTransition(STATE_HEXDOUBLE_DEC, "0123456789abcdefABCDEF", STATE_HEXDOUBLE_AFTER_DEC);
+        this->addTransition(STATE_HEXDOUBLE_AFTER_DEC, "0123456789abcdefABCDEF", STATE_HEXDOUBLE_AFTER_DEC);
+        
+        this->addTransition(STATE_HEXDOUBLE_AFTER_DEC, "p", STATE_HEXDOUBLE_P);
+        
+        this->addTransition(STATE_HEXDOUBLE_P, "0123456789", STATE_HEXFLOAT);
+        this->addTransition(STATE_HEXDOUBLE_P, "+-", STATE_HEXDOUBLE_SIGN);
+
+        this->addTransition(STATE_HEXDOUBLE_SIGN, "0123456789", STATE_HEXDOUBLE);
+
+        this->addTransition(STATE_HEXDOUBLE, "0123456789", STATE_HEXDOUBLE);
+        this->addTransition(STATE_HEXDOUBLE, "f", STATE_HEXFLOAT);
         
         this->addTransition(STATE_B, "01", STATE_BINARY);
         this->addTransition(STATE_BINARY, "01", STATE_BINARY);
@@ -159,7 +182,9 @@ struct NumConstDFA: public DFA{
             t.type = TokenType::TOKEN_NUMERIC_OCT; break;
         
         case STATE_DOUBLE:  
+        case STATE_HEXDOUBLE:  
             t.type = TokenType::TOKEN_NUMERIC_DOUBLE; break;
+        case STATE_HEXFLOAT:  
         case STATE_FLOAT:  
             t.type = TokenType::TOKEN_NUMERIC_FLOAT; break;
         
