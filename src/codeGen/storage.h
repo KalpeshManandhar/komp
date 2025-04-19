@@ -494,7 +494,7 @@ struct StorageInfo{
     size_t size;
     
     union{
-        Register reg;
+        RegisterPair regPair;
         MemBlock memAddress;
         Label label;
     };
