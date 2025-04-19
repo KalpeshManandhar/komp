@@ -16,4 +16,5 @@ $expected_values = @{
     "test_global.c" = 0;
     "test_union.c" = 1;
     "test_struct_returns.c" = 33;
+    "test_enum.c" = 3;
 } 

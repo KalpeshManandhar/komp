@@ -815,33 +815,49 @@ MIR_Primitives MiddleEnd :: transformSubexpr(const Subexpr* expr, StatementBlock
             */ 
             
             StatementBlock *varDeclScope = scope->findVarDeclaration(expr->leaf.string);
-            assert(varDeclScope != NULL);
+            StatementBlock *enumDeclScope = scope->findEnumValue(expr->leaf.string);
             
-            DataType loadType = varDeclScope->symbols.getInfo(expr->leaf.string).info;
-            d->type = loadType;
-            d->_type = convertToLowerLevelType(loadType, scope);
-            d->tag = MIR_Expr::EXPR_LOAD;
-            
-            MIR_Expr *address = (MIR_Expr*) arena->alloc(sizeof(MIR_Expr));
-            address->addressOf.symbol = copySplice(expr->leaf.string, arena);
-            address->tag = MIR_Expr::EXPR_ADDRESSOF;
-            address->ptag = MIR_Primitive::PRIM_EXPR;
+            assert(varDeclScope || enumDeclScope && "A value should be a valid identifier or an enum value.");
+            if (varDeclScope){
 
-            d->load.base = address;
-            d->load.offset = 0;
-            d->load.size = d->_type.size;
-            d->ptag = MIR_Primitive::PRIM_EXPR;
+                DataType loadType = varDeclScope->symbols.getInfo(expr->leaf.string).info;
+                d->type = loadType;
+                d->_type = convertToLowerLevelType(loadType, scope);
+                d->tag = MIR_Expr::EXPR_LOAD;
+                
+                MIR_Expr *address = (MIR_Expr*) arena->alloc(sizeof(MIR_Expr));
+                address->addressOf.symbol = copySplice(expr->leaf.string, arena);
+                address->tag = MIR_Expr::EXPR_ADDRESSOF;
+                address->ptag = MIR_Primitive::PRIM_EXPR;
+                
+                d->load.base = address;
+                d->load.offset = 0;
+                d->load.size = d->_type.size;
+                d->ptag = MIR_Primitive::PRIM_EXPR;
+                
+                if (isIntegerType(d->_type)){
+                    d->load.type = MIR_Expr::LoadType::EXPR_ILOAD;
+                }
+                else if (isFloatType(d->_type)){
+                    d->load.type = MIR_Expr::LoadType::EXPR_FLOAD;
+                }
+                else{
+                    d->load.type = MIR_Expr::LoadType::EXPR_MEMLOAD;
+                }
+            }
 
-            if (isIntegerType(d->_type)){
-                d->load.type = MIR_Expr::LoadType::EXPR_ILOAD;
-            }
-            else if (isFloatType(d->_type)){
-                d->load.type = MIR_Expr::LoadType::EXPR_FLOAD;
-            }
-            else{
-                d->load.type = MIR_Expr::LoadType::EXPR_MEMLOAD;
-            }
+            else if (enumDeclScope){
+                d->_type = convertToLowerLevelType(DataTypes::Int, scope);
 
+                d->tag = MIR_Expr::EXPR_LOAD_IMMEDIATE;
+                int enumVal = enumDeclScope->enumValues.getInfo(expr->leaf.string).info.value;
+
+                char buf[64];
+                size_t n = sprintf(buf, "%d", enumVal);
+                d->immediate.val = copySplice(Splice{.data = buf, .len = n}, arena);
+                d->ptag = MIR_Primitive::PRIM_EXPR;
+            }
+                
             returnExprs.primitives[returnExprs.n] = d;
             returnExprs.n++;
             break;
