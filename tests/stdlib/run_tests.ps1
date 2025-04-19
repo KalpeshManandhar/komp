@@ -76,11 +76,20 @@ if ($isLinux){
         Write-Host "Generating asm.." -ForegroundColor Yellow  
         & "$exec_path"  $cwd/preprocessed.i
         
-        Write-Host "Compiling into RV64 obj.." -ForegroundColor Yellow  
-        & $riscv_gcc -nostdlib -c $cwdLinux/codegen_output.s -o $cwdLinux/codegen_output.o
-        
-        Write-Host "Linking into RV64-ELF.." -ForegroundColor Yellow  
-        & $riscv_ld $cwdLinux/codegen_output.o $cwdLinux/stdlib/lib/entry.o $cwdLinux/stdlib/lib/stdlib.so -o $cwdLinux/codegen_output --dynamic-linker /lib/ld-linux-riscv64-lp64d.so.1                   
+        if ($whichLib[$file.Name] -eq "own"){
+            Write-Host "Compiling into RV64 obj.." -ForegroundColor Yellow  
+            & $riscv_gcc -nostdlib -c $cwdLinux/codegen_output.s -o $cwdLinux/codegen_output.o
+            
+            Write-Host "Linking into RV64-ELF.." -ForegroundColor Yellow  
+            & $riscv_ld $cwdLinux/codegen_output.o $cwdLinux/stdlib/lib/entry.o $cwdLinux/stdlib/lib/stdlib.so -o $cwdLinux/codegen_output --dynamic-linker /lib/ld-linux-riscv64-lp64d.so.1                   
+        }
+        else {
+            Write-Host "Compiling into RV64 obj.." -ForegroundColor Yellow  
+            
+            Write-Host "Linking into RV64-ELF.." -ForegroundColor Yellow  
+            & $riscv_gcc $cwdLinux/codegen_output.s -o $cwdLinux/codegen_output
+            
+        }
 
         Write-Host "Running on qemu.." -ForegroundColor Yellow
         & $qemu -L $sysroot $cwdLinux/codegen_output @($arguments[$file.Name])
@@ -106,13 +115,20 @@ elseif ($isWindows) {
         Write-Host "Generating asm.." -ForegroundColor Yellow  
         & "$exec_path"  $cwd/preprocessed.i
         
-        Write-Host "Compiling into RV64 obj.." -ForegroundColor Yellow  
-        Start-Process "wsl" -ArgumentList "--distribution", "Ubuntu", "$riscv_gcc -nostdlib -c $cwdLinux/codegen_output.s -o $cwdLinux/codegen_output.o" -NoNewWindow -Wait
-        
-        Write-Host "Linking into RV64-ELF.." -ForegroundColor Yellow  
-        Start-Process "wsl" -ArgumentList "--distribution", "Ubuntu", 
-                    "$riscv_ld $cwdLinux/codegen_output.o $cwdLinux/stdlib/lib/entry.o $cwdLinux/stdlib/lib/stdlib.so -o $cwdLinux/codegen_output --dynamic-linker /lib/ld-linux-riscv64-lp64d.so.1" `
-                    -NoNewWindow -Wait
+        if ($whichLib[$file.Name] -eq "own"){
+            Write-Host "Compiling into RV64 obj.." -ForegroundColor Yellow  
+            Start-Process "wsl" -ArgumentList "--distribution", "Ubuntu", "$riscv_gcc -nostdlib -c $cwdLinux/codegen_output.s -o $cwdLinux/codegen_output.o" -NoNewWindow -Wait
+            
+            Write-Host "Linking into RV64-ELF.." -ForegroundColor Yellow  
+            Start-Process "wsl" -ArgumentList "--distribution", "Ubuntu", 
+                "$riscv_ld $cwdLinux/codegen_output.o $cwdLinux/stdlib/lib/entry.o $cwdLinux/stdlib/lib/stdlib.so -o $cwdLinux/codegen_output --dynamic-linker /lib/ld-linux-riscv64-lp64d.so.1" `
+                -NoNewWindow -Wait
+        }
+        else {
+            Write-Host "Compiling into RV64 obj.." -ForegroundColor Yellow  
+            Write-Host "Linking into RV64-ELF.." -ForegroundColor Yellow  
+            Start-Process "wsl" -ArgumentList "--distribution", "Ubuntu", "$riscv_gcc $cwdLinux/codegen_output.s -o $cwdLinux/codegen_output" -NoNewWindow -Wait   
+        }
 
         Write-Host "Running on qemu.." -ForegroundColor Yellow
         & "wsl" --distribution Ubuntu $qemu -L $sysroot $cwdLinux/codegen_output @($arguments[$file.Name])

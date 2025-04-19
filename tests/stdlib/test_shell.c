@@ -10,11 +10,11 @@
 int main(){
 
     char workingDir[CWD_BUFFER_SIZE];
-    getcwd(workingDir, CWD_BUFFER_SIZE);
     
     char commandBuffer[COMMAND_BUFFER_SIZE];
-
+    
     while (1){
+        getcwd(workingDir, CWD_BUFFER_SIZE);
         write(1, workingDir, strlen(workingDir));
         write(1, " :: > ", 6);
 
@@ -25,43 +25,57 @@ int main(){
         if (strcmp(commandBuffer, "exit") == 0){
             break;
         }
+
+        char * args[16] = {0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0};
+        // tokenize with space delimiter
+        int i = 0, j = 0;
+        while (i < len){
+            // skip white spaces
+            while (i < len && commandBuffer[i] == ' '){
+                commandBuffer[i++] = 0;
+            }
+            
+            if (i < len){
+                args[j++] = &commandBuffer[i];
+            }
+
+            // skip non white spaces
+            while (i < len && commandBuffer[i] != ' '){
+                i++;
+            }
         
+        }
+
+        
+        // Handle 'cd' as a built-in command
+        if (!args[0]){
+            continue;
+        }
+
+        if (strcmp(args[0], "cd") == 0) {
+            if (args[1] == (char*)0) {
+                write(1, "cd: missing operand\n", 20);
+            } else if (chdir(args[1]) != 0) {
+                write(1, "cd: no such directory\n", 23);
+            }
+            continue;
+        }
+
         int pid = fork();
 
         // child process
         if (pid == 0){
-            char * args[16] = {0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0};
             char * env[1] = {0};
             
-            // tokenize with space delimiter
-            int i = 0, j = 0;
-            while (i < len){
-                // skip white spaces
-                while (i < len && commandBuffer[i] == ' '){
-                    commandBuffer[i++] = 0;
-                }
-                
-                if (i < len){
-                    args[j++] = &commandBuffer[i];
-                }
-
-                // skip non white spaces
-                while (i < len && commandBuffer[i] != ' '){
-                    i++;
-                }
             
-            }
 
-            for (i = 0; i<j; i++){
-                write(1, args[i], strlen(args[i]));
-                write(1, "\n", 1);
-            }
+            // for (i = 0; i<j; i++){
+            //     write(1, args[i], strlen(args[i]));
+            //     write(1, "\n", 1);
+            // }
 
 
-            write(1, "Exec\n", 3);
-            
             int a = execve(args[0], args, env);
-            write(1, "\nError\n", strlen("Error\n"));
             return a;
         }
         else if (pid < 0){
@@ -73,11 +87,11 @@ int main(){
                 int ret = waitpid(pid, &wstatus, 2);
                 
                 if (ret == -1){
-                    write(1, "\nWaitpid error\n", strlen("Waitpid error\n"));
+                    write(1, "\nWaitpid error\n", strlen("\nWaitpid error\n"));
                     return 1;
                 }
                 if ((((wstatus) & 0x7f) == 0)){
-                    write(1, "\nChild process exited.\n", strlen("Child process exited.\n"));
+                    write(1, "\nChild process exited.\n", strlen("\nChild process exited.\n"));
                     break;
                 }
             }
