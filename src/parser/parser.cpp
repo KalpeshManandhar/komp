@@ -275,7 +275,7 @@ bool Parser::isTypeDefined(DataType d,  StatementBlock* scope){
         return true;
     case DataType::TAG_UNION :
     case DataType::TAG_STRUCT :{
-        StatementBlock* structDefScope = scope->findCompositeDeclaration(d.compositeName);
+        StatementBlock* structDefScope = scope->findCompositeDeclaration(d.compositeName.string);
         if (!structDefScope)
             return false;
         
@@ -509,6 +509,11 @@ DataType Parser::parseBaseDataType(StatementBlock *scope){
         d.compositeName = parseStructDefinition(scope);
         d.tag = DataType::TAG_UNION;
     }
+    // enum is essentially an int
+    else if (match(TOKEN_ENUM)){
+        parseEnum(scope);
+        return DataTypes::Int;
+    }
     // if is a typedef alias
     else if (scope->findTypedef(peekToken().string)){
         StatementBlock* typedefScope = scope->findTypedef(peekToken().string);
@@ -666,7 +671,7 @@ bool Parser::canBeConverted(Subexpr *from, DataType fromType, DataType toType, S
         }
         
         if (toType.tag == DataType::TAG_STRUCT){
-            StatementBlock* structDeclnScope = scope->findCompositeDeclaration(toType.compositeName);
+            StatementBlock* structDeclnScope = scope->findCompositeDeclaration(toType.compositeName.string);
             assert(structDeclnScope != NULL);
 
             Composite &structInfo = structDeclnScope->composites.getInfo(toType.compositeName.string).info;
@@ -946,7 +951,7 @@ DataType Parser::checkSubexprType(Subexpr *expr, StatementBlock *scope){
                 }
                 
                 DataType baseStructType = left.getBaseType();
-                StatementBlock *structDeclScope = scope->findCompositeDeclaration(baseStructType.compositeName);
+                StatementBlock *structDeclScope = scope->findCompositeDeclaration(baseStructType.compositeName.string);
 
                 if (!structDeclScope){
                     logErrorMessage(expr->binary.op, "Not a valid composite type.");
@@ -1332,15 +1337,20 @@ DataType Parser::checkSubexprType(Subexpr *expr, StatementBlock *scope){
             if (match(expr->leaf, TOKEN_IDENTIFIER)){
                 StatementBlock *varDeclScope = scope->findVarDeclaration(expr->leaf.string);
                 
-                if (!varDeclScope){
-                    logErrorMessage(expr->leaf, "Undeclared identifier \"%.*s\"", splicePrintf(expr->leaf.string));
-                    errors++;
-
-                    return DataTypes::Error;
+                if (varDeclScope){
+                    DataType type = varDeclScope->symbols.getInfo(expr->leaf.string).info;
+                    return type;
+                }
+                
+                StatementBlock *enumDeclScope = scope->findEnumValue(expr->leaf.string);
+                if (enumDeclScope){
+                    return DataTypes::Int;
                 }
 
-                DataType type = varDeclScope->symbols.getInfo(expr->leaf.string).info;
-                return type;
+                logErrorMessage(expr->leaf, "Undeclared identifier \"%.*s\"", splicePrintf(expr->leaf.string));
+                errors++;
+                
+                return DataTypes::Error;
             }
             
             // e;se is an immediate value
@@ -1693,11 +1703,64 @@ bool Parser::canResolveToConstant(Subexpr *s, StatementBlock *scope){
 }
 
 
+void Parser :: parseEnum(StatementBlock* scope){
+    assert(expect(TOKEN_ENUM));
+    
+    EnumClass e = {0};
+    bool isNamed = false; 
 
+    if (match(TOKEN_IDENTIFIER)){
+        e.name = consumeToken().string;
+        isNamed = true;
+    }
+    
+    if (match(TOKEN_CURLY_OPEN)){
+        
+        expect(TOKEN_CURLY_OPEN);
+        
+        int i = 0; 
+        do {
+            if (!match(TOKEN_IDENTIFIER)){
+                logErrorMessage(peekToken(), "Expected an identifier for the enum value.");
+                errors++;
+                continue;
+            }
+            
+            EnumValue v;
+            v.name = consumeToken().string;
+            v.value = i++;
+            
+            if (scope->enumValues.existKey(v.name)){
+                logErrorMessage(peekToken(), "Enum value of \"%.*s\" already defined.", splicePrintf(v.name));
+                errors++;
+            }
+            scope->enumValues.update(v.name, v);
+            
+            if (match(TOKEN_COMMA)){
+                consumeToken();
+            }
 
+            
+        }while(!match(TOKEN_CURLY_CLOSE));
+        
+        
+        expect(TOKEN_CURLY_CLOSE);
+        e.isDefined = true;
+    }
+    
 
-
-
+    if (isNamed){
+        if (scope->findVarDeclaration(e.name) || (scope->findEnumClass(e.name) && e.isDefined)|| scope->findCompositeDeclaration(e.name) || scope->findTypedef(e.name)){
+            logErrorMessage(peekToken(), "Redefinition of type \"%.*s\".", splicePrintf(e.name));
+            errors++;
+        }
+        scope->enumClasses.update(e.name, e);
+    }
+}
+    
+    
+    
+    
 
 /*
     Parses variable declaration, function declaration/definition and struct declaration/definition.
@@ -1731,6 +1794,11 @@ Node* Parser::parseDeclaration(StatementBlock *scope){
     // only struct declaration w/o variable declaration
     if (type.tag == DataType::TAG_UNION 
         && match(TOKEN_SEMI_COLON)){
+        consumeToken();
+        return NULL;
+    }
+
+    if (match(TOKEN_SEMI_COLON)){
         consumeToken();
         return NULL;
     }

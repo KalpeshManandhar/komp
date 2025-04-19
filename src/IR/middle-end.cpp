@@ -156,7 +156,7 @@ MIR_Datatype MiddleEnd :: convertToLowerLevelType(DataType d, StatementBlock *sc
     case DataType::TAG_UNION:
     case DataType::TAG_STRUCT:{
 
-        StatementBlock *structDeclScope = scope->findCompositeDeclaration(d.compositeName);
+        StatementBlock *structDeclScope = scope->findCompositeDeclaration(d.compositeName.string);
         assert(structDeclScope != NULL);
         
         MIR_Datatype structType = MIR_Datatypes::_struct;
@@ -238,7 +238,7 @@ MIR_Primitives MiddleEnd :: resolveInitializerLists(const Subexpr* expr, DataTyp
     InitializerList* initlist = expr->initList;
     std::vector <MIR_Primitive*> exprsCopy;
     if (isStructType){
-        StatementBlock* declnScope = scope->findCompositeDeclaration(d.compositeName);
+        StatementBlock* declnScope = scope->findCompositeDeclaration(d.compositeName.string);
         Composite &structInfo = declnScope->composites.getInfo(d.compositeName.string).info;
         
         
@@ -353,7 +353,7 @@ MIR_Primitives MiddleEnd :: transformSubexpr(const Subexpr* expr, StatementBlock
             assert(isCompositeType(compositeType));
             assert(expr->binary.right->subtag == Subexpr::SUBEXPR_LEAF);
 
-            StatementBlock *structDeclScope = scope->findCompositeDeclaration(compositeType.compositeName);
+            StatementBlock *structDeclScope = scope->findCompositeDeclaration(compositeType.compositeName.string);
             
             assert(structDeclScope != NULL);
             Composite &structInfo = structDeclScope->composites.getInfo(compositeType.compositeName.string).info;
@@ -412,7 +412,7 @@ MIR_Primitives MiddleEnd :: transformSubexpr(const Subexpr* expr, StatementBlock
             assert(isCompositeType(compositeType));
             assert(expr->binary.right->subtag == Subexpr::SUBEXPR_LEAF);
 
-            StatementBlock *structDeclScope = scope->findCompositeDeclaration(compositeType.compositeName);
+            StatementBlock *structDeclScope = scope->findCompositeDeclaration(compositeType.compositeName.string);
             
             assert(structDeclScope != NULL);
             Composite &structInfo = structDeclScope->composites.getInfo(compositeType.compositeName.string).info;

@@ -121,6 +121,15 @@ struct Composite: public Node{
     SymbolTableOrdered<MemberInfo> members;
 };
 
+struct EnumValue{
+    Splice name;
+    int value;
+};
+
+struct EnumClass{
+    Splice name;
+    bool isDefined;
+};
 
 
 struct StatementBlock: public Node{
@@ -142,7 +151,10 @@ struct StatementBlock: public Node{
     SymbolTableOrdered<DataType> symbols;
     SymbolTableOrdered<Composite> composites;
     SymbolTable<TypedefInfo> typedefs;
+    SymbolTable<EnumValue> enumValues;
+    SymbolTable<EnumClass> enumClasses;
     StatementBlock *parent;
+    
 
 
     StatementBlock* getParentFunction(){
@@ -156,11 +168,11 @@ struct StatementBlock: public Node{
         return NULL;
     };
 
-    StatementBlock* findCompositeDeclaration(Token compositeName){
+    StatementBlock* findCompositeDeclaration(Splice compositeName){
         StatementBlock *currentScope = this;
         while (currentScope){
-            if (currentScope->composites.existKey(compositeName.string)){
-                if (currentScope->composites.getInfo(compositeName.string).info.defined){
+            if (currentScope->composites.existKey(compositeName)){
+                if (currentScope->composites.getInfo(compositeName).info.defined){
                     return currentScope;
                 }
             }
@@ -186,6 +198,28 @@ struct StatementBlock: public Node{
         StatementBlock *currentScope = this;
         while(currentScope){
             if (currentScope->typedefs.existKey(name)){
+                return currentScope;
+            }
+            currentScope = currentScope->parent;
+        }
+        return NULL;
+    };
+    
+    StatementBlock * findEnumValue(Splice name) {
+        StatementBlock *currentScope = this;
+        while(currentScope){
+            if (currentScope->enumValues.existKey(name)){
+                return currentScope;
+            }
+            currentScope = currentScope->parent;
+        }
+        return NULL;
+    };
+    
+    StatementBlock * findEnumClass(Splice name) {
+        StatementBlock *currentScope = this;
+        while(currentScope){
+            if (currentScope->enumClasses.existKey(name)){
                 return currentScope;
             }
             currentScope = currentScope->parent;

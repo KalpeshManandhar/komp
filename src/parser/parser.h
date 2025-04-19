@@ -54,6 +54,7 @@ struct Parser{
     DataType parseArrayType(StatementBlock *scope, DataType baseType);
     DataType parseDataType(StatementBlock *scope);
 
+    void parseEnum(StatementBlock *scope);
     void parseTypedef(StatementBlock *scope);
     Token parseStructDefinition(StatementBlock *scope);
     Subexpr* parsePrimary(StatementBlock *scope);
