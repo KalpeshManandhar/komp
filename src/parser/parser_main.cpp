@@ -83,11 +83,11 @@ int main(int argc, char **argv) {
         }
         
 
-        if (ir->global.structs.count() > 0) {
+        if (ir->global.composites.count() > 0) {
             std::cout << "Struct table:\n";
-            for (auto &pair : ir->global.structs.entries) {
-                Struct strct = pair.second.info;
-                std::cout << "\tStruct " << strct.structName.string << "{\n";
+            for (auto &pair : ir->global.composites.entries) {
+                Composite strct = pair.second.info;
+                std::cout << "\tStruct " << strct.compositeName.string << "{\n";
 
                 for (auto &m : strct.members.entries) {
                     std::cout << "\t\t" << m.second.info.memberName.string << ": " << dataTypePrintf(m.second.info.type) << "\n";

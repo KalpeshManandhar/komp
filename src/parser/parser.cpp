@@ -1524,10 +1524,7 @@ Subexpr* Parser::parsePrimary(StatementBlock *scope){
     if (match(TOKEN_PARENTHESIS_OPEN)){
         consumeToken();
 
-        if (matchv(DATA_TYPE_TOKENS, ARRAY_COUNT(DATA_TYPE_TOKENS))
-            || matchv(TYPE_MODIFIER_TOKENS, ARRAY_COUNT(TYPE_MODIFIER_TOKENS))
-            || matchv(TYPE_QUALIFIER_TOKENS, ARRAY_COUNT(TYPE_QUALIFIER_TOKENS))){
-            
+        if (isStartOfType(scope)){
             s->cast.to = parseDataType(scope);
             s->subtag = Subexpr::SUBEXPR_CAST;
             expect(TOKEN_PARENTHESIS_CLOSE);

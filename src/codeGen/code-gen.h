@@ -12,6 +12,7 @@ struct GlobalSymbolInfo {
     size_t label;
     Splice value;
     MIR_Datatype type;
+    const char* symbolType;
 };
 
 struct CodeGenerator{

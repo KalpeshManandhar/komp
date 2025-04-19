@@ -746,7 +746,9 @@ void CodeGenerator :: generateAssemblyFromMIR(MIR *mir){
         MIR_Expr* addressOf = assignment->store.left;
         
         GlobalSymbolInfo symbol = data.getInfo(addressOf->addressOf.symbol).info;
+        
         symbol.value = assignment->store.right->immediate.val;
+        
 
         data.update(addressOf->addressOf.symbol, symbol);
     }
@@ -849,7 +851,10 @@ void CodeGenerator :: generateAssemblyFromMIR(MIR *mir){
             break;
         }
         // string
-        case MIR_Datatype::TYPE_PTR:
+        case MIR_Datatype::TYPE_PTR:{
+            rodataSection << "    .dword "  << symbol.value.data << "\n";
+            break;
+        }
         case MIR_Datatype::TYPE_ARRAY:{
             dataSection << "    .string " << symbol.value << "\n";
             break;
@@ -1556,9 +1561,6 @@ void CodeGenerator::generateExprMIR(MIR_Expr *current, RegisterPair dest, ScopeI
     }
     
     case MIR_Expr::EXPR_CAST:{
-        if (current->cast._from.tag == current->cast._to.tag){
-            break;
-        }
 
         bool canSameRegBeUsed = isIntegerType(current->cast._from) && isIntegerType(current->cast._to);
         canSameRegBeUsed = canSameRegBeUsed || (isFloatType(current->cast._from) && isFloatType(current->cast._to));
@@ -1575,50 +1577,13 @@ void CodeGenerator::generateExprMIR(MIR_Expr *current, RegisterPair dest, ScopeI
 
         const char* exprInName = RV64_RegisterName[regAlloc.resolveRegister(exprIn)];
         const char* exprDestName = RV64_RegisterName[regAlloc.resolveRegister(destReg)];
-
         
-        switch (current->cast._from.tag){
-        case MIR_Datatype::TYPE_BOOL:
-        case MIR_Datatype::TYPE_PTR:
-        case MIR_Datatype::TYPE_I8:
-        case MIR_Datatype::TYPE_I16:
-        case MIR_Datatype::TYPE_I32:
-        case MIR_Datatype::TYPE_I64:
-        case MIR_Datatype::TYPE_U8:
-        case MIR_Datatype::TYPE_U16:
-        case MIR_Datatype::TYPE_U32:
-        case MIR_Datatype::TYPE_U64:{
-            
-            switch (current->cast._to.tag) {
-                // conversion to bool
-                case MIR_Datatype::TYPE_BOOL :{
-                    buffer << "    snez " << exprDestName << ", " << exprInName << "\n";
-                    break;
-                }
-                
-                case MIR_Datatype::TYPE_F32 : 
-                case MIR_Datatype::TYPE_F64 :
-                    buffer  << "    fcvt." << fInsFloatSuffix(current->cast._to.size) << "." << iInsIntegerSuffix(current->cast._from.size) 
-                            << ((isUnsigned(current->cast._from))?"u":"") << " " << exprDestName << ", " << exprInName << "\n";
-                    break;
 
-                case MIR_Datatype::TYPE_F16 :
-                case MIR_Datatype::TYPE_F128 :
-                    assert(false && "f16 and f128 are not supported.");
-                    
 
-                default:
-                // since sign is extended by default, there is no need for explicit asm for converting between integer types
-                    break;
-            }
+        if (current->cast._from.tag != current->cast._to.tag){
 
-            
-            break;
-        }
-        
-        case MIR_Datatype::TYPE_F32:
-        case MIR_Datatype::TYPE_F64:{
-            switch (current->cast._to.tag) {
+            switch (current->cast._from.tag){
+                case MIR_Datatype::TYPE_BOOL:
                 case MIR_Datatype::TYPE_PTR:
                 case MIR_Datatype::TYPE_I8:
                 case MIR_Datatype::TYPE_I16:
@@ -1628,51 +1593,92 @@ void CodeGenerator::generateExprMIR(MIR_Expr *current, RegisterPair dest, ScopeI
                 case MIR_Datatype::TYPE_U16:
                 case MIR_Datatype::TYPE_U32:
                 case MIR_Datatype::TYPE_U64:{
-                    buffer  << "    fcvt." << iInsIntegerSuffix(current->cast._to.size) << ((isUnsigned(current->cast._from))?"u":"") << "."
-                            << fInsFloatSuffix(current->cast._from.size)   << " " << exprDestName << ", " << exprInName << "\n";
+                    
+                    switch (current->cast._to.tag) {
+                    // conversion to bool
+                    case MIR_Datatype::TYPE_BOOL :{
+                        buffer << "    snez " << exprDestName << ", " << exprInName << "\n";
+                        break;
+                    }
+                    
+                    case MIR_Datatype::TYPE_F32 : 
+                    case MIR_Datatype::TYPE_F64 :
+                    buffer  << "    fcvt." << fInsFloatSuffix(current->cast._to.size) << "." << iInsIntegerSuffix(current->cast._from.size) 
+                    << ((isUnsigned(current->cast._from))?"u":"") << " " << exprDestName << ", " << exprInName << "\n";
                     break;
-                }
-
-                case MIR_Datatype::TYPE_F32:
-                case MIR_Datatype::TYPE_F64:{
-                    assert((current->cast._from.tag != current->cast._to.tag) && "Casts shouldn't have the same type on both ends.");
-                    buffer  << "    fcvt." << fInsFloatSuffix(current->cast._to.size) << "."
-                            << fInsFloatSuffix(current->cast._from.size)   << " " << exprDestName << ", " << exprInName << "\n";
-                    break;
-                }
-
-
-                case MIR_Datatype::TYPE_F16 :
-                case MIR_Datatype::TYPE_F128 :
+                    
+                    case MIR_Datatype::TYPE_F16 :
+                    case MIR_Datatype::TYPE_F128 :
                     assert(false && "f16 and f128 are not supported.");
-                default:
+                    
+                    
+                    default:
+                    // since sign is extended by default, there is no need for explicit asm for converting between integer types
                     break;
+                }
+                
+                
+                break;
             }
-            break;
-        }
-
-        case MIR_Datatype::TYPE_I128:
-        case MIR_Datatype::TYPE_U128:
+            
+            case MIR_Datatype::TYPE_F32:
+            case MIR_Datatype::TYPE_F64:{
+                switch (current->cast._to.tag) {
+                    case MIR_Datatype::TYPE_PTR:
+                    case MIR_Datatype::TYPE_I8:
+                    case MIR_Datatype::TYPE_I16:
+                    case MIR_Datatype::TYPE_I32:
+                    case MIR_Datatype::TYPE_I64:
+                    case MIR_Datatype::TYPE_U8:
+                    case MIR_Datatype::TYPE_U16:
+                    case MIR_Datatype::TYPE_U32:
+                    case MIR_Datatype::TYPE_U64:{
+                        buffer  << "    fcvt." << iInsIntegerSuffix(current->cast._to.size) << ((isUnsigned(current->cast._from))?"u":"") << "."
+                        << fInsFloatSuffix(current->cast._from.size)   << " " << exprDestName << ", " << exprInName << "\n";
+                        break;
+                    }
+                    
+                    case MIR_Datatype::TYPE_F32:
+                    case MIR_Datatype::TYPE_F64:{
+                        assert((current->cast._from.tag != current->cast._to.tag) && "Casts shouldn't have the same type on both ends.");
+                        buffer  << "    fcvt." << fInsFloatSuffix(current->cast._to.size) << "."
+                        << fInsFloatSuffix(current->cast._from.size)   << " " << exprDestName << ", " << exprInName << "\n";
+                        break;
+                    }
+                    
+                    
+                    case MIR_Datatype::TYPE_F16 :
+                    case MIR_Datatype::TYPE_F128 :
+                    assert(false && "f16 and f128 are not supported.");
+                    default:
+                    break;
+                }
+                break;
+            }
+            
+            case MIR_Datatype::TYPE_I128:
+            case MIR_Datatype::TYPE_U128:
             assert(false && "128 bit integers aren't supported.");
             break;
-        case MIR_Datatype::TYPE_F16:
-        case MIR_Datatype::TYPE_F128:
-            assert(false && "16 and 128 bit floating point numbers aren't supported.");
-            break;
-        
-        case MIR_Datatype::TYPE_ARRAY:{
-            assert(isIntegerType(current->cast._to) && "Arrays can only be converted to integer types.");
-
+            case MIR_Datatype::TYPE_F16:
+            case MIR_Datatype::TYPE_F128:
+                assert(false && "16 and 128 bit floating point numbers aren't supported.");
+                break;
             
-            break;
-        
-        }
-        
-        default:
-            assert(false && "Support for casts not implemented fully yet.");
-            break;
-        }
+            case MIR_Datatype::TYPE_ARRAY:{
+                assert(isIntegerType(current->cast._to) && "Arrays can only be converted to integer types.");
 
+                
+                break;
+            
+            }
+            
+            default:
+                assert(false && "Support for casts not implemented fully yet.");
+                break;
+            }
+
+        }
 
 
 
