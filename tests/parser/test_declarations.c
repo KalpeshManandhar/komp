@@ -26,13 +26,13 @@
     short short e; // extra short
 
     // type modifiers with real types
-    long double f;  
-    short double f;
-    short float f;
-    unsigned float f;
-    signed float f;
-    signed double f;
-    unsigned double f;
+    double f;  
+    short double g;
+    short float h;
+    unsigned float i;
+    signed float j;
+    signed double k;
+    unsigned double l;
 
     // type modifiers with void
     unsigned void *g;

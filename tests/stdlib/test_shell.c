@@ -22,14 +22,10 @@ int main(){
         commandBuffer[len - 1] = 0;
         
 
-
-
         if (strcmp(commandBuffer, "exit") == 0){
             break;
         }
-
-
-
+        
         int pid = fork();
 
         // child process
@@ -62,7 +58,8 @@ int main(){
             }
 
 
-
+            write(1, "Exec\n", 3);
+            
             int a = execve(args[0], args, env);
             write(1, "\nError\n", strlen("Error\n"));
             return a;
@@ -72,10 +69,9 @@ int main(){
         }
         else {
             int wstatus = 0;
-
             while (1){
                 int ret = waitpid(pid, &wstatus, 2);
-
+                
                 if (ret == -1){
                     write(1, "\nWaitpid error\n", strlen("Waitpid error\n"));
                     return 1;
@@ -85,10 +81,8 @@ int main(){
                     break;
                 }
             }
-
         }
     }
-
 
     return 0;
 }
