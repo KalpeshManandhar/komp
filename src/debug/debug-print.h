@@ -173,7 +173,7 @@ static std::string generateMIRDotNode(MIR_Primitive* mirNode, std::ostringstream
     return "node" + std::to_string(currentNode);
 }
 
-static void printMIRDot(MIR* mir) {
+static void writeToDOTfile(MIR* mir) {
     std::ostringstream dotStream;
     const std::string & outputFile="MIR.dot";
 

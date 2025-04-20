@@ -49,32 +49,34 @@ int main(int argc, char **argv){
 
     
 
-    Arena b;
-    b.init(PAGE_SIZE * 2);
-    b.createFrame();
+        Arena b;
+        b.init(PAGE_SIZE * 2);
+        b.createFrame();
 
-    CodeGenerator gen;
-    gen.arena = &b;
+        CodeGenerator gen;
+        gen.arena = &b;
+        
+        MIR* mir = transform(ir, &b);
+        
+        if (config.print){
+            printMIR(mir);    
+        }
+        
+        gen.generateAssemblyFromMIR(mir);
+
+        
+        gen.writeAssemblyToFile(config.outputTo);
+        writeToDOTfile(mir);
+
+        if (config.print){
+            gen.printAssembly();
+
+        }
+
     
-    MIR* mir = transform(ir, &b);
-    
+
     a.destroyFrame();
     a.destroy();
     
-
-    if (config.print){
-        printMIR(mir);    
-        printMIRDot(mir);
-    }
-    
-    gen.generateAssemblyFromMIR(mir);
-
-    
-    gen.writeAssemblyToFile(config.outputTo);
-    if (config.print){
-        gen.printAssembly();
-    }
-
-
     printf("Successfully generated! \n");
 }
